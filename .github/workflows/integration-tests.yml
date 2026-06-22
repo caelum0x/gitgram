@@ -1,0 +1,217 @@
+# =============================================================================
+# Integration Test Gate - Gitgram + AI Time Machine
+# Can be triggered manually or on push to main. These tests require
+# database services and validate cross-component interactions.
+# =============================================================================
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      run_gitgram:
+        description: "Run Gitgram integration tests"
+        type: boolean
+        default: true
+      run_aitm:
+        description: "Run AITM integration tests"
+        type: boolean
+        default: true
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitgram API - Integration tests
+  # ---------------------------------------------------------------------------
+  gitgram-integration:
+    name: "Gitgram: API Integration Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_gitgram == 'true' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    defaults:
+      run:
+        working-directory: gitgram/backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: gitgram
+          POSTGRES_PASSWORD: gitgram_password
+          POSTGRES_DB: gitgram_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql://gitgram:gitgram_password@localhost:5432/gitgram_test?schema=public
+      JWT_SECRET: ci-integration-test-secret
+      NODE_ENV: test
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: gitgram/backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+
+      - name: Run integration tests
+        run: npx jest tests/integration.test.ts --forceExit --detectOpenHandles --testTimeout=30000
+
+      - name: Run API endpoint tests
+        run: |
+          # Run all test files that exercise API endpoints end-to-end
+          npx jest tests/auth.test.ts tests/posts.test.ts tests/users.test.ts tests/webhooks.test.ts \
+            --forceExit --detectOpenHandles --testTimeout=30000
+
+  # ---------------------------------------------------------------------------
+  # AITM API - Integration tests
+  # ---------------------------------------------------------------------------
+  aitm-integration:
+    name: "AITM: API Integration Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_aitm == 'true' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    defaults:
+      run:
+        working-directory: aitimemachine/api-server
+    env:
+      NODE_ENV: test
+      AITM_TEST_NO_LISTEN: "0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npx vitest run tests/integration --reporter=verbose
+        env:
+          # Integration tests may need these - sourced from secrets in real CI
+          DATABASE_URL: ${{ secrets.AITM_TEST_DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.AITM_TEST_JWT_SECRET }}
+
+  # ---------------------------------------------------------------------------
+  # AITM Core - E2E / platform tests
+  # ---------------------------------------------------------------------------
+  aitm-core-e2e:
+    name: "AITM: Core E2E Tests"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.run_aitm == 'true' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    defaults:
+      run:
+        working-directory: aitimemachine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build library
+        run: npm run build
+
+      - name: Run E2E and platform tests
+        run: |
+          npx vitest run tests/e2e.test.ts tests/platform.test.ts --reporter=verbose
+
+  # ---------------------------------------------------------------------------
+  # Summary gate
+  # ---------------------------------------------------------------------------
+  integration-gate:
+    name: Integration Test Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - gitgram-integration
+      - aitm-integration
+      - aitm-core-e2e
+    if: always()
+    steps:
+      - name: Check integration test results
+        run: |
+          FAILED=false
+
+          # Only check jobs that actually ran (skip skipped ones)
+          if [[ "${{ needs.gitgram-integration.result }}" == "failure" ]]; then
+            echo "gitgram-integration FAILED"
+            FAILED=true
+          fi
+          if [[ "${{ needs.aitm-integration.result }}" == "failure" ]]; then
+            echo "aitm-integration FAILED"
+            FAILED=true
+          fi
+          if [[ "${{ needs.aitm-core-e2e.result }}" == "failure" ]]; then
+            echo "aitm-core-e2e FAILED"
+            FAILED=true
+          fi
+
+          if [ "$FAILED" = true ]; then
+            echo ""
+            echo "Integration test gate failed. See individual job logs above."
+            exit 1
+          fi
+
+          echo "Integration test gate passed (or jobs were skipped)."
+          echo "  gitgram-integration: ${{ needs.gitgram-integration.result }}"
+          echo "  aitm-integration:    ${{ needs.aitm-integration.result }}"
+          echo "  aitm-core-e2e:       ${{ needs.aitm-core-e2e.result }}"

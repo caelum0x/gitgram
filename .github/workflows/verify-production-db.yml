@@ -1,0 +1,214 @@
+name: Verify Production Databases
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which database to verify"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - neon
+          - gitgram
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ===========================================================================
+  # Neon (AITimeMachine) Database Verification
+  # ===========================================================================
+  verify-neon:
+    name: Verify Neon DB (AITimeMachine)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.target == 'all' || github.event.inputs.target == 'neon' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/api-server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: aitimemachine/api-server
+        run: npm ci
+
+      - name: Run Neon verification
+        working-directory: aitimemachine/api-server
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: npx tsx ../../scripts/verify-neon.ts --json > /tmp/neon-results.json 2>&1 || true
+
+      - name: Parse results
+        id: neon-results
+        run: |
+          if [ -f /tmp/neon-results.json ]; then
+            overall=$(cat /tmp/neon-results.json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('overall','unknown'))" 2>/dev/null || echo "unknown")
+            echo "overall=$overall" >> $GITHUB_OUTPUT
+            cat /tmp/neon-results.json
+          else
+            echo "overall=error" >> $GITHUB_OUTPUT
+            echo "No results file generated"
+          fi
+
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neon-verification-results
+          path: /tmp/neon-results.json
+          retention-days: 30
+
+      - name: Check for failures
+        if: steps.neon-results.outputs.overall == 'unhealthy'
+        run: |
+          echo "::error::Neon database verification FAILED"
+          echo "Check the neon-verification-results artifact for details."
+          exit 1
+
+      - name: Report degraded status
+        if: steps.neon-results.outputs.overall == 'degraded'
+        run: |
+          echo "::warning::Neon database verification has WARNINGS"
+          echo "Check the neon-verification-results artifact for details."
+
+  # ===========================================================================
+  # Gitgram Backend Database Verification
+  # ===========================================================================
+  verify-gitgram:
+    name: Verify Gitgram DB
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.target == 'all' || github.event.inputs.target == 'gitgram' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: gitgram/backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: gitgram/backend
+        run: npm ci
+
+      - name: Generate Prisma Client
+        working-directory: gitgram/backend
+        run: npx prisma generate
+
+      - name: Run Gitgram DB verification
+        working-directory: gitgram/backend
+        env:
+          DATABASE_URL: ${{ secrets.GITGRAM_DATABASE_URL }}
+        run: npx tsx ../../scripts/verify-gitgram-db.ts --json > /tmp/gitgram-results.json 2>&1 || true
+
+      - name: Parse results
+        id: gitgram-results
+        run: |
+          if [ -f /tmp/gitgram-results.json ]; then
+            overall=$(cat /tmp/gitgram-results.json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('overall','unknown'))" 2>/dev/null || echo "unknown")
+            echo "overall=$overall" >> $GITHUB_OUTPUT
+            cat /tmp/gitgram-results.json
+          else
+            echo "overall=error" >> $GITHUB_OUTPUT
+            echo "No results file generated"
+          fi
+
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitgram-verification-results
+          path: /tmp/gitgram-results.json
+          retention-days: 30
+
+      - name: Check for failures
+        if: steps.gitgram-results.outputs.overall == 'unhealthy'
+        run: |
+          echo "::error::Gitgram database verification FAILED"
+          echo "Check the gitgram-verification-results artifact for details."
+          exit 1
+
+      - name: Report degraded status
+        if: steps.gitgram-results.outputs.overall == 'degraded'
+        run: |
+          echo "::warning::Gitgram database verification has WARNINGS"
+          echo "Check the gitgram-verification-results artifact for details."
+
+  # ===========================================================================
+  # Summary notification (runs after both jobs complete)
+  # ===========================================================================
+  notify:
+    name: Verification Summary
+    runs-on: ubuntu-latest
+    needs: [verify-neon, verify-gitgram]
+    if: always()
+
+    steps:
+      - name: Download Neon results
+        uses: actions/download-artifact@v4
+        with:
+          name: neon-verification-results
+          path: /tmp/neon
+        continue-on-error: true
+
+      - name: Download Gitgram results
+        uses: actions/download-artifact@v4
+        with:
+          name: gitgram-verification-results
+          path: /tmp/gitgram
+        continue-on-error: true
+
+      - name: Generate summary
+        run: |
+          echo "## Database Verification Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Database | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+
+          # Neon results
+          if [ -f /tmp/neon/neon-results.json ]; then
+            neon_status=$(python3 -c "import json; data=json.load(open('/tmp/neon/neon-results.json')); print(data.get('overall','unknown'))" 2>/dev/null || echo "error")
+            neon_summary=$(python3 -c "import json; data=json.load(open('/tmp/neon/neon-results.json')); s=data.get('summary',{}); print(f\"P:{s.get('passed',0)} W:{s.get('warned',0)} F:{s.get('failed',0)}\")" 2>/dev/null || echo "N/A")
+          else
+            neon_status="${{ needs.verify-neon.result }}"
+            neon_summary="Job result: ${neon_status}"
+          fi
+
+          # Gitgram results
+          if [ -f /tmp/gitgram/gitgram-results.json ]; then
+            gitgram_status=$(python3 -c "import json; data=json.load(open('/tmp/gitgram/gitgram-results.json')); print(data.get('overall','unknown'))" 2>/dev/null || echo "error")
+            gitgram_summary=$(python3 -c "import json; data=json.load(open('/tmp/gitgram/gitgram-results.json')); s=data.get('summary',{}); print(f\"P:{s.get('passed',0)} W:{s.get('warned',0)} F:{s.get('failed',0)}\")" 2>/dev/null || echo "N/A")
+          else
+            gitgram_status="${{ needs.verify-gitgram.result }}"
+            gitgram_summary="Job result: ${gitgram_status}"
+          fi
+
+          echo "| Neon (AITimeMachine) | ${neon_status} | ${neon_summary} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gitgram Backend | ${gitgram_status} | ${gitgram_summary} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Run at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")_" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any verification failed
+        if: needs.verify-neon.result == 'failure' || needs.verify-gitgram.result == 'failure'
+        run: |
+          echo "::error::One or more database verifications failed. Check individual job logs."
+          exit 1

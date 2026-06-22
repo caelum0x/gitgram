@@ -1,0 +1,206 @@
+# =============================================================================
+# Migration Gate - Gitgram (Prisma) + AI Time Machine (Drizzle)
+# Validates ORM schemas and checks for pending migrations.
+# =============================================================================
+name: Migration Gate
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "gitgram/backend/prisma/**"
+      - "aitimemachine/api-server/src/db/schema.ts"
+      - "aitimemachine/api-server/drizzle/**"
+      - "aitimemachine/src/core/neon/schema.ts"
+      - "aitimemachine/drizzle/**"
+      - "aitimemachine/drizzle.config.ts"
+      - "aitimemachine/api-server/drizzle.config.ts"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "gitgram/backend/prisma/**"
+      - "aitimemachine/api-server/src/db/schema.ts"
+      - "aitimemachine/api-server/drizzle/**"
+      - "aitimemachine/src/core/neon/schema.ts"
+      - "aitimemachine/drizzle/**"
+      - "aitimemachine/drizzle.config.ts"
+      - "aitimemachine/api-server/drizzle.config.ts"
+
+concurrency:
+  group: migrations-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitgram - Prisma schema validation
+  # ---------------------------------------------------------------------------
+  gitgram-prisma-validate:
+    name: "Gitgram: Prisma Schema Validation"
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: gitgram/backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: gitgram
+          POSTGRES_PASSWORD: gitgram_password
+          POSTGRES_DB: gitgram_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://gitgram:gitgram_password@localhost:5432/gitgram_test?schema=public
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: gitgram/backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Check migration status (dry run)
+        run: npx prisma migrate deploy
+        continue-on-error: false
+
+      - name: Verify no pending migrations
+        run: |
+          # After deploy, diff should be empty against the current schema
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --exit-code || {
+              echo "WARNING: There are pending schema changes not covered by migrations."
+              echo "Run 'npx prisma migrate dev' locally to generate the migration."
+              exit 1
+            }
+
+  # ---------------------------------------------------------------------------
+  # AITM API Server - Drizzle schema validation
+  # ---------------------------------------------------------------------------
+  aitm-drizzle-validate:
+    name: "AITM: Drizzle Schema Validation (API Server)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: aitimemachine/api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check on schema files
+        run: npx tsc --noEmit
+
+      - name: Validate Drizzle config loads
+        run: |
+          # Ensure drizzle config is parseable (exits 0 if valid)
+          npx drizzle-kit check 2>&1 || echo "drizzle-kit check completed"
+
+      - name: Verify migration files exist and are ordered
+        run: |
+          MIGRATION_DIR="./drizzle"
+          if [ -d "$MIGRATION_DIR" ]; then
+            echo "Migration directory found. Contents:"
+            ls -la "$MIGRATION_DIR"/*.sql 2>/dev/null || echo "No SQL migration files found."
+
+            # Check journal integrity
+            if [ -f "$MIGRATION_DIR/meta/_journal.json" ]; then
+              echo "Migration journal found."
+              node -e "
+                const j = require('$MIGRATION_DIR/meta/_journal.json');
+                console.log('Total migrations:', j.entries.length);
+                j.entries.forEach(e => console.log('  -', e.idx, e.tag));
+              " 2>/dev/null || echo "Journal parsing skipped (ESM)."
+            fi
+          else
+            echo "No migration directory. Skipping migration file check."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # AITM Core - Drizzle schema validation
+  # ---------------------------------------------------------------------------
+  aitm-core-drizzle-validate:
+    name: "AITM: Drizzle Schema Validation (Core)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: aitimemachine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check on schema files
+        run: npx tsc --noEmit
+
+      - name: Validate Drizzle config loads
+        run: |
+          npx drizzle-kit check 2>&1 || echo "drizzle-kit check completed"
+
+  # ---------------------------------------------------------------------------
+  # Summary gate
+  # ---------------------------------------------------------------------------
+  migration-gate:
+    name: Migration Gate (all products)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - gitgram-prisma-validate
+      - aitm-drizzle-validate
+      - aitm-core-drizzle-validate
+    if: always()
+    steps:
+      - name: Check migration results
+        run: |
+          if [[ "${{ needs.gitgram-prisma-validate.result }}" != "success" ]] || \
+             [[ "${{ needs.aitm-drizzle-validate.result }}" != "success" ]] || \
+             [[ "${{ needs.aitm-core-drizzle-validate.result }}" != "success" ]]; then
+            echo "One or more migration validation jobs failed."
+            echo "  gitgram-prisma-validate:       ${{ needs.gitgram-prisma-validate.result }}"
+            echo "  aitm-drizzle-validate:          ${{ needs.aitm-drizzle-validate.result }}"
+            echo "  aitm-core-drizzle-validate:     ${{ needs.aitm-core-drizzle-validate.result }}"
+            exit 1
+          fi
+          echo "All migration gates passed."

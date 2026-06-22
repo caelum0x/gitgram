@@ -1,0 +1,193 @@
+# =============================================================================
+# Test Gate - Gitgram (Jest) + AI Time Machine (Vitest)
+# Runs unit tests for both products and collects coverage reports.
+# =============================================================================
+name: Test Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitgram Backend - Jest unit tests
+  # ---------------------------------------------------------------------------
+  gitgram-backend-tests:
+    name: "Gitgram: Backend Tests (Jest)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: gitgram/backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: gitgram
+          POSTGRES_PASSWORD: gitgram_password
+          POSTGRES_DB: gitgram_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://gitgram:gitgram_password@localhost:5432/gitgram_test?schema=public
+      JWT_SECRET: ci-test-secret-key
+      NODE_ENV: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: gitgram/backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitgram-backend-coverage
+          path: gitgram/backend/coverage
+          retention-days: 7
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "### Gitgram Backend Coverage" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const s = require('./coverage/coverage-summary.json').total;
+              console.log('| Metric | Coverage |');
+              console.log('|--------|----------|');
+              console.log('| Statements |', s.statements.pct + '%', '|');
+              console.log('| Branches |', s.branches.pct + '%', '|');
+              console.log('| Functions |', s.functions.pct + '%', '|');
+              console.log('| Lines |', s.lines.pct + '%', '|');
+            " >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Coverage summary unavailable."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # AITM Core - Vitest unit tests
+  # ---------------------------------------------------------------------------
+  aitm-core-tests:
+    name: "AITM: Core Tests (Vitest)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: aitimemachine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npx vitest run --coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aitm-core-coverage
+          path: aitimemachine/coverage
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # AITM API Server - Vitest unit tests
+  # ---------------------------------------------------------------------------
+  aitm-api-tests:
+    name: "AITM: API Server Tests (Vitest)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: aitimemachine/api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aitimemachine/api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aitm-api-test-results
+          path: aitimemachine/api-server/coverage
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Summary gate - all tests must pass
+  # ---------------------------------------------------------------------------
+  test-gate:
+    name: Test Gate (all products)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - gitgram-backend-tests
+      - aitm-core-tests
+      - aitm-api-tests
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.gitgram-backend-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.aitm-core-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.aitm-api-tests.result }}" != "success" ]]; then
+            echo "One or more test jobs failed."
+            echo "  gitgram-backend-tests: ${{ needs.gitgram-backend-tests.result }}"
+            echo "  aitm-core-tests:       ${{ needs.aitm-core-tests.result }}"
+            echo "  aitm-api-tests:        ${{ needs.aitm-api-tests.result }}"
+            exit 1
+          fi
+          echo "All test gates passed."

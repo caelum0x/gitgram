@@ -1,0 +1,28 @@
+{
+  "description": "AITM MCP server configuration for Claude Code in this monorepo",
+  "servers": {
+    "aitm": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/arhansubasi/gitgram-ai/aitimemachine/mcp/dist/index.js"],
+      "env": {
+        "GITNEXUS_URL": "http://localhost:3001",
+        "AITM_GITNEXUS_ENABLED": "1",
+        "AITM_A2A_AGENTS": "[]"
+      },
+      "description": "AITimeMachine MCP — checkpoints, restore, beads DAG, gitnexus code intelligence, A2A agent protocol"
+    },
+    "gitnexus": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/arhansubasi/gitgram-ai/aitimemachine/gitnexus/dist/cli/index.js", "mcp"],
+      "description": "GitNexus — code knowledge graph: query, impact, context, trace, taint analysis"
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/arhansubasi/gitgram-ai/aitimemachine/context7/packages/mcp/dist/index.js"],
+      "description": "Context7 — fetch up-to-date library documentation for any npm/PyPI package"
+    }
+  }
+}

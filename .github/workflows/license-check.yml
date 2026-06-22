@@ -1,0 +1,44 @@
+name: License Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  license-check:
+    name: Block GPL / noncommercial imports in product trees
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for GPL-contaminated imports (proximity)
+        run: |
+          # proximity is GPL-3 — its source must never be imported into product trees
+          if grep -rE "from ['\"].*external/proximity" \
+               gitgram/ aitimemachine/ --include="*.ts" --include="*.tsx" -l 2>/dev/null; then
+            echo "ERROR: GPL-3 source from external/proximity imported into product tree"
+            exit 1
+          fi
+          echo "OK: no proximity (GPL-3) imports found"
+
+      - name: Check for PolyForm Noncommercial imports (gitnexus)
+        run: |
+          # gitnexus is PolyForm Noncommercial — source must not be copied into product trees
+          if grep -rE "from ['\"].*external/gitnexus" \
+               gitgram/ aitimemachine/ --include="*.ts" --include="*.tsx" -l 2>/dev/null; then
+            echo "ERROR: PolyForm Noncommercial source from external/gitnexus imported into product tree"
+            exit 1
+          fi
+          echo "OK: no gitnexus (PolyForm Noncommercial) imports found"
+
+      - name: Check external/ is not on tsconfig paths
+        run: |
+          # Verify no tsconfig in product dirs resolves paths into external/
+          if grep -rE '"external/' \
+               gitgram/tsconfig*.json aitimemachine/tsconfig*.json 2>/dev/null; then
+            echo "ERROR: tsconfig path alias points into external/"
+            exit 1
+          fi
+          echo "OK: no tsconfig paths into external/"

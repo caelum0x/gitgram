@@ -1,0 +1,338 @@
+# =============================================================================
+# Local Development — Docker Compose
+# =============================================================================
+# Runs infrastructure + all application services for local development.
+#
+# Usage:
+#   docker compose up                          # start everything
+#   docker compose up postgres redis           # infrastructure only
+#   docker compose --profile tools up          # include GitNexus + Context7
+#   docker compose down -v                     # tear down and remove volumes
+#
+# Services (default profile):
+#   postgres          - Shared PostgreSQL 16 (port 5432)
+#   redis             - Shared Redis 7       (port 6379)
+#   gitgram-backend   - Gitgram Express API  (port 4000)
+#   gitgram-web       - Gitgram Next.js UI   (port 3000)
+#   aitm-api          - AITM REST API        (port 3001)
+#   aitm-website      - AITM Next.js UI      (port 3002)
+#   aitm-mcp          - AITM MCP server      (port 3003)
+#
+# Services (tools profile):
+#   gitnexus          - Code intelligence MCP (port 3010)
+#   context7          - Live library docs MCP  (port 3100)
+#
+# Notes:
+#   - AITM can point to Neon or local Postgres; local postgres is the default.
+#   - aitm-mcp is an stdio/HTTP MCP server; adjust port if you expose it.
+#   - All secrets in environment blocks are dev-only placeholders — never use
+#     these values in production.
+# =============================================================================
+
+networks:
+  gitgram-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  gitgram_uploads:
+    driver: local
+  gitgram_logs:
+    driver: local
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gitgram-postgres
+    networks:
+      - gitgram-net
+    environment:
+      POSTGRES_USER: gitgram
+      POSTGRES_PASSWORD: gitgram_dev
+      POSTGRES_DB: gitgram
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional init scripts: place *.sql or *.sh files here to seed the DB.
+      # - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitgram -d gitgram"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: gitgram-redis
+    networks:
+      - gitgram-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    # Persistence (AOF) + sensible memory cap for local dev.
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Gitgram Backend (Express API — Node 20)
+  # ---------------------------------------------------------------------------
+
+  gitgram-backend:
+    build:
+      context: ./gitgram/backend
+      dockerfile: Dockerfile
+    container_name: gitgram-backend
+    networks:
+      - gitgram-net
+    ports:
+      - "4000:4000"
+    env_file:
+      - path: .env.gitgram
+        required: false          # falls back to inline environment below
+    environment:
+      NODE_ENV: development
+      PORT: "4000"
+      DATABASE_URL: postgresql://gitgram:gitgram_dev@postgres:5432/gitgram
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: local-dev-jwt-secret-not-for-production-use-replace-me
+      JWT_REFRESH_SECRET: local-dev-refresh-secret-not-for-production-replace
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_EXPIRES_IN: 7d
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:8081
+      STORAGE_TYPE: local
+      UPLOAD_DIR: /app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - gitgram_uploads:/app/uploads
+      - gitgram_logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Run migrations then start the compiled server.
+    command: sh -c "npx prisma migrate deploy && node dist/index.js"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Gitgram Web (Next.js — Node 20)
+  # ---------------------------------------------------------------------------
+
+  gitgram-web:
+    build:
+      context: ./gitgram/web
+      dockerfile: Dockerfile
+    container_name: gitgram-web
+    networks:
+      - gitgram-net
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env.gitgram-web
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+      NEXT_PUBLIC_WS_URL: http://localhost:4000
+      NEXT_PUBLIC_AITM_API_URL: http://localhost:3001/v1
+    depends_on:
+      gitgram-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) })\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # AITM API Server (Hono/Node — Node 20)
+  # ---------------------------------------------------------------------------
+  # Connects to local Postgres by default. Override DATABASE_URL in
+  # .env.aitm-api to point at Neon for hybrid dev.
+
+  aitm-api:
+    build:
+      context: ./aitimemachine/api-server
+      dockerfile: Dockerfile
+    container_name: aitm-api
+    networks:
+      - gitgram-net
+    ports:
+      - "3001:3001"
+    env_file:
+      - path: .env.aitm-api
+        required: false
+    environment:
+      NODE_ENV: development
+      HOST: "0.0.0.0"
+      PORT: "3001"
+      DATABASE_URL: postgresql://gitgram:gitgram_dev@postgres:5432/gitgram
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3002
+      WEBSITE_URL: http://localhost:3002
+      INTERNAL_SECRET: local-dev-internal-secret-replace-in-prod
+      GITGRAM_API_URL: http://gitgram-backend:4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # AITM Website (Next.js — Node 20)
+  # ---------------------------------------------------------------------------
+
+  aitm-website:
+    build:
+      context: ./aitimemachine/website
+      dockerfile: Dockerfile
+    container_name: aitm-website
+    networks:
+      - gitgram-net
+    ports:
+      - "3002:3002"
+    env_file:
+      - path: .env.aitm-website
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "3002"
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      API_URL: http://aitm-api:3001
+      INTERNAL_SECRET: local-dev-internal-secret-replace-in-prod
+      NEXT_PUBLIC_APP_URL: http://localhost:3002
+    depends_on:
+      aitm-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3002', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) })\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # AITM MCP Server (stdio / HTTP bridge — Node 20)
+  # ---------------------------------------------------------------------------
+  # The MCP server communicates over stdio by default; this container wraps it
+  # so Claude Code and other editors can reach it over HTTP on port 3003.
+
+  aitm-mcp:
+    build:
+      context: ./aitimemachine/mcp
+      dockerfile: Dockerfile
+    container_name: aitm-mcp
+    networks:
+      - gitgram-net
+    ports:
+      - "3003:3003"
+    env_file:
+      - path: .env.aitm-api
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "3003"
+      AITM_API_URL: http://aitm-api:3001
+      GITNEXUS_URL: http://gitnexus:3010
+      AITM_GITNEXUS_ENABLED: "0"
+      CONTEXT7_URL: http://context7:3100
+      AITM_CONTEXT7_ENABLED: "0"
+    depends_on:
+      aitm-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3003/health', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) }).on('error', () => process.exit(0))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # GitNexus — code intelligence MCP server (profile: tools)
+  # ---------------------------------------------------------------------------
+
+  gitnexus:
+    build:
+      context: ./aitimemachine/gitnexus
+      dockerfile: Dockerfile
+    container_name: gitnexus
+    networks:
+      - gitgram-net
+    ports:
+      - "3010:3010"
+    environment:
+      NODE_ENV: development
+      PORT: "3010"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3010/health', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) }).on('error', () => process.exit(0))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    profiles:
+      - tools
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Context7 — live library docs MCP server (profile: tools)
+  # ---------------------------------------------------------------------------
+
+  context7:
+    image: node:20-alpine
+    container_name: context7
+    working_dir: /app
+    networks:
+      - gitgram-net
+    volumes:
+      - ./aitimemachine/context7/packages/mcp:/app:ro
+    command: sh -c "npm install --if-present && node dist/index.js"
+    ports:
+      - "3100:3100"
+    environment:
+      NODE_ENV: development
+      PORT: "3100"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100/health', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) }).on('error', () => process.exit(0))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    profiles:
+      - tools
+    restart: unless-stopped

@@ -1,0 +1,130 @@
+# =============================================================================
+# OpenAPI Contract Validation
+# Validates OpenAPI specs and checks route coverage for both products.
+# Runs on PR/push to main when API files change.
+# =============================================================================
+name: OpenAPI Validation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "aitimemachine/api-server/src/routes/**"
+      - "aitimemachine/api-server/src/index.ts"
+      - "aitimemachine/api-server/docs/openapi.yaml"
+      - "gitgram/backend/src/routes/**"
+      - "gitgram/backend/src/index.ts"
+      - "gitgram/backend/docs/openapi.yaml"
+      - "scripts/validate-openapi-*.ts"
+      - ".github/workflows/openapi-validation.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "aitimemachine/api-server/src/routes/**"
+      - "aitimemachine/api-server/src/index.ts"
+      - "aitimemachine/api-server/docs/openapi.yaml"
+      - "gitgram/backend/src/routes/**"
+      - "gitgram/backend/src/index.ts"
+      - "gitgram/backend/docs/openapi.yaml"
+      - "scripts/validate-openapi-*.ts"
+      - ".github/workflows/openapi-validation.yml"
+
+concurrency:
+  group: openapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Step 1: Validate OpenAPI spec syntax and structure
+  # ---------------------------------------------------------------------------
+  validate-spec:
+    name: "Validate OpenAPI Specs"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install tsx (TypeScript runner)
+        run: npm install -g tsx
+
+      - name: Validate OpenAPI spec structure
+        run: npx tsx scripts/validate-openapi-spec.ts
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Check route coverage (code vs spec)
+  # ---------------------------------------------------------------------------
+  route-coverage:
+    name: "Route Coverage Check"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install tsx (TypeScript runner)
+        run: npm install -g tsx
+
+      - name: Run route coverage validation
+        run: npx tsx scripts/validate-openapi-routes.ts
+
+  # ---------------------------------------------------------------------------
+  # Step 3: Generate API documentation artifact
+  # ---------------------------------------------------------------------------
+  generate-docs:
+    name: "Generate API Docs Artifact"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate-spec]
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload AITM OpenAPI spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: aitm-openapi-spec
+          path: aitimemachine/api-server/docs/openapi.yaml
+          retention-days: 30
+
+      - name: Upload Gitgram OpenAPI spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitgram-openapi-spec
+          path: gitgram/backend/docs/openapi.yaml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Summary gate
+  # ---------------------------------------------------------------------------
+  openapi-gate:
+    name: "OpenAPI Validation Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs: [validate-spec, route-coverage]
+    if: always()
+    steps:
+      - name: Check validation results
+        run: |
+          if [[ "${{ needs.validate-spec.result }}" != "success" ]] || \
+             [[ "${{ needs.route-coverage.result }}" != "success" ]]; then
+            echo "OpenAPI validation failed."
+            echo "  validate-spec:   ${{ needs.validate-spec.result }}"
+            echo "  route-coverage:  ${{ needs.route-coverage.result }}"
+            exit 1
+          fi
+          echo "All OpenAPI validation checks passed."

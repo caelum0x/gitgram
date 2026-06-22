@@ -1,0 +1,240 @@
+# =============================================================================
+# Smoke Test Gate - Post-deploy health checks for Gitgram + AI Time Machine
+# Validates that deployed services are alive and responding correctly.
+# Triggered after deploy workflows or manually with environment URLs.
+# =============================================================================
+name: Smoke Tests (Post-Deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      gitgram_api_url:
+        description: "Gitgram API base URL (e.g. https://api.gitgram.dev)"
+        type: string
+        required: false
+      aitm_api_url:
+        description: "AITM API base URL (e.g. https://api.aitimemachine.dev)"
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      gitgram_api_url:
+        type: string
+        required: false
+      aitm_api_url:
+        type: string
+        required: false
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitgram API - Health & smoke checks
+  # ---------------------------------------------------------------------------
+  gitgram-smoke:
+    name: "Gitgram: Smoke Tests (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API_URL: ${{ inputs.gitgram_api_url || vars.GITGRAM_API_URL || 'http://localhost:3001' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for service readiness
+        run: |
+          echo "Waiting for Gitgram API at $API_URL to become ready..."
+          for i in $(seq 1 30); do
+            if curl -sf "$API_URL/health" > /dev/null 2>&1 || \
+               curl -sf "$API_URL/api/health" > /dev/null 2>&1; then
+              echo "Service is ready after ${i}s"
+              break
+            fi
+            echo "Attempt $i/30 - not ready yet..."
+            sleep 2
+          done
+
+      - name: Health check endpoint
+        run: |
+          echo "### Gitgram API Health Check" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -sf -w "\nHTTP_CODE:%{http_code}" "$API_URL/health" 2>/dev/null || \
+                     curl -sf -w "\nHTTP_CODE:%{http_code}" "$API_URL/api/health" 2>/dev/null || \
+                     echo "FAILED")
+
+          if echo "$RESPONSE" | grep -q "FAILED"; then
+            echo "Health check failed. Service may not be running at $API_URL"
+            echo "Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_CODE:")
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          echo "- HTTP Status: $HTTP_CODE" >> $GITHUB_STEP_SUMMARY
+          echo "- Response: \`$BODY\`" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Unexpected HTTP status code: $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: API response validation
+        run: |
+          echo "Validating basic API endpoints..."
+
+          # Test that auth endpoints exist and return proper error codes (not 500)
+          AUTH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/auth/login" -X POST \
+            -H "Content-Type: application/json" \
+            -d '{}' 2>/dev/null || echo "000")
+          echo "POST /api/auth/login (empty body): HTTP $AUTH_CODE"
+          if [ "$AUTH_CODE" = "500" ] || [ "$AUTH_CODE" = "000" ]; then
+            echo "Auth endpoint returned server error or is unreachable"
+            exit 1
+          fi
+
+          # Test that public endpoints return structured responses
+          USERS_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/users" 2>/dev/null || echo "000")
+          echo "GET /api/users: HTTP $USERS_CODE"
+          if [ "$USERS_CODE" = "500" ]; then
+            echo "Users endpoint returned server error"
+            exit 1
+          fi
+
+          echo "Gitgram API smoke tests passed."
+
+  # ---------------------------------------------------------------------------
+  # AITM API - Health & smoke checks
+  # ---------------------------------------------------------------------------
+  aitm-smoke:
+    name: "AITM: Smoke Tests (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API_URL: ${{ inputs.aitm_api_url || vars.AITM_API_URL || 'http://localhost:3000' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Wait for service readiness
+        run: |
+          echo "Waiting for AITM API at $API_URL to become ready..."
+          for i in $(seq 1 30); do
+            if curl -sf "$API_URL/health" > /dev/null 2>&1 || \
+               curl -sf "$API_URL/api/health" > /dev/null 2>&1; then
+              echo "Service is ready after ${i}s"
+              break
+            fi
+            echo "Attempt $i/30 - not ready yet..."
+            sleep 2
+          done
+
+      - name: Health check endpoint
+        run: |
+          echo "### AITM API Health Check" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -sf -w "\nHTTP_CODE:%{http_code}" "$API_URL/health" 2>/dev/null || \
+                     curl -sf -w "\nHTTP_CODE:%{http_code}" "$API_URL/api/health" 2>/dev/null || \
+                     echo "FAILED")
+
+          if echo "$RESPONSE" | grep -q "FAILED"; then
+            echo "Health check failed. Service may not be running at $API_URL"
+            echo "Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | grep -v "HTTP_CODE:")
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          echo "- HTTP Status: $HTTP_CODE" >> $GITHUB_STEP_SUMMARY
+          echo "- Response: \`$BODY\`" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Unexpected HTTP status code: $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: API response validation
+        run: |
+          echo "Validating AITM API endpoints..."
+
+          # Verify sessions endpoint exists
+          SESSIONS_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/sessions" 2>/dev/null || echo "000")
+          echo "GET /api/sessions: HTTP $SESSIONS_CODE"
+          # Expect 401 (unauthorized) or 200, not 500
+          if [ "$SESSIONS_CODE" = "500" ] || [ "$SESSIONS_CODE" = "000" ]; then
+            echo "Sessions endpoint returned server error or is unreachable"
+            exit 1
+          fi
+
+          # Verify sync endpoint exists
+          SYNC_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/sync" -X POST \
+            -H "Content-Type: application/json" \
+            -d '{}' 2>/dev/null || echo "000")
+          echo "POST /api/sync: HTTP $SYNC_CODE"
+          if [ "$SYNC_CODE" = "500" ]; then
+            echo "Sync endpoint returned server error"
+            exit 1
+          fi
+
+          # Verify keys/auth endpoint exists
+          KEYS_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/keys" 2>/dev/null || echo "000")
+          echo "GET /api/keys: HTTP $KEYS_CODE"
+          if [ "$KEYS_CODE" = "500" ]; then
+            echo "Keys endpoint returned server error"
+            exit 1
+          fi
+
+          echo "AITM API smoke tests passed."
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  smoke-gate:
+    name: Smoke Test Gate (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    needs:
+      - gitgram-smoke
+      - aitm-smoke
+    if: always()
+    steps:
+      - name: Check smoke test results
+        run: |
+          echo "### Smoke Test Summary (${{ inputs.environment }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Gitgram API | ${{ needs.gitgram-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| AITM API | ${{ needs.aitm-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
+
+          FAILED=false
+          if [[ "${{ needs.gitgram-smoke.result }}" == "failure" ]]; then
+            echo "Gitgram smoke tests FAILED"
+            FAILED=true
+          fi
+          if [[ "${{ needs.aitm-smoke.result }}" == "failure" ]]; then
+            echo "AITM smoke tests FAILED"
+            FAILED=true
+          fi
+
+          if [ "$FAILED" = true ]; then
+            echo ""
+            echo "Smoke test gate FAILED. Check deployed services."
+            exit 1
+          fi
+
+          echo "All smoke tests passed for ${{ inputs.environment }}."

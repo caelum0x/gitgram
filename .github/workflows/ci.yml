@@ -1,0 +1,247 @@
+# =============================================================================
+# CI - Gitgram + AI Time Machine
+# Runs on every push/PR to main.
+# Runs all test suites in parallel; typecheck and lint run independently.
+# fail-fast: false ensures all jobs complete even when one fails.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gitgram Backend - Jest tests against live Postgres + Redis services
+  # ---------------------------------------------------------------------------
+  test-gitgram-backend:
+    name: "Test: Gitgram Backend"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: gitgram/backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: gitgram_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: gitgram/backend/node_modules
+          key: npm-gitgram-backend-${{ hashFiles('gitgram/backend/package-lock.json') }}
+          restore-keys: npm-gitgram-backend-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm run test -- --forceExit
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/gitgram_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+  # ---------------------------------------------------------------------------
+  # Gitgram Web - Vitest
+  # ---------------------------------------------------------------------------
+  test-gitgram-web:
+    name: "Test: Gitgram Web"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: gitgram/web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: gitgram/web/node_modules
+          key: npm-gitgram-web-${{ hashFiles('gitgram/web/package-lock.json') }}
+          restore-keys: npm-gitgram-web-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # AITM API Server - Vitest
+  # ---------------------------------------------------------------------------
+  test-aitm:
+    name: "Test: AITM API Server"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: aitimemachine/api-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: aitimemachine/api-server/node_modules
+          key: npm-aitm-api-server-${{ hashFiles('aitimemachine/api-server/package-lock.json') }}
+          restore-keys: npm-aitm-api-server-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # TypeScript type checking - backend + web
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: "Typecheck: Backend + Web"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies (backend)
+        uses: actions/cache@v4
+        with:
+          path: gitgram/backend/node_modules
+          key: npm-gitgram-backend-${{ hashFiles('gitgram/backend/package-lock.json') }}
+          restore-keys: npm-gitgram-backend-
+
+      - name: Cache npm dependencies (web)
+        uses: actions/cache@v4
+        with:
+          path: gitgram/web/node_modules
+          key: npm-gitgram-web-${{ hashFiles('gitgram/web/package-lock.json') }}
+          restore-keys: npm-gitgram-web-
+
+      - name: Install backend dependencies
+        working-directory: gitgram/backend
+        run: npm ci --legacy-peer-deps
+
+      - name: Install web dependencies
+        working-directory: gitgram/web
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck backend
+        working-directory: gitgram/backend
+        run: npx tsc --noEmit
+
+      - name: Typecheck web
+        working-directory: gitgram/web
+        run: npx tsc --noEmit
+
+  # ---------------------------------------------------------------------------
+  # ESLint - backend (has .eslintrc.js); web uses Next.js lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: "Lint: Backend + Web"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies (backend)
+        uses: actions/cache@v4
+        with:
+          path: gitgram/backend/node_modules
+          key: npm-gitgram-backend-${{ hashFiles('gitgram/backend/package-lock.json') }}
+          restore-keys: npm-gitgram-backend-
+
+      - name: Cache npm dependencies (web)
+        uses: actions/cache@v4
+        with:
+          path: gitgram/web/node_modules
+          key: npm-gitgram-web-${{ hashFiles('gitgram/web/package-lock.json') }}
+          restore-keys: npm-gitgram-web-
+
+      - name: Install backend dependencies
+        working-directory: gitgram/backend
+        run: npm install
+
+      - name: Install web dependencies
+        working-directory: gitgram/web
+        run: npm install
+
+      - name: Lint backend
+        working-directory: gitgram/backend
+        run: npm run lint
+
+      - name: Lint web
+        working-directory: gitgram/web
+        run: npm run lint
