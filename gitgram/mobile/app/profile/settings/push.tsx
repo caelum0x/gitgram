@@ -1,0 +1,253 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Switch,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
+import { Colors } from '../../../constants/Colors';
+import Header from '../../../components/navigation/Header';
+import LoadingSpinner from '../../../components/common/LoadingSpinner';
+import { settingsService } from '../../../services/settingsService';
+import { logger } from '../../../utils/logger';
+
+export default function PushNotificationSettingsScreen() {
+  const [settings, setSettings] = useState({
+    enabled: true,
+    likes: true,
+    comments: true,
+    follows: true,
+    mentions: true,
+    messages: true,
+    posts: true,
+    reels: true,
+    stories: true,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await settingsService.getPushNotificationSettings();
+      setSettings(response.settings || response);
+    } catch (error) {
+      logger.error('Load push settings error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      await settingsService.updatePushNotificationSettings(settings);
+      Alert.alert('Success', 'Push notification settings saved');
+    } catch (error) {
+      logger.error('Save push settings error:', error);
+      Alert.alert('Error', 'Failed to save settings');
+    }
+  };
+
+  const toggleSetting = (key: keyof typeof settings) => {
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Header title="Push Notifications" />
+        <LoadingSpinner fullScreen />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Header title="Push Notifications" rightIcon="check" onRightPress={handleSave} />
+      <ScrollView style={styles.content}>
+        <View style={styles.section}>
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Enable Push Notifications</Text>
+              <Text style={styles.settingDescription}>
+                Receive push notifications on your device
+              </Text>
+            </View>
+            <Switch
+              value={settings.enabled}
+              onValueChange={() => toggleSetting('enabled')}
+              trackColor={{ false: Colors.border, true: Colors.accent }}
+            />
+          </View>
+        </View>
+
+        {settings.enabled && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Notification Types</Text>
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Likes</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when someone likes your post
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.likes}
+                  onValueChange={() => toggleSetting('likes')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Comments</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when someone comments on your post
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.comments}
+                  onValueChange={() => toggleSetting('comments')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Follows</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when someone follows you
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.follows}
+                  onValueChange={() => toggleSetting('follows')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Mentions</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when someone mentions you
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.mentions}
+                  onValueChange={() => toggleSetting('mentions')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Messages</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when you receive a message
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.messages}
+                  onValueChange={() => toggleSetting('messages')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>New Posts</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when people you follow post
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.posts}
+                  onValueChange={() => toggleSetting('posts')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>New Reels</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when people you follow post reels
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.reels}
+                  onValueChange={() => toggleSetting('reels')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Stories</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when people you follow post stories
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.stories}
+                  onValueChange={() => toggleSetting('stories')}
+                  trackColor={{ false: Colors.border, true: Colors.accent }}
+                />
+              </View>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+});
+

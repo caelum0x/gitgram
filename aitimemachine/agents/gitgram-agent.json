@@ -1,0 +1,107 @@
+{
+  "name": "Gitgram AI Agent",
+  "description": "AI agent for the Gitgram platform providing deterministic checkpointing, code intelligence, and A2A (agent-to-agent) coordination. Enables autonomous development workflows by managing restore points, analyzing repository structure, understanding code impact across the codebase, and coordinating with peer agents in multi-agent pipelines.",
+  "version": "2.0.0",
+  "url": "http://localhost:3001/a2a",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "skills": [
+    {
+      "id": "checkpoint",
+      "name": "Checkpoint Management",
+      "description": "Create and restore deterministic checkpoints of repository state. Supports tagging, branching, and point-in-time restore for safe autonomous agent workflows.",
+      "tags": ["checkpoint", "restore", "state-management", "aitimemachine"]
+    },
+    {
+      "id": "code-intelligence",
+      "name": "Code Intelligence",
+      "description": "Deep code understanding including impact analysis, dependency tracing, context retrieval, and change detection across the repository graph.",
+      "tags": ["code-analysis", "impact", "dependencies", "context", "graph"]
+    },
+    {
+      "id": "a2a-coordinator",
+      "name": "A2A Coordinator",
+      "description": "Agent-to-agent task delegation and coordination. Send tasks to peer agents, retrieve results, and discover available agents in the network.",
+      "tags": ["a2a", "multi-agent", "coordination", "delegation"]
+    },
+    {
+      "id": "repo-analysis",
+      "name": "Repository Analysis",
+      "description": "Convert repository contents to structured text for LLM ingestion, resolve and query documentation, and produce full-repo snapshots for analysis.",
+      "tags": ["repository", "docs", "snapshot", "llm-context"]
+    }
+  ],
+  "mcpTools": [
+    {
+      "name": "before_action",
+      "description": "Record intent before a destructive or significant action, enabling audit trails and rollback if needed."
+    },
+    {
+      "name": "after_action",
+      "description": "Record the outcome of an action with success/failure status and a description of what was done."
+    },
+    {
+      "name": "tm_checkpoint_create",
+      "description": "Create a named checkpoint of the current repository state for deterministic restore."
+    },
+    {
+      "name": "tm_checkpoint_restore",
+      "description": "Restore the repository to a previously created checkpoint by name or ID."
+    },
+    {
+      "name": "tm_ready",
+      "description": "Check whether the AITimeMachine service is ready and connected to the target repository."
+    },
+    {
+      "name": "tm_tag",
+      "description": "Apply a human-readable tag to a checkpoint for easier discovery and restore."
+    },
+    {
+      "name": "gn_query",
+      "description": "Query the GitNexus code graph for nodes, relationships, and structural information."
+    },
+    {
+      "name": "gn_impact",
+      "description": "Analyze the impact of a proposed change across the dependency graph — surfaces affected files, functions, and modules."
+    },
+    {
+      "name": "gn_context",
+      "description": "Retrieve enriched code context for a symbol, file, or module including callers, callees, and related nodes."
+    },
+    {
+      "name": "gn_detect_changes",
+      "description": "Detect what has changed in the repository since a given checkpoint or commit reference."
+    },
+    {
+      "name": "gn_trace",
+      "description": "Trace execution paths or data flow between two symbols or modules in the code graph."
+    },
+    {
+      "name": "a2a_send_task",
+      "description": "Send a task to a peer agent via the A2A protocol and receive a task ID for polling."
+    },
+    {
+      "name": "a2a_get_task",
+      "description": "Retrieve the current status and result of a previously sent A2A task."
+    },
+    {
+      "name": "a2a_list_agents",
+      "description": "List all agents currently registered in the A2A agent network."
+    },
+    {
+      "name": "tm_repo_to_text",
+      "description": "Serialize the repository (or a subtree) to a structured text format suitable for LLM context windows."
+    },
+    {
+      "name": "tm_docs_resolve",
+      "description": "Resolve documentation references — locate the canonical doc source for a symbol, module, or topic."
+    },
+    {
+      "name": "tm_docs_query",
+      "description": "Query indexed repository documentation with a natural language question and receive cited answers."
+    }
+  ]
+}

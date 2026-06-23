@@ -1,0 +1,7 @@
+export { AuthPage } from './auth.page'
+export { LandingPage } from './landing.page'
+export { HomePage } from './home.page'
+export { ProfilePage } from './profile.page'
+export { SearchPage } from './search.page'
+export { SettingsPage } from './settings.page'
+export { AccountSettingsPage } from './account-settings.page'

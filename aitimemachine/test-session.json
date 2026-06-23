@@ -1,0 +1,12 @@
+{
+  "sessionId": "b09e14dd-6262-40a4-b975-352235f517df",
+  "eventCount": 0,
+  "events": [],
+  "summary": {
+    "messageCount": 0,
+    "codeChanges": 0,
+    "toolCalls": 0,
+    "checkpoints": 0,
+    "filesChanged": []
+  }
+}

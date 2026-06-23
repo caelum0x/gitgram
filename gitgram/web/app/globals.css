@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prism.js syntax highlighting theme */
+@import '../styles/prism-github-dark.css';
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.focus-visible:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Gitgram Design System Colors */
+:root {
+  /* Core colors - Premium Dark Theme */
+  --background: #0A0C10; /* Very dark blue-gray, almost black */
+  --background-light: #161b22; /* Slightly lighter for sections */
+  --background-dark: #010409; /* Deepest background */
+  
+  --surface: #161b22; /* Card background */
+  --surface-secondary: #21262d; /* Hover state / secondary surface */
+  --surface-dark: #0d1117; /* Darker surface */
+  
+  --border: #30363d; /* Subtle border */
+  
+  /* Text colors */
+  --foreground: #c9d1d9; /* Primary text (off-white) */
+  --foreground-secondary: #8b949e; /* Secondary text (gray) */
+  --text-primary-light: #0A0C10;
+  --text-primary-dark: #f0f6fc;
+  --text-secondary-light: #57606a;
+  --text-secondary-dark: #8b949e;
+  
+  /* Accent colors */
+  --primary: #58a6ff; /* GitHub Blue */
+  --primary-hover: #79c0ff;
+  --accent: #238636; /* GitHub Green */
+  --accent-hover: #2ea043;
+  --info: #58a6ff;
+  
+  /* Semantic colors */
+  --success: #238636;
+  --success-hover: #2ea043;
+  --error: #da3633;
+  --warning: #d29922;
+  
+  /* Interactive states */
+  --hover: #21262d;
+  --active: #30363d;
+  --disabled: #484f58;
+  
+  /* Button colors */
+  --button-primary: #238636; /* Green for primary actions */
+  --button-primary-hover: #2ea043;
+  --button-secondary: #21262d;
+  --button-secondary-hover: #30363d;
+  
+  /* Content backgrounds */
+  --content-light: #ffffff;
+  --content-dark: #0d1117;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+

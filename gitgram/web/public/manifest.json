@@ -1,0 +1,16 @@
+{
+  "name": "Gitgram",
+  "short_name": "Gitgram",
+  "description": "The social network for developers",
+  "start_url": "/feed",
+  "display": "standalone",
+  "background_color": "#0F0F1A",
+  "theme_color": "#7C3AED",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [],
+  "categories": ["social", "developer", "productivity"]
+}

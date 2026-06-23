@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CodeShare - Project Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1337ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101322",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-[#929bc9] dark:text-gray-300">
+<div class="relative flex min-h-screen w-full flex-col">
+<!-- TopNavBar -->
+<header class="sticky top-0 z-50 flex items-center justify-center border-b border-solid border-gray-200/10 dark:border-b-[#232948] bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm">
+<div class="flex w-full max-w-7xl items-center justify-between whitespace-nowrap px-4 py-3 md:px-8">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-white">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_6_330)">
+<path clip-rule="evenodd" d="M24 0.757355L47.2426 24L24 47.2426L0.757355 24L24 0.757355ZM21 35.7574V12.2426L9.24264 24L21 35.7574Z" fill="currentColor" fill-rule="evenodd"></path>
+</g>
+<defs>
+<clippath id="clip0_6_330">
+<rect fill="white" height="48" width="48"></rect>
+</clippath>
+</defs>
+</svg>
+</div>
+<h2 class="text-lg font-bold leading-tight tracking-[-0.015em] text-gray-800 dark:text-white">CodeShare</h2>
+</div>
+<nav class="hidden items-center gap-9 md:flex">
+<a class="text-sm font-medium leading-normal text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" href="#">Discover</a>
+<a class="text-sm font-medium leading-normal text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" href="#">Activity</a>
+<a class="text-sm font-medium leading-normal text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" href="#">Profile</a>
+</nav>
+</div>
+<div class="flex flex-1 items-center justify-end gap-4 md:gap-8">
+<label class="hidden md:flex flex-col min-w-40 !h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-[#929bc9] flex border border-r-0 border-gray-300 dark:border-[#232948] bg-gray-100 dark:bg-[#232948] items-center justify-center pl-3 rounded-l-lg">
+<span class="material-symbols-outlined text-xl">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-800 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary border border-l-0 border-gray-300 dark:border-[#232948] bg-gray-100 dark:bg-[#232948] h-full placeholder:text-[#929bc9] px-3 rounded-l-none pl-2 text-sm font-normal leading-normal" placeholder="Search" value=""/>
+</div>
+</label>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors">
+<span class="truncate">New Project</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar image" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDczWOHWpsld9iMxWQItlO92wlHOjl85qpIWC3CiieVL0pPmzWDC7PQpXfAjHBGM-25_rbnYVVRCnRvzg_nfKRIO6ECmbdoJpfSA-lESOPlGW-NgdJ3_8FTpLTfw6YiuEISrxfDNOIUD7qfz0I21-_kY739_V912Vwm-55q_tDPuQHaqyiygWa0OnWilBMOK8r0ZNEcBRUAZ0PM-6Xwa4TBEdPrqn71jFmnM8oJHFMBRQsaBqUHfolcjz0zmHKIRUp3Cp7cUcPKTjo");'></div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex w-full flex-1 justify-center px-4 py-8 md:px-8">
+<div class="w-full max-w-7xl">
+<!-- Breadcrumbs -->
+<div class="flex flex-wrap gap-2 px-4 pb-4">
+<a class="text-sm font-medium leading-normal text-gray-500 hover:text-primary dark:text-[#929bc9] dark:hover:text-white" href="#">Home</a>
+<span class="text-sm font-medium leading-normal text-gray-500 dark:text-[#929bc9]">/</span>
+<a class="text-sm font-medium leading-normal text-gray-500 hover:text-primary dark:text-[#929bc9] dark:hover:text-white" href="#">codestar</a>
+<span class="text-sm font-medium leading-normal text-gray-500 dark:text-[#929bc9]">/</span>
+<span class="text-sm font-medium leading-normal text-gray-800 dark:text-white">nova-vision</span>
+</div>
+<div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
+<!-- Left Column: Project Info -->
+<div class="col-span-1 flex flex-col gap-6 lg:col-span-2">
+<!-- PageHeading -->
+<div class="flex flex-wrap items-start justify-between gap-4 p-4">
+<div class="flex min-w-72 flex-col gap-2">
+<h1 class="text-4xl font-black leading-tight tracking-[-0.033em] text-gray-900 dark:text-white">codestar/nova-vision</h1>
+<p class="text-base font-normal leading-normal text-gray-600 dark:text-[#929bc9]">A modern, open-source project for visualizing complex data streams.</p>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-10 px-4 bg-gray-200 dark:bg-[#232948] text-gray-800 dark:text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-300 dark:hover:bg-[#323b67] transition-colors">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+<span class="truncate">View on GitHub</span>
+</button>
+</div>
+<!-- Stats -->
+<div class="grid grid-cols-2 gap-4 px-4 sm:grid-cols-4">
+<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<p class="text-sm font-medium leading-normal text-gray-600 dark:text-white">Stars</p>
+<p class="tracking-light text-2xl font-bold leading-tight text-gray-900 dark:text-white">12,456</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<p class="text-sm font-medium leading-normal text-gray-600 dark:text-white">Forks</p>
+<p class="tracking-light text-2xl font-bold leading-tight text-gray-900 dark:text-white">3,102</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<p class="text-sm font-medium leading-normal text-gray-600 dark:text-white">Issues</p>
+<p class="tracking-light text-2xl font-bold leading-tight text-gray-900 dark:text-white">89</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<p class="text-sm font-medium leading-normal text-gray-600 dark:text-white">Contributors</p>
+<p class="tracking-light text-2xl font-bold leading-tight text-gray-900 dark:text-white">42</p>
+</div>
+</div>
+<!-- Chips / Tech Tags -->
+<div class="flex flex-wrap gap-3 px-4">
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/10 dark:bg-[#232948] px-4">
+<p class="text-sm font-medium leading-normal text-primary dark:text-white">JavaScript</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/10 dark:bg-[#232948] px-4">
+<p class="text-sm font-medium leading-normal text-primary dark:text-white">React</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/10 dark:bg-[#232948] px-4">
+<p class="text-sm font-medium leading-normal text-primary dark:text-white">Node.js</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/10 dark:bg-[#232948] px-4">
+<p class="text-sm font-medium leading-normal text-primary dark:text-white">D3.js</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/10 dark:bg-[#232948] px-4">
+<p class="text-sm font-medium leading-normal text-primary dark:text-white">Webpack</p>
+</div>
+</div>
+<!-- README Display -->
+<div class="mx-4 overflow-hidden rounded-xl border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent">
+<div class="bg-gray-100 dark:bg-[#232948] px-4 py-2 border-b border-gray-200 dark:border-[#323b67]">
+<h3 class="font-bold text-gray-800 dark:text-white">README.md</h3>
+</div>
+<article class="prose prose-sm dark:prose-invert max-w-none p-6 text-gray-700 dark:text-gray-300">
+<h2>About Nova Vision</h2>
+<p>Nova Vision is a powerful, web-based tool for creating interactive and dynamic data visualizations. Built with performance in mind, it leverages D3.js for rendering and React for a declarative component-based UI.</p>
+<h3>Features</h3>
+<ul>
+<li>Real-time data updates</li>
+<li>Customizable chart types</li>
+<li>Export to SVG and PNG</li>
+<li>Plugin architecture for extensibility</li>
+</ul>
+<h3>Installation</h3>
+<p>To get started, clone the repository and install the dependencies:</p>
+<pre><code class="font-mono">git clone https://github.com/codestar/nova-vision.git
+cd nova-vision
+npm install</code></pre>
+<h3>Usage</h3>
+<p>Start the development server:</p>
+<pre><code class="font-mono">npm start</code></pre>
+<p>Open <a href="http://localhost:3000">http://localhost:3000</a> to view it in your browser.</p>
+</article>
+</div>
+</div>
+<!-- Right Column: Social Interaction -->
+<div class="col-span-1 flex flex-col gap-6">
+<!-- Social Actions & Author Info -->
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<div class="flex items-center justify-between">
+<a class="flex items-center gap-3 group" href="#">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-12" data-alt="Project author's avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBaYjqqGFDzLHJSa4fy5ZCtY0OXuUKfd62wywuEAYNvyHOg-AHc-LhPMTaE4qHmRBXHqbUqtXHDotFGC8MSnBQHLzqzVCDsZB-O5myMAyqgRpOTd8tsDCcupggq6tNxJ_c2iw0g2z1wEPgutLw62Bwo8K-vwuFM38DCStY0bA_8e8dujqVxKNJtYR402DaDntRsAoBRm35BKH7O_VyywWD-uGaLxpTf0Sqsre57gndrXJ0gADubg3guq6jBEg644_iSItu4aA2Fo4c");'></div>
+<div>
+<p class="font-bold text-gray-800 dark:text-white group-hover:text-primary dark:group-hover:text-primary transition-colors">Alex Rivera</p>
+<p class="text-sm text-gray-500 dark:text-gray-400">@codestar</p>
+</div>
+</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="flex w-full min-w-[84px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors">
+<span class="material-symbols-outlined text-lg">favorite</span>
+<span class="truncate">Like</span>
+<span class="ml-1 rounded-md bg-white/20 px-2 py-0.5 text-xs">1.2k</span>
+</button>
+<button class="flex w-full min-w-[84px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-10 px-4 bg-gray-200 dark:bg-[#232948] text-gray-800 dark:text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-300 dark:hover:bg-[#323b67] transition-colors">
+<span class="material-symbols-outlined text-lg">chat_bubble</span>
+<span class="truncate">Comment</span>
+</button>
+</div>
+</div>
+<!-- Comments Section -->
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<h3 class="text-lg font-bold text-gray-800 dark:text-white">Comments (3)</h3>
+<!-- New Comment Form -->
+<div class="flex items-start gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 shrink-0" data-alt="Current user's avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAjBSIwCMBSYnRa48GwltwQ94sDPAIjoHw3DnKbBMt_YaWxENJ64B7hnFLWKfrA6UwShBDMc3HcRLC80YiuKDY7mAjt2GVAZPc1o4xju7-2NhLhtkoglycTofb-YPchEbkd5arfXzp_cXMPJM_gu2uE1qxBRwPA7fROLhgtSq78-k-cPWk76bsJs9KrPzDJgzX1hyAfenJQqsDNPfIi3_9TnR7S4hKtJj8RL3Qm1oZN_zXknGtopP54wnf2RU4L7tcVWoa7Rn0R1co");'></div>
+<div class="flex-1">
+<textarea class="form-textarea w-full resize-none rounded-lg border border-gray-300 dark:border-[#323b67] bg-gray-100 dark:bg-[#232948] text-gray-800 dark:text-white placeholder:text-gray-500 dark:placeholder:text-[#929bc9] focus:border-primary focus:ring-2 focus:ring-primary/50" placeholder="Add a comment..." rows="2"></textarea>
+<button class="mt-2 float-right flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors">
+                                        Post
+                                    </button>
+</div>
+</div>
+<!-- Comments List -->
+<div class="flex flex-col gap-4 pt-4 border-t border-gray-200 dark:border-t-[#232948]">
+<div class="flex items-start gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 shrink-0" data-alt="Commenter's avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCO0C_MQddS4SxBKK9ZGUBVL02sOjz7zxQUGH73l20GmZZQNLL3KWBl4-ihpbTnjErFF2KjeDShU-eDLwsWT9Gju5ErN40X_JnUokvQGKbgPQSx8FixqKvZqbK5EczmzroN_-C3l0dpGrcfE8RB_Ive5J1qVrwysAbbfPE56PHZzxSbWEYCwj1pGUh4bJkg_YFMIUaP43cuh-leuyXKneci2KY8DOCfe1oaMYpI7nokg1LpSfGV4Ju945Hjir7nhmKZr5iX9WO9iyI");'></div>
+<div class="flex-1">
+<div class="rounded-lg bg-gray-100 dark:bg-[#232948] p-3">
+<p class="text-sm font-bold text-gray-800 dark:text-white">Elena Rodriguez</p>
+<p class="text-sm text-gray-600 dark:text-gray-300">This is exactly what I was looking for! The plugin architecture is brilliant.</p>
+</div>
+<p class="mt-1 pl-3 text-xs text-gray-500 dark:text-gray-400">2 hours ago</p>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 shrink-0" data-alt="Commenter's avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBmqOtzqmprVyNcGHcoXbDzDSAorImUnjLmzqeWeL5raiNBq9ZWbTi5ZiLpn5imhOlPibmPr_U6Rl3ifseaxoKruJSP5LJuwk0CNPVoFzAIFnc9Ex8Md-LAZk35MVqmqQb28HeqQ1zc6InVldAJ5DNURDPPB3LXyIo0rYvV1B3ajM_XmEDD-xh8tqT4gdAvyO23GSWrQBZsCqs0LQkpuLNVUz4plyGgTS_tzmv58Ov_arpprIN7sPtS83aipDgOGG83xohOl1mmn0o");'></div>
+<div class="flex-1">
+<div class="rounded-lg bg-gray-100 dark:bg-[#232948] p-3">
+<p class="text-sm font-bold text-gray-800 dark:text-white">Ben Carter</p>
+<p class="text-sm text-gray-600 dark:text-gray-300">Awesome project. How can I contribute?</p>
+</div>
+<p class="mt-1 pl-3 text-xs text-gray-500 dark:text-gray-400">5 hours ago</p>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-8 shrink-0" data-alt="Project author's avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB4AzuxcVy6QJfwkw9bzK3qb1QvrsO7LCt4ORkcCb6AcX8NC1LSWhiE-RWlsfofuXz_38J_HFl_JfGaIFnOibgXgPhdM1Hu24Fsd_JMqreP4MbdTk-2JCJVHw86c-UThjIPh2JW6PlIPlirsKxkpWXYif9uN6tlU9J-X2aFsoF9ANyy12AMPFVRWyWItmvXvitWFndAgvyq8LaGFJ1Etw99QQp08vQZimWDPo8X4yewXsSyPHN_gsqdNG8DqnbgGgaPoC1M-KGWsdg");'></div>
+<div class="flex-1">
+<div class="rounded-lg bg-primary/10 dark:bg-primary/20 p-3 ring-1 ring-inset ring-primary/20 dark:ring-primary/40">
+<p class="text-sm font-bold text-gray-800 dark:text-white">Alex Rivera <span class="ml-1 text-xs font-medium text-primary dark:text-blue-300">(Author)</span></p>
+<p class="text-sm text-gray-600 dark:text-gray-300">Thanks, Ben! Check out the `CONTRIBUTING.md` file in the repo. We'd love to have your help.</p>
+</div>
+<p class="mt-1 pl-3 text-xs text-gray-500 dark:text-gray-400">4 hours ago</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Related Projects -->
+<div class="flex flex-col gap-4 rounded-lg border border-gray-200 dark:border-[#323b67] bg-white dark:bg-transparent p-4">
+<h3 class="text-lg font-bold text-gray-800 dark:text-white">Related Projects</h3>
+<div class="flex flex-col gap-4">
+<a class="group" href="#">
+<p class="font-bold text-gray-800 dark:text-white group-hover:text-primary transition-colors">jane_dev/chartify</p>
+<p class="text-sm text-gray-600 dark:text-gray-400">A lightweight charting library for React.</p>
+</a>
+<a class="group" href="#">
+<p class="font-bold text-gray-800 dark:text-white group-hover:text-primary transition-colors">dataviz-co/graph-builder</p>
+<p class="text-sm text-gray-600 dark:text-gray-400">Node.js library for creating complex graph visualizations.</p>
+</a>
+<a class="group" href="#">
+<p class="font-bold text-gray-800 dark:text-white group-hover:text-primary transition-colors">sam_codes/react-maps</p>
+<p class="text-sm text-gray-600 dark:text-gray-400">Declarative and composable maps for React applications.</p>
+</a>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

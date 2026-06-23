@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "aitm": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "GITNEXUS_URL": "http://localhost:3001",
+        "AITM_A2A_AGENTS": "[]"
+      }
+    },
+    "gitnexus": {
+      "command": "node",
+      "args": ["../gitnexus/dist/cli/index.js", "mcp"],
+      "description": "GitNexus code intelligence — query, impact, context, trace"
+    },
+    "context7": {
+      "command": "node",
+      "args": ["../context7/packages/mcp/dist/index.js"],
+      "description": "Context7 — fetch up-to-date library documentation"
+    },
+    "pal": {
+      "command": "bash",
+      "args": ["../pal-mcp-server/run-server.sh"],
+      "description": "PAL MCP Server — AI tools: chat, codereview, debug, planner"
+    }
+  }
+}

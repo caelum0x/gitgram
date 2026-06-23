@@ -1,0 +1,170 @@
+# =============================================================================
+# Gitgram PR Check - Fast feedback for pull requests
+# =============================================================================
+# Lightweight checks that run on every PR. The full CI pipeline (ci.yml) also
+# runs on PRs, but this workflow provides quicker initial feedback.
+# =============================================================================
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: gitgram-pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend quick checks
+  # ---------------------------------------------------------------------------
+  backend-check:
+    name: "Backend: Quick Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests (no DB)
+        run: npx jest --testPathIgnorePatterns='integration' --passWithNoTests
+        env:
+          JWT_SECRET: test-secret-key
+          NODE_ENV: test
+
+  # ---------------------------------------------------------------------------
+  # Web quick checks
+  # ---------------------------------------------------------------------------
+  web-check:
+    name: "Web: Quick Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Build (Next.js)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.gitgram.app/api
+          NEXT_PUBLIC_SOCKET_URL: https://api.gitgram.app
+
+  # ---------------------------------------------------------------------------
+  # Prisma migration consistency check (no DB needed)
+  # ---------------------------------------------------------------------------
+  migration-check:
+    name: "Backend: Migration Files Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Check migration file integrity
+        run: |
+          echo "Checking Prisma migration files..."
+          MIGRATION_DIR="prisma/migrations"
+          if [ ! -d "$MIGRATION_DIR" ]; then
+            echo "No migrations directory found."
+            exit 0
+          fi
+
+          MIGRATION_COUNT=$(find "$MIGRATION_DIR" -name "migration.sql" | wc -l)
+          echo "Found $MIGRATION_COUNT migration(s)."
+
+          # Verify migration_lock.toml exists
+          if [ ! -f "$MIGRATION_DIR/migration_lock.toml" ]; then
+            echo "WARNING: migration_lock.toml is missing."
+          else
+            echo "migration_lock.toml present."
+          fi
+
+          echo "Migration files check complete."
+
+  # ---------------------------------------------------------------------------
+  # OpenAPI validation
+  # ---------------------------------------------------------------------------
+  openapi-check:
+    name: "Quality: OpenAPI Coverage"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install root dependencies (for script)
+        run: |
+          if [ -f package.json ]; then
+            npm ci --ignore-scripts 2>/dev/null || true
+          fi
+
+      - name: Validate OpenAPI route coverage
+        run: npx tsx scripts/validate-openapi-routes.ts
+        working-directory: .

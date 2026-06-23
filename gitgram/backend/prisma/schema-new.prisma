@@ -1,0 +1,365 @@
+// NEW SCHEMA - Repository-as-Account Architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE: Account System
+// ============================================
+
+enum AccountType {
+  USER
+  REPOSITORY
+  ORGANIZATION
+}
+
+// Universal Account - can be User, Repository, or Organization
+model Account {
+  id          String      @id @default(cuid())
+  type        AccountType
+  username    String      @unique
+  displayName String?
+  avatar      String?
+  bio         String?     @db.Text
+  verified    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations based on type
+  userId         String?   @unique
+  user           User?     @relation(fields: [userId], references: [id])
+  
+  repositoryId   String?   @unique
+  repository     Repository? @relation(fields: [repositoryId], references: [id])
+  
+  organizationId String?   @unique
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  // Social features (available to all account types)
+  posts          Post[]
+  stories        Story[]
+  reels          Reel[]
+  comments       Comment[]
+  likes          Like[]
+  
+  followers      Follow[]  @relation("AccountFollowers")
+  following      Follow[]  @relation("AccountFollowing")
+  
+  sentMessages   Message[] @relation("MessageSender")
+  receivedMessages Message[] @relation("MessageReceiver")
+  
+  @@index([type])
+  @@index([username])
+}
+
+// ============================================
+// USER: Individual developers
+// ============================================
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  password          String?
+  githubId          String?  @unique
+  githubUsername    String?
+  githubAccessToken String?
+  googleId          String?  @unique
+  emailVerified     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Link to Account
+  account           Account?
+  
+  // User can manage multiple repositories
+  managedRepos      RepositoryManager[]
+  
+  // User can be part of organizations
+  orgMemberships    OrganizationMember[]
+  
+  sessions          Session[]
+  
+  @@index([email])
+  @@index([githubId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// ============================================
+// REPOSITORY: GitHub repos as social accounts
+// ============================================
+
+model Repository {
+  id          String   @id @default(cuid())
+  owner       String   // GitHub owner
+  name        String   // GitHub repo name
+  fullName    String   @unique // "owner/name"
+  
+  // Link to Account (social profile)
+  account     Account?
+  
+  // GitHub data
+  description String?  @db.Text
+  stars       Int      @default(0)
+  forks       Int      @default(0)
+  watchers    Int      @default(0)
+  language    String?
+  topics      String[]
+  htmlUrl     String
+  
+  // Claiming & Management
+  claimedBy   String?  // User ID who claimed
+  claimedAt   DateTime?
+  managers    RepositoryManager[]
+  
+  // Metadata
+  lastSynced  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([owner, name])
+  @@index([owner])
+  @@index([claimedBy])
+}
+
+enum ManagerRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model RepositoryManager {
+  id           String      @id @default(cuid())
+  repositoryId String
+  userId       String
+  role         ManagerRole @default(EDITOR)
+  createdAt    DateTime    @default(now())
+  
+  repository   Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([repositoryId, userId])
+  @@index([userId])
+}
+
+// ============================================
+// ORGANIZATION: Companies/Teams
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  
+  // Link to Account
+  account     Account?
+  
+  // Organization data
+  website     String?
+  location    String?
+  
+  // Members
+  members     OrganizationMember[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([slug])
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(MEMBER)
+  createdAt      DateTime @default(now())
+  
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+// ============================================
+// SOCIAL: Posts, Stories, Reels
+// ============================================
+
+enum PostType {
+  POST
+  REEL
+  STORY
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  accountId   String   // Can be user, repo, or org account
+  content     String   @db.Text
+  mediaUrls   String[]
+  type        PostType @default(POST)
+  
+  likesCount    Int    @default(0)
+  commentsCount Int    @default(0)
+  sharesCount   Int    @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  likes       Like[]
+  
+  @@index([accountId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  accountId String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  @@index([postId])
+  @@index([accountId])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  accountId String
+  createdAt DateTime @default(now())
+  
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  @@unique([postId, accountId])
+  @@index([postId])
+  @@index([accountId])
+}
+
+model Story {
+  id          String   @id @default(cuid())
+  accountId   String
+  mediaUrl    String
+  mediaType   String   // image/video
+  caption     String?  @db.Text
+  viewsCount  Int      @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  @@index([accountId])
+  @@index([expiresAt])
+}
+
+model Reel {
+  id          String   @id @default(cuid())
+  accountId   String
+  title       String
+  videoUrl    String
+  thumbnailUrl String
+  duration    Int
+  viewsCount  Int      @default(0)
+  likesCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  @@index([accountId])
+  @@index([createdAt])
+}
+
+// ============================================
+// SOCIAL: Follow System
+// ============================================
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String   // Account following
+  followingId String   // Account being followed
+  createdAt   DateTime @default(now())
+  
+  follower    Account  @relation("AccountFollowers", fields: [followerId], references: [id], onDelete: Cascade)
+  following   Account  @relation("AccountFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+// ============================================
+// MESSAGING
+// ============================================
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String   @db.Text
+  mediaUrl   String?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  
+  sender     Account  @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   Account  @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FOLLOW
+  MENTION
+  MESSAGE
+  REPO_UPDATE
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  accountId String
+  type      NotificationType
+  actorId   String?          // Account that triggered notification
+  postId    String?
+  content   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  
+  @@index([accountId])
+  @@index([read])
+  @@index([createdAt])
+}

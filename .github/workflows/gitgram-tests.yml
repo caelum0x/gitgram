@@ -1,0 +1,179 @@
+# =============================================================================
+# Gitgram Tests - Backend Jest suites, Web typecheck, and Playwright smoke.
+# Triggers only on changes under gitgram/**.
+# fail-fast: false so backend / web / e2e all report independently.
+# =============================================================================
+name: Gitgram Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gitgram/**"
+      - ".github/workflows/gitgram-tests.yml"
+  pull_request:
+    paths:
+      - "gitgram/**"
+      - ".github/workflows/gitgram-tests.yml"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend - Jest against live Postgres + Redis.
+  # ---------------------------------------------------------------------------
+  backend:
+    name: "Test: Gitgram Backend (Jest)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: gitgram/backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: gitgram_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-gitgram-backend-${{ hashFiles('gitgram/backend/package-lock.json') }}
+          restore-keys: npm-gitgram-backend-
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Run Jest suites
+        run: npm run test:coverage -- --forceExit
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/gitgram_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitgram-backend-coverage
+          path: gitgram/backend/coverage/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Web - TypeScript type checking.
+  # ---------------------------------------------------------------------------
+  web-typecheck:
+    name: "Typecheck: Gitgram Web"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: gitgram/web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-gitgram-web-${{ hashFiles('gitgram/web/package-lock.json') }}
+          restore-keys: npm-gitgram-web-
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck web
+        run: npx tsc --noEmit
+
+  # ---------------------------------------------------------------------------
+  # Web - Playwright smoke (chromium, navigation flow only).
+  # ---------------------------------------------------------------------------
+  web-e2e-smoke:
+    name: "E2E Smoke: Gitgram Web (Playwright)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: gitgram/web
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-gitgram-web-${{ hashFiles('gitgram/web/package-lock.json') }}
+          restore-keys: npm-gitgram-web-
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Install Playwright browsers (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright smoke (navigation)
+        run: npx playwright test e2e/navigation.spec.ts --project=chromium
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitgram-web-playwright-report
+          path: gitgram/web/playwright-report/**
+          if-no-files-found: ignore
+          retention-days: 7

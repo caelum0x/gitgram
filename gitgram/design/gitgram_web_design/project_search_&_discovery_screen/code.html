@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GitGram - Discover Projects</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+            'FILL' 0,
+            'wght' 400,
+            'GRAD' 0,
+            'opsz' 24
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#1337ec",
+              "background-light": "#f6f6f8",
+              "background-dark": "#101322",
+              "content-light": "#ffffff",
+              "content-dark": "#1a202c",
+              "border-light": "#e2e8f0",
+              "border-dark": "#2d3748",
+              "text-primary-light": "#1a202c",
+              "text-primary-dark": "#f5f5f5",
+              "text-secondary-light": "#4a5568",
+              "text-secondary-dark": "#a9a9a9",
+            },
+            fontFamily: {
+              "display": ["Space Grotesk", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-text-primary-light dark:text-text-primary-dark">
+<div class="relative flex h-auto min-h-screen w-full flex-col">
+<!-- Top Navigation Bar -->
+<header class="sticky top-0 z-50 flex items-center justify-between whitespace-nowrap border-b border-solid border-border-light dark:border-border-dark px-6 py-3 bg-content-light dark:bg-content-dark bg-opacity-80 backdrop-blur-sm">
+<div class="flex items-center gap-4 text-text-primary-light dark:text-text-primary-dark">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M4 4H17.3334V17.3334H30.6666V30.6666H44V44H4V4Z" fill="currentColor"></path>
+</svg>
+</div>
+<h2 class="text-lg font-bold leading-tight tracking-[-0.015em]">GitGram</h2>
+</div>
+<div class="hidden md:flex items-center gap-9">
+<a class="text-sm font-medium leading-normal" href="#">Home</a>
+<a class="text-primary text-sm font-bold leading-normal" href="#">Explore</a>
+<a class="text-sm font-medium leading-normal" href="#">Profile</a>
+</div>
+<div class="flex flex-1 justify-end gap-4 items-center">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-primary/10 dark:bg-primary/20 text-text-primary-light dark:text-text-primary-dark gap-2 text-sm font-bold leading-normal tracking-[0.015em] min-w-0 px-2.5">
+<span class="material-symbols-outlined text-xl">notifications</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar placeholder" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCHoLcoUHzuVt_bb5AjHqh0pgpObYgWMpuqhP3-eF94LC7N4lTv1RpFPUOzOEBn11ywdkHNr2LsNG3VgpWNSTTOiFxVtOSLjOl3REaoyDdS_I5wPyPK2m8wXBddrM_JP-1pLx4bOsAPc14cwTxEMKJURN6Fi2odcu9LbohWFlfcGstIalE0diiKFmYwHoxB-rIK6LGDMqlbpbAfEpB3KQU6lGdUUH0DUXQr2ghECxJuR-ZbaLgY-6whjfoGio3VdJPC0sKWXb17TTw");'></div>
+</div>
+</header>
+<!-- Main Content Area -->
+<div class="flex flex-1">
+<!-- Filtering Sidebar (Left Column) -->
+<aside class="hidden lg:flex w-64 flex-col border-r border-border-light dark:border-border-dark p-6 space-y-8">
+<div>
+<h3 class="font-bold mb-4 text-text-primary-light dark:text-text-primary-dark">Sort by</h3>
+<div class="flex flex-col gap-2">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 dark:bg-primary/20 text-primary" href="#">
+<span class="material-symbols-outlined text-xl">trending_up</span>
+<p class="text-sm font-medium">Trending</p>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" href="#">
+<span class="material-symbols-outlined text-xl">star</span>
+<p class="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">Most Stars</p>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5" href="#">
+<span class="material-symbols-outlined text-xl">update</span>
+<p class="text-sm font-medium text-text-secondary-light dark:text-text-secondary-dark">Recently Updated</p>
+</a>
+</div>
+</div>
+<div>
+<h3 class="font-bold mb-4 text-text-primary-light dark:text-text-primary-dark">Tags/Topics</h3>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">javascript</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">ai</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">rust</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">react</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">python</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">devops</span>
+</div>
+</div>
+<div>
+<h3 class="font-bold mb-4 text-text-primary-light dark:text-text-primary-dark">Language</h3>
+<div class="flex flex-col gap-2">
+<a class="text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary" href="#">Python</a>
+<a class="text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary" href="#">TypeScript</a>
+<a class="text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary" href="#">Go</a>
+<a class="text-sm text-text-secondary-light dark:text-text-secondary-dark hover:text-primary" href="#">C++</a>
+</div>
+</div>
+</aside>
+<!-- Main Feed (Center Column) -->
+<main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<!-- Page Heading -->
+<div class="flex flex-wrap justify-between gap-3 p-4">
+<div class="flex min-w-72 flex-col gap-2">
+<p class="text-4xl font-black leading-tight tracking-[-0.033em] text-text-primary-light dark:text-text-primary-dark">Discover Projects</p>
+<p class="text-base font-normal leading-normal text-text-secondary-light dark:text-text-secondary-dark">Explore new and interesting GitHub repositories.</p>
+</div>
+</div>
+<!-- Search Bar -->
+<div class="px-4 py-3">
+<label class="flex flex-col min-w-40 h-12 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-text-secondary-light dark:text-text-secondary-dark flex bg-black/5 dark:bg-white/5 items-center justify-center pl-4 rounded-l-lg">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-r-lg text-text-primary-light dark:text-text-primary-dark focus:outline-0 focus:ring-2 focus:ring-primary focus:ring-opacity-50 border-none bg-black/5 dark:bg-white/5 h-full placeholder:text-text-secondary-light dark:placeholder:text-text-secondary-dark px-4 pl-2 text-base font-normal leading-normal" placeholder="Search projects, tags, users..." value=""/>
+</div>
+</label>
+</div>
+<!-- Tabs -->
+<div class="pb-3 sticky top-[61px] bg-background-light dark:bg-background-dark z-40">
+<div class="flex border-b border-border-light dark:border-border-dark px-4 gap-8">
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-primary text-primary pb-[13px] pt-4" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">For You</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-text-secondary-light dark:text-text-secondary-dark pb-[13px] pt-4 hover:text-primary dark:hover:text-primary" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Trending</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-text-secondary-light dark:text-text-secondary-dark pb-[13px] pt-4 hover:text-primary dark:hover:text-primary" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">New</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-text-secondary-light dark:text-text-secondary-dark pb-[13px] pt-4 hover:text-primary dark:hover:text-primary" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Following</p>
+</a>
+</div>
+</div>
+<!-- Projects Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
+<!-- Project Card 1 -->
+<div class="group flex flex-col overflow-hidden rounded-xl border border-border-light dark:border-border-dark bg-content-light dark:bg-content-dark transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+<div class="aspect-video w-full bg-center bg-no-repeat bg-cover" data-alt="Project thumbnail for a UI component library" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBmQcaZrJVuNFZBKLiPB_0ySiA6v1w-552mCMZgKNZIRwWh5zCrNE4MgZzTFAhshd_ij7U9ycwrpPNIRHC2_7gesXgcmsNp08MMSJtYt193qI9SXqQhCZrLkSHX9fiOfsu23Wig0Wb5t12R-WErarf6_AA_rGpX5cfgmtFRGUh1-FkRDllNXL87fFe8iHPgwzmRy_ZCPaOf3diV-IhI-jDQjUSKyBL1Gi-NVEd8hNBYQEqjWPLmfIfs4HPcphWvQTvDuiMZn0NAL14");'></div>
+<div class="flex flex-1 flex-col p-4">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-2">
+<h3 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">shadcn-ui</h3>
+<span class="text-text-secondary-light dark:text-text-secondary-dark">/</span>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">shadcn</p>
+</div>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-4">Beautifully designed components that you can copy and paste into your apps. Accessible. Customizable. Open Source.</p>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">react</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">typescript</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">tailwind</span>
+</div>
+<div class="flex items-center gap-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">star</span>
+<span>32.5k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>4.1k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">visibility</span>
+<span>890</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Project Card 2 -->
+<div class="group flex flex-col overflow-hidden rounded-xl border border-border-light dark:border-border-dark bg-content-light dark:bg-content-dark transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+<div class="aspect-video w-full bg-center bg-no-repeat bg-cover" data-alt="Abstract gradient for a form library project" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAJOU68DObGTc_9nZ_27GP1d4saLi9HMyXxkGUrBSNzo7I3X2nYivMllbZYJEE0RcLt4TEi5PICom4X0kRKRbGQwtPR-h2dv6Us6oMG4dboGPjIA6gNnRJOEn-davwcj-HkxknuMoD_NKLt6z7dkWUP4ACuQOME3pn2DIM5QxRuU8efIdoDgOzkEpaAAArisf_yYgh834-mxjLVjnDfZsuan4OJXaKVSCciQrhhQdqBG8M6Won5mFZOb5267i8ocL2iaYYfyArtuY0");'></div>
+<div class="flex flex-1 flex-col p-4">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-2">
+<h3 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">formik</h3>
+<span class="text-text-secondary-light dark:text-text-secondary-dark">/</span>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">jaredpalmer</p>
+</div>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-4">Build forms in React, without the tears. By leveraging controlled components, Formik helps manage form state, validation, and submission.</p>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">forms</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">react</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">state-management</span>
+</div>
+<div class="flex items-center gap-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">star</span>
+<span>31.2k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>2.6k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">visibility</span>
+<span>750</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Project Card 3 -->
+<div class="group flex flex-col overflow-hidden rounded-xl border border-border-light dark:border-border-dark bg-content-light dark:bg-content-dark transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+<div class="aspect-video w-full bg-center bg-no-repeat bg-cover" data-alt="Abstract visual for a data visualization library" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAs5TrmV1cfeWNAXj9jySPGk6BzdtdQMPjtuTgt1rq8MRS4FxvlBSzPi8h2dWBfNshA0XgiwEAacOwd89Ao0qbG47GTyJO20T-FfvlAj1DiZ5h8vcOFprBtl-y5UBLaA8yTwCLV74Ep7qgZmkpZI6jN3akS1Z6PwSIt8luK1MogAnYDtBec3s1nc0B6pXH5ZPm8MTeUkBcmE59ab9CSdUn87CErsd36aI2WKXyCBlRbPEMIjST26UAYJQxbEffHRXGLxw5Nuz92QJs");'></div>
+<div class="flex flex-1 flex-col p-4">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-2">
+<h3 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">d3</h3>
+<span class="text-text-secondary-light dark:text-text-secondary-dark">/</span>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">d3</p>
+</div>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-4">Bring data to life with SVG, Canvas and HTML. D3 combines powerful visualization components and a data-driven approach.</p>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">dataviz</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">javascript</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">svg</span>
+</div>
+<div class="flex items-center gap-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">star</span>
+<span>104k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>23.2k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">visibility</span>
+<span>3.1k</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Project Card 4 -->
+<div class="group flex flex-col overflow-hidden rounded-xl border border-border-light dark:border-border-dark bg-content-light dark:bg-content-dark transition-all duration-300 hover:shadow-lg hover:-translate-y-1">
+<div class="aspect-video w-full bg-center bg-no-repeat bg-cover" data-alt="Abstract pattern for a state management library" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCjs4TET8d2c0SWTTyGiVmGHT_WYhuSSnNNw5GeywPPf33XyAadoPu43YSSDQRkFEBDyYxVvW-6ccipy4h56SLlS6_HLV5DpqU3-geqxQwF7LjK0yfCgjXnoDdKLspFWBuzK5eG8m4wYLgCzKowun2x0t28KXkSrLr9NZjeCfsrDEGFJgv4YuFGeTWYoNoCkq43XYmOn9b426QDOILz_eneXrXNdtOm5MTH-Yk1yXmBhuxagAVvxrk3riRPqen08MDVOsxylYq9PsA");'></div>
+<div class="flex flex-1 flex-col p-4">
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-2">
+<h3 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">zustand</h3>
+<span class="text-text-secondary-light dark:text-text-secondary-dark">/</span>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">pmndrs</p>
+</div>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-4">A small, fast and scalable bearbones state-management solution using simplified flux principles. Has a comfy API based on hooks.</p>
+</div>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">react</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">state-management</span>
+<span class="px-2 py-1 text-xs font-medium rounded-full bg-teal-400/20 text-teal-600 dark:text-teal-300">flux</span>
+</div>
+<div class="flex items-center gap-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">star</span>
+<span>28.1k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>890</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">visibility</span>
+<span>650</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Load More Button -->
+<div class="flex justify-center p-4 mt-8">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-primary/20 text-primary gap-2 text-sm font-bold leading-normal tracking-[0.015em] min-w-0 px-6 hover:bg-primary/30">
+                        Load More
+                    </button>
+</div>
+</main>
+</div>
+</div>
+</body></html>

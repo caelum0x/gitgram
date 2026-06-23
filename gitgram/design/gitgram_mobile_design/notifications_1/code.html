@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Activity Feed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,0..200" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#135bec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                        "accent-blue": "#4D96FF",
+                        "accent-pink": "#FF477E",
+                        "accent-green": "#3DDC97",
+                        "accent-teal": "#00F5D4",
+                        "text-primary-light": "#1f2937",
+                        "text-primary-dark": "#E0E0E0",
+                        "text-secondary-light": "#6b7280",
+                        "text-secondary-dark": "#888888",
+                        "surface-light": "#ffffff",
+                        "surface-dark": "#1f2937",
+                        "surface-subtle-dark": "#1a222e"
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+                'FILL' 0,
+                'wght' 400,
+                'GRAD' 0,
+                'opsz' 24
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display bg-background-light dark:bg-background-dark">
+<div class="relative flex h-auto min-h-screen w-full flex-col">
+<!-- Top App Bar -->
+<div class="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-background-light/80 p-4 pb-3 backdrop-blur-sm dark:bg-background-dark/80">
+<div class="flex size-8 shrink-0 items-center justify-start">
+</div>
+<h1 class="flex-1 text-center text-lg font-bold leading-tight tracking-[-0.015em] text-text-primary-light dark:text-text-primary-dark">Activity</h1>
+<div class="flex w-fit items-center justify-end">
+<button class="text-accent-blue text-sm font-medium leading-normal">Mark all as read</button>
+</div>
+</div>
+<!-- Segmented Buttons -->
+<div class="flex px-4 py-3">
+<div class="flex h-10 flex-1 items-center justify-center rounded-lg bg-surface-light p-1 dark:bg-surface-subtle-dark">
+<label class="flex h-full grow cursor-pointer items-center justify-center overflow-hidden rounded-md px-2 text-text-secondary-light has-[:checked]:bg-background-light dark:text-text-secondary-dark has-[:checked]:dark:bg-surface-dark has-[:checked]:text-text-primary-light has-[:checked]:shadow-sm has-[:checked]:dark:text-text-primary-dark">
+<span class="truncate text-sm font-medium">Following</span>
+<input class="invisible w-0" name="activity-tab" type="radio" value="Following"/>
+</label>
+<label class="flex h-full grow cursor-pointer items-center justify-center overflow-hidden rounded-md px-2 text-text-secondary-light has-[:checked]:bg-background-light dark:text-text-secondary-dark has-[:checked]:dark:bg-surface-dark has-[:checked]:text-text-primary-light has-[:checked]:shadow-sm has-[:checked]:dark:text-text-primary-dark">
+<span class="truncate text-sm font-medium">You</span>
+<input checked="" class="invisible w-0" name="activity-tab" type="radio" value="You"/>
+</label>
+</div>
+</div>
+<!-- Notification List -->
+<div class="flex flex-col gap-px">
+<!-- Follow Notification -->
+<div class="flex items-center gap-4 bg-background-light px-4 py-3 dark:bg-background-dark">
+<div class="relative">
+<img class="h-12 w-12 rounded-full object-cover" data-alt="Avatar of user alicia-keys" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBXnabWz8i1J5GY8xappe23Hf8h_EGZdDDeo9wh78cRoT8ngch0-ViTBoGYLPbH-OrnXfkACBueRFnC5bMrm9GDwex9d3M5L5HJLjXFEy7HGODIe19im9xbB4a0veWfhxkMqNEW5T3HRqjyKO1Zi7Yht-ySb8_v4ktkuB9mhXmP95H565NV-ceQ8h7gV8q-p78QsyZ26SSc_coVcaMCcvcT8DRhBgpKQK_q9yGf2rSJ8WBR3AuimeVjgZLqcZ7o-Dv_CFnpnNW9I0"/>
+<div class="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background-dark bg-accent-green">
+<span class="material-symbols-outlined text-sm !text-black">person_add</span>
+</div>
+</div>
+<div class="flex-1">
+<p class="text-sm font-normal leading-normal text-text-primary-light dark:text-text-primary-dark">
+<span class="font-bold text-accent-blue">@alicia-keys</span> started following you.
+                    </p>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark">5m ago</p>
+</div>
+<div class="shrink-0">
+<button class="flex h-8 min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-surface-light px-4 text-sm font-medium leading-normal text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
+<span class="truncate">Follow</span>
+</button>
+</div>
+</div>
+<!-- Comment Notification -->
+<div class="flex items-center gap-4 bg-background-light px-4 py-3 dark:bg-background-dark">
+<div class="relative">
+<img class="h-12 w-12 rounded-full object-cover" data-alt="Avatar of user emily-stone" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEBCzUgcztKnz8M6naRdw5QreZn5vcKncGxksb65KoY4GXQ1i3YS2jjM_M723OUhsQEIkt0djUNSkFxIRKZzMRzO-Ok7tm3aTPO2T7BZvIM1jEkpuyI8xVW1Wf6LmfoIH9jL5Rk2i7chD45DfUzLL3O5fJSLz2IVBQVnNEsHRRhCT13q7y8uj3DoDJtLfcq0Ytc5EBwb4--tlpvFJ6c5PeixKtVqh2CznV6Q7CvB3-G0hlrquePu6IxhIGmQspnpvVysqfQETDNTU"/>
+<div class="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background-dark bg-accent-blue">
+<span class="material-symbols-outlined text-sm !text-white">chat_bubble</span>
+</div>
+</div>
+<div class="flex-1">
+<p class="text-sm font-normal leading-normal text-text-primary-light dark:text-text-primary-dark">
+<span class="font-bold text-accent-blue">@emily-stone</span> commented on <span class="font-bold">Retro-Synth UI</span>.
+                    </p>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark">1h ago</p>
+</div>
+<div class="shrink-0">
+<img class="h-12 w-12 rounded-lg object-cover" data-alt="Thumbnail of project Retro-Synth UI" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGxK_iDAWO5PLLKKSuFB58tB8AboIfckG9mR2L1yBduXut_U_sROS1zbq29pede2d2d65BB171IQ0o9upxZKVzTA9lt9mZEs1s_DATagYFti5IsZQ5_N8OoskWt95WrXL5PsolyvolS0IvefuUv30sbHxKmW5RefkVFUdd8ioGV18a3ZIVaOsSEchqaEQSkc-ma9sGu-F2nZ7Zgt5_1QIQnxfhqlSM91SGdRVaQvDOwrO2iQ47SV08wG7_RhrzzV-OXwZ1T2mbBdQ"/>
+</div>
+</div>
+<!-- Like Notification (Grouped) -->
+<div class="flex items-center gap-4 bg-background-light px-4 py-3 dark:bg-background-dark">
+<div class="relative">
+<div class="flex -space-x-4">
+<img class="h-8 w-8 rounded-full border-2 border-background-dark object-cover" data-alt="Avatar of user john-doe" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp00NNQqJlQiwOhFxJ-1m-9IkDhHGJb8wAwoDtGNxLazOENUoHCO-Xx7Uphl_SbcxrGXGHY3UJDhvY2WWq21yZWpB9z5UOXgmnojQpcjvo1DiqvLoke2nHBj2Uyy_SJ1KQQF66SXv2WGWbgvIQ3YK2Uen63A_ryc3VJal-72hPvdHZlg1r5baWF0sjZyJgBl7miA8u0Q3lCDaWCVcgHjog6RHRFkjNahZXiRRiQ30wzVTaXayCUhAXJK7eAtNAlW8fFiPLVZHQ9Vg"/>
+<img class="h-8 w-8 rounded-full border-2 border-background-dark object-cover" data-alt="Avatar of user jane-smith" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0kq2IlwgdJhVTZU-dJMF-AQtBnp1_eiztLTMjG0HHVrC4Th7Od1SF3bMBFCA8X-36TfoPhxxrHNFEYgj8iXlzs_WFnmyVI7lJ16wYVz0GWnwkAOS1O8YhmChYvCjxHhVs81z2KhOcdg3OnJfVbX5KcZmG5wPTcV716FI7bMoj2Up6O0lttCcaIWl6IqQF4Ijy-OzICu_1DeDC3bmPFtQiK1oHprjWezeaZXziCZapyjUKmdxOCijraqFAWEHiZH1WaZc32qXVRuo"/>
+</div>
+<div class="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background-dark bg-accent-pink">
+<span class="material-symbols-outlined text-sm !text-white">favorite</span>
+</div>
+</div>
+<div class="flex-1">
+<p class="text-sm font-normal leading-normal text-text-primary-light dark:text-text-primary-dark">
+<span class="font-bold text-accent-blue">@john-doe</span> and 3 others liked your project <span class="font-bold">AI-Code-Analyzer</span>.
+                    </p>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark">2h ago</p>
+</div>
+<div class="shrink-0">
+<img class="h-12 w-12 rounded-lg object-cover" data-alt="Thumbnail of project AI-Code-Analyzer" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZPEm7uJU85j5PRQAEG0H1RQGb-iZ1F3c4P2JUWFf4sJpa_74ocUTAMkIqzZjv-_hdSNPo9FaMkhPDaAqvPNe5vR0zIdwdqUfj2ohc_ZVtwsRtG5UFomLYsCJAGrbedS8l0_INDbmV0p_gW56DhclTfXTouW62Beq8OtdbslGzuewTK54GCFb8e7uRggGJ5IQJagSXMVHwaspWm5H5Qbb5HeB-eLYjDuQ6AXGt7HG8oYEilJePTwf05vWSfV0OEAt_a5cYVsq4O9Y"/>
+</div>
+</div>
+<!-- GitHub Star Notification -->
+<div class="flex items-center gap-4 bg-background-light px-4 py-3 dark:bg-background-dark">
+<div class="relative">
+<img class="h-12 w-12 rounded-full object-cover" data-alt="Avatar of user dev-guru" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBMm_AgYhiTZX9diIaVgI4hQamqikGy4iTWcNk5CLca7GPBxvFCM_cTQjoP_nnok64Xal47X0GoLi6C64J_x-LXmZZq_8yDteAmwVRkN3XFq-DSFJ3GT2ZioqXJ_TKRb7Ubtnisd2PmoNcDulLEL5RHGKJIJAle8fj7XtVJmZyLn-XJRTen2PsOD1jXIW_0H0jJro5BM1ZXLv4kugqVfKrBTzNxlisq-F1HzPlE0t8FiI9FWnhJmZ9Njw4jkOqhHrx6gHXYtF8yk_g"/>
+<div class="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background-dark bg-accent-teal">
+<span class="material-symbols-outlined text-sm !text-black">star</span>
+</div>
+</div>
+<div class="flex-1">
+<p class="text-sm font-normal leading-normal text-text-primary-light dark:text-text-primary-dark">
+<span class="font-bold text-accent-blue">@dev-guru</span> starred your repo <span class="font-bold">Awesome-API</span>.
+                    </p>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark">3d ago</p>
+</div>
+<div class="shrink-0">
+<div class="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-light dark:bg-surface-dark">
+<svg aria-hidden="true" class="h-6 w-6 text-text-secondary-light dark:text-text-secondary-dark" fill="currentColor" viewbox="0 0 16 16"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.19.01-.82.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21-.15.46-.55.38A8.013 8.013 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+</div>
+</div>
+</div>
+<!-- Empty State -->
+<div class="flex flex-col items-center justify-center gap-4 px-4 py-24 text-center">
+<div class="flex h-16 w-16 items-center justify-center rounded-full bg-surface-light dark:bg-surface-dark">
+<span class="material-symbols-outlined text-3xl text-accent-green">task_alt</span>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">All Caught Up!</h3>
+<p class="text-sm text-text-secondary-light dark:text-text-secondary-dark">You'll see new likes, comments, and follows here.</p>
+</div>
+</div>
+</div>
+</div>
+</body></html>

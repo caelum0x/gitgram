@@ -1,0 +1,110 @@
+{
+  "name": "@gitgram/timemachine",
+  "version": "2.0.0",
+  "description": "Time Machine for AI Coding Assistants - Restore files AND conversations to any point in time. Works with Claude Code, Cursor, Gemini CLI.",
+  "main": "lib/core/index.js",
+  "types": "lib/core/index.d.ts",
+  "type": "module",
+  "bin": {
+    "aitm": "lib/cli-v2.js",
+    "aitimemachine": "lib/cli-v2.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x lib/cli-v2.js",
+    "prepack": "npm run build",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:redaction-gate": "vitest run tests/redaction-gate.test.ts",
+    "test:search-relevance-gate": "vitest run tests/search-relevance-gate.test.ts",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test",
+    "verify:a2a": "bash scripts/a2a-smoke-test.sh",
+    "verify:packages": "bash scripts/verify-npm-packages.sh",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": [
+    "ai",
+    "time-machine",
+    "backup",
+    "restore",
+    "snapshot",
+    "claude",
+    "cursor",
+    "gemini",
+    "mcp",
+    "model-context-protocol",
+    "version-control",
+    "conversation",
+    "undo",
+    "revert",
+    "coding-assistant"
+  ],
+  "author": "Gitgram",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitgram-ai/gitgram-ai"
+  },
+  "homepage": "https://timemachine.gitgram.app",
+  "bugs": {
+    "url": "https://github.com/gitgram-ai/gitgram-ai/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "lib/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@neondatabase/serverless": "^1.0.2",
+    "better-sqlite3": "^12.5.0",
+    "chokidar": "^5.0.0",
+    "commander": "^14.0.2",
+    "cors": "^2.8.5",
+    "diff": "^8.0.2",
+    "dockerode": "^4.0.9",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.1",
+    "express": "^5.2.1",
+    "fast-glob": "^3.3.3",
+    "fs-extra": "^11.3.3",
+    "fzstd": "^0.1.1",
+    "helmet": "^8.1.0",
+    "ignore": "^7.0.5",
+    "ink": "^6.6.0",
+    "ink-text-input": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "minimatch": "^10.1.1",
+    "open": "^11.0.0",
+    "openai": "^6.15.0",
+    "pg": "^8.16.3",
+    "react": "^19.2.3",
+    "socket.io": "^4.8.3",
+    "zod": "^4.2.1"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/chokidar": "^1.7.5",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/pg": "^8.16.0",
+    "@types/cors": "^2.8.19",
+    "@types/diff": "^7.0.2",
+    "@types/dockerode": "^3.3.47",
+    "@types/express": "^5.0.6",
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.8",
+    "drizzle-kit": "^0.31.8",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.16"
+  }
+}

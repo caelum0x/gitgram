@@ -1,0 +1,923 @@
+{
+  "name": "gitgram-timemachine",
+  "displayName": "Gitgram TimeMachine",
+  "description": "Time travel for AI-assisted development - restore files and conversations",
+  "version": "1.0.0",
+  "publisher": "gitgram",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Debuggers"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aitm.login",
+        "title": "Login",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "aitm.logout",
+        "title": "Logout",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "aitm.whoami",
+        "title": "Who Am I",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(account)"
+      },
+      {
+        "command": "aitm.syncStatus",
+        "title": "Sync Status",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(cloud)"
+      },
+      {
+        "command": "aitm.init",
+        "title": "Initialize Project",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "aitm.setup",
+        "title": "Setup MCP Config",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "aitm.createCheckpoint",
+        "title": "Create Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aitm.showTimeline",
+        "title": "Open Timeline Panel",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(history)"
+      },
+      {
+        "command": "aitm.restore",
+        "title": "Restore Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "aitm.showConversation",
+        "title": "Show Conversation",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "aitm.showDiff",
+        "title": "Show Diff",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "aitm.goBack",
+        "title": "Go Back (Quick Restore)",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "aitm.undo",
+        "title": "Undo (Restore Previous)",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "aitm.stash",
+        "title": "Stash Changes",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "aitm.stashPop",
+        "title": "Pop Stash",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(package)"
+      },
+      {
+        "command": "aitm.refresh",
+        "title": "Refresh",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aitm.openChat",
+        "title": "Open AI Chat",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "aitm.sendMessage",
+        "title": "Send Message to AI",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(send)"
+      },
+      {
+        "command": "aitm.clearChat",
+        "title": "Clear Chat History",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "aitm.toggleAutoCheckpoint",
+        "title": "Toggle Auto Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "aitm.showFileHistory",
+        "title": "Show File History",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "aitm.restoreFile",
+        "title": "Restore File from Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "aitm.compareWithCheckpoint",
+        "title": "Compare with Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "aitm.bisect",
+        "title": "Bisect (Find Breaking Change)",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(search)"
+      },
+      {
+        "command": "aitm.exportConversation",
+        "title": "Export Conversation",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(export)"
+      },
+      {
+        "command": "aitm.runWithCapture",
+        "title": "Run Command with Capture",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "aitm.smartSearch",
+        "title": "Smart Search (Natural Language)",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(search)"
+      },
+      {
+        "command": "aitm.showSymbolHistory",
+        "title": "Show Symbol/Function History",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(symbol-method)"
+      },
+      {
+        "command": "aitm.smartCheckpoint",
+        "title": "Smart Checkpoint (Auto Description)",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "aitm.findWhenBroke",
+        "title": "Find When Code Broke",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "aitm.restoreLastGreen",
+        "title": "Restore to Last Green",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(check)"
+      },
+      {
+        "command": "aitm.compareFileVersions",
+        "title": "Compare File Versions",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "aitm.jumpToTime",
+        "title": "Jump to Time",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "aitm.showErrorAnalysis",
+        "title": "Show Error Analysis",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "aitm.showFunctionHistory",
+        "title": "Show Function History",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(symbol-method)"
+      },
+      {
+        "command": "aitm.showFunctionDiff",
+        "title": "Show Function Diff",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "aitm.restoreFunction",
+        "title": "Restore Function from Checkpoint",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "aitm.showFileDiff",
+        "title": "Show File Diff",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "aitm.ghost.generateSuggestions",
+        "title": "Ghost: Generate Inline Suggestions",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "aitm.ghost.applyCurrentSuggestion",
+        "title": "Ghost: Apply Current Suggestion",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(check)"
+      },
+      {
+        "command": "aitm.ghost.applyAllSuggestions",
+        "title": "Ghost: Apply All Suggestions",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "aitm.ghost.nextSuggestion",
+        "title": "Ghost: Next Suggestion",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "aitm.ghost.previousSuggestion",
+        "title": "Ghost: Previous Suggestion",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "aitm.ghost.cancelSuggestions",
+        "title": "Ghost: Cancel Suggestions",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(close)"
+      },
+      {
+        "command": "aitm.ghost.toggleSuggestions",
+        "title": "Ghost: Toggle Suggestions",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(lightbulb-autofix)"
+      },
+      {
+        "command": "aitm.generateCommitMessage",
+        "title": "Generate Commit Message",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "aitm.generateCommitMessagePreview",
+        "title": "Preview Commit Message",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "aitm.showErrorTimeline",
+        "title": "Show Error Timeline",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(timeline-view-icon)"
+      },
+      {
+        "command": "aitm.refreshErrorTracking",
+        "title": "Refresh Error Tracking",
+        "category": "Gitgram TimeMachine",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aitm-sidebar",
+          "title": "Gitgram TimeMachine",
+          "icon": "resources/icon.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "aitm-panel",
+          "title": "Gitgram TimeMachine",
+          "icon": "$(history)"
+        }
+      ]
+    },
+    "views": {
+      "aitm-sidebar": [
+        {
+          "id": "aitm.chatView",
+          "name": "AI Chat",
+          "type": "webview"
+        },
+        {
+          "id": "aitm.timelineGraph",
+          "name": "Visual Timeline",
+          "type": "webview"
+        },
+        {
+          "id": "aitm.timelineView",
+          "name": "Timeline",
+          "type": "tree"
+        },
+        {
+          "id": "aitm.changesView",
+          "name": "Pending Changes",
+          "type": "tree"
+        }
+      ],
+      "aitm-panel": [
+        {
+          "id": "aitm.conversationView",
+          "name": "Conversation History",
+          "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "aitm.showTimeline",
+          "when": "view == aitm.timelineView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aitm.createCheckpoint",
+          "when": "view == aitm.timelineView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "aitm.refresh",
+          "when": "view == aitm.timelineView",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "aitm.restore",
+          "when": "view == aitm.timelineView && viewItem == checkpoint",
+          "group": "inline"
+        },
+        {
+          "command": "aitm.showDiff",
+          "when": "view == aitm.timelineView && viewItem == checkpoint"
+        },
+        {
+          "command": "aitm.showConversation",
+          "when": "view == aitm.timelineView && viewItem == checkpoint"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "aitm.login"
+        },
+        {
+          "command": "aitm.logout"
+        },
+        {
+          "command": "aitm.whoami"
+        },
+        {
+          "command": "aitm.syncStatus"
+        },
+        {
+          "command": "aitm.init"
+        },
+        {
+          "command": "aitm.setup"
+        },
+        {
+          "command": "aitm.createCheckpoint"
+        },
+        {
+          "command": "aitm.showTimeline"
+        },
+        {
+          "command": "aitm.restore"
+        },
+        {
+          "command": "aitm.showConversation"
+        },
+        {
+          "command": "aitm.showDiff"
+        },
+        {
+          "command": "aitm.goBack"
+        },
+        {
+          "command": "aitm.undo"
+        },
+        {
+          "command": "aitm.stash"
+        },
+        {
+          "command": "aitm.stashPop"
+        },
+        {
+          "command": "aitm.refresh"
+        },
+        {
+          "command": "aitm.openChat"
+        },
+        {
+          "command": "aitm.sendMessage"
+        },
+        {
+          "command": "aitm.clearChat"
+        },
+        {
+          "command": "aitm.toggleAutoCheckpoint"
+        },
+        {
+          "command": "aitm.showFileHistory"
+        },
+        {
+          "command": "aitm.restoreFile"
+        },
+        {
+          "command": "aitm.compareWithCheckpoint"
+        },
+        {
+          "command": "aitm.bisect"
+        },
+        {
+          "command": "aitm.exportConversation"
+        },
+        {
+          "command": "aitm.runWithCapture"
+        },
+        {
+          "command": "aitm.smartSearch"
+        },
+        {
+          "command": "aitm.showSymbolHistory"
+        },
+        {
+          "command": "aitm.smartCheckpoint"
+        },
+        {
+          "command": "aitm.findWhenBroke"
+        },
+        {
+          "command": "aitm.restoreLastGreen"
+        },
+        {
+          "command": "aitm.compareFileVersions"
+        },
+        {
+          "command": "aitm.jumpToTime"
+        },
+        {
+          "command": "aitm.showErrorAnalysis"
+        },
+        {
+          "command": "aitm.showFunctionHistory"
+        },
+        {
+          "command": "aitm.showFunctionDiff"
+        },
+        {
+          "command": "aitm.restoreFunction"
+        },
+        {
+          "command": "aitm.showFileDiff"
+        },
+        {
+          "command": "aitm.showErrorTimeline"
+        },
+        {
+          "command": "aitm.refreshErrorTracking"
+        },
+        {
+          "command": "aitm.ghost.generateSuggestions"
+        },
+        {
+          "command": "aitm.ghost.toggleSuggestions"
+        },
+        {
+          "command": "aitm.generateCommitMessage"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "aitm.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "aitm.showFileHistory",
+          "group": "aitm@1",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "aitm.showSymbolHistory",
+          "group": "aitm@2",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "aitm.compareWithCheckpoint",
+          "group": "aitm@3",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "aitm.compareFileVersions",
+          "group": "aitm@4",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "aitm.restoreFile",
+          "group": "aitm@5",
+          "when": "editorTextFocus"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "aitm.showFileHistory",
+          "group": "navigation",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "aitm.showFileHistory",
+          "group": "aitm@1",
+          "when": "!explorerResourceIsFolder"
+        },
+        {
+          "command": "aitm.restoreFile",
+          "group": "aitm@2",
+          "when": "!explorerResourceIsFolder"
+        }
+      ],
+      "terminal/context": [
+        {
+          "command": "aitm.runWithCapture",
+          "group": "aitm@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "aitm.createCheckpoint",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c"
+      },
+      {
+        "command": "aitm.goBack",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z"
+      },
+      {
+        "command": "aitm.undo",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u"
+      },
+      {
+        "command": "aitm.stash",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s"
+      },
+      {
+        "command": "aitm.showTimeline",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
+      },
+      {
+        "command": "aitm.openChat",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      },
+      {
+        "command": "aitm.showFileHistory",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h"
+      },
+      {
+        "command": "aitm.smartSearch",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      },
+      {
+        "command": "aitm.smartCheckpoint",
+        "key": "ctrl+shift+alt+c",
+        "mac": "cmd+shift+alt+c"
+      },
+      {
+        "command": "aitm.restoreLastGreen",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
+      {
+        "command": "aitm.jumpToTime",
+        "key": "ctrl+alt+j",
+        "mac": "cmd+alt+j"
+      },
+      {
+        "command": "aitm.ghost.generateSuggestions",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "aitm.ghost.applyCurrentSuggestion",
+        "key": "tab",
+        "when": "editorTextFocus && aitm.ghostActive"
+      },
+      {
+        "command": "aitm.ghost.cancelSuggestions",
+        "key": "escape",
+        "when": "editorTextFocus && aitm.ghostActive"
+      },
+      {
+        "command": "aitm.ghost.nextSuggestion",
+        "key": "alt+]",
+        "mac": "alt+]",
+        "when": "editorTextFocus && aitm.ghostActive"
+      },
+      {
+        "command": "aitm.ghost.previousSuggestion",
+        "key": "alt+[",
+        "mac": "alt+[",
+        "when": "editorTextFocus && aitm.ghostActive"
+      },
+      {
+        "command": "aitm.generateCommitMessage",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m"
+      }
+    ],
+    "configuration": {
+      "title": "Gitgram TimeMachine",
+      "properties": {
+        "aitm.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the aitm CLI binary. Leave empty to auto-detect (checks PATH, npm global, npx)."
+        },
+        "aitm.autoCheckpoint": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically create checkpoints before AI actions"
+        },
+        "aitm.checkpointOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Create checkpoint on file save"
+        },
+        "aitm.checkpointInterval": {
+          "type": "number",
+          "default": 0,
+          "description": "Auto-checkpoint interval in minutes (0 = disabled)"
+        },
+        "aitm.showFileDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show file change decorations in explorer"
+        },
+        "aitm.showCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show checkpoint info as CodeLens annotations"
+        },
+        "aitm.showFunctionLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show function-level change tracking as CodeLens annotations"
+        },
+        "aitm.showErrorTracking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable smart error detection and tracking"
+        },
+        "aitm.cloudSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Sync checkpoints to cloud"
+        },
+        "aitm.maxConversationHistory": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum conversation messages to show"
+        },
+        "aitm.terminalCapture": {
+          "type": "boolean",
+          "default": true,
+          "description": "Capture terminal output for context"
+        },
+        "aitm.ghost.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Ghost inline code suggestions"
+        },
+        "aitm.ghost.triggerDelay": {
+          "type": "number",
+          "default": 500,
+          "description": "Delay in milliseconds before triggering suggestions"
+        },
+        "aitm.ghost.maxSuggestions": {
+          "type": "number",
+          "default": 5,
+          "description": "Maximum number of suggestions to show"
+        },
+        "aitm.ghost.showInlineHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline hint decorations for suggestions"
+        },
+        "aitm.commitMessage.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AI commit message generation"
+        },
+        "aitm.commitMessage.style": {
+          "type": "string",
+          "enum": [
+            "conventional",
+            "simple",
+            "detailed"
+          ],
+          "default": "conventional",
+          "description": "Commit message style (conventional, simple, or detailed)"
+        },
+        "aitm.commitMessage.includeScope": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include scope in conventional commits"
+        },
+        "aitm.commitMessage.includeBody": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include body with file list in commit messages"
+        },
+        "aitm.commitMessage.maxLength": {
+          "type": "number",
+          "default": 72,
+          "description": "Maximum length for commit message title"
+        },
+        "aitm.autoApproval.read.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-approve file read operations"
+        },
+        "aitm.autoApproval.read.outsideWorkspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow reading files outside workspace"
+        },
+        "aitm.autoApproval.read.maxFileSize": {
+          "type": "number",
+          "default": 10485760,
+          "description": "Maximum file size for auto-approval (bytes)"
+        },
+        "aitm.autoApproval.write.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve file write operations"
+        },
+        "aitm.autoApproval.write.outsideWorkspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow writing files outside workspace"
+        },
+        "aitm.autoApproval.write.protectedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".env*",
+            "*.key",
+            "*.pem",
+            "credentials*",
+            "secrets*",
+            ".git/**"
+          ],
+          "description": "Glob patterns for protected paths requiring manual approval"
+        },
+        "aitm.autoApproval.execute.allowedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "npm *",
+            "node *",
+            "npx *",
+            "yarn *",
+            "pnpm *",
+            "git status",
+            "git diff*",
+            "git log*",
+            "git branch*",
+            "ls*",
+            "cat*",
+            "echo*"
+          ],
+          "description": "Glob patterns for allowed commands"
+        },
+        "aitm.autoApproval.execute.deniedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "rm -rf *",
+            "sudo *",
+            "chmod 777 *",
+            "curl * | sh",
+            "curl * | bash"
+          ],
+          "description": "Glob patterns for denied commands"
+        },
+        "aitm.autoApproval.execute.requireConfirmation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require confirmation even for allowed commands"
+        },
+        "aitm.autoApproval.browser.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-approve browser URL opening"
+        },
+        "aitm.autoApproval.browser.allowedDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "github.com",
+            "stackoverflow.com",
+            "npmjs.com",
+            "docs.*"
+          ],
+          "description": "Allowed domains for auto-approval"
+        },
+        "aitm.autoApproval.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-approve MCP tool calls"
+        },
+        "aitm.autoApproval.mcp.allowedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Allowed MCP tools (empty = all allowed)"
+        },
+        "aitm.autoApproval.notifications.showApprovalPopups": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show popup dialogs for approval requests"
+        },
+        "aitm.autoApproval.notifications.logApprovals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Log approval decisions to console"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
+  }
+}

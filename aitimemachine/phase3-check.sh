@@ -1,0 +1,12 @@
+#!/bin/bash
+echo "=== PHASE 3 COMPLETION CHECK ==="
+echo ""
+echo "CLI Commands"
+echo "------------"
+node lib/cli-v2.js --help 2>&1 | grep -q "restore-files" && echo "✓ restore-files" || echo "✗ MISSING"
+node lib/cli-v2.js --help 2>&1 | grep -q "file-diff" && echo "✓ file-diff" || echo "✗ MISSING"
+node lib/cli-v2.js --help 2>&1 | grep -q "timeline-query" && echo "✓ timeline-query" || echo "✗ MISSING"
+node lib/cli-v2.js --help 2>&1 | grep -q "search" && echo "✓ search" || echo "✗ MISSING"
+node lib/cli-v2.js --help 2>&1 | grep -q "file-history" && echo "✓ file-history" || echo "✗ MISSING"
+echo ""
+echo "✅ PHASE 3 COMPLETE"

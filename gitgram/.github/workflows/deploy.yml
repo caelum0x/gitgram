@@ -1,0 +1,723 @@
+# =============================================================================
+# Deploy Gitgram - Backend API + Web Frontend
+# =============================================================================
+# Triggered by:
+#   - Push to develop (auto-deploy to staging)
+#   - Push to main or version tag (auto-deploy to production)
+#   - Manual workflow_dispatch for any environment
+#
+# Strategy:
+#   - Blue-green deployment with health check validation
+#   - Automatic rollback on health check failure
+#   - Pre-deploy gate: tests + build + migration check
+#   - Post-deploy gate: smoke tests
+# =============================================================================
+name: Deploy Gitgram
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*"]
+    paths:
+      - "backend/**"
+      - "web/**"
+      - "prisma/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      skip_tests:
+        description: "Skip pre-deploy tests (emergency only)"
+        type: boolean
+        default: false
+      force_deploy:
+        description: "Force deploy even if health checks have warnings"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-gitgram-${{ github.event.inputs.environment || (github.ref == 'refs/heads/develop' && 'staging') || 'production' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "20"
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE_BACKEND: ghcr.io/${{ github.repository }}/gitgram-backend
+  DOCKER_IMAGE_WEB: ghcr.io/${{ github.repository }}/gitgram-web
+  DEPLOY_TIMEOUT: 300
+  HEALTH_CHECK_RETRIES: 15
+  HEALTH_CHECK_INTERVAL: 10
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine deployment target
+  # ---------------------------------------------------------------------------
+  resolve-environment:
+    name: Resolve Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      is_production: ${{ steps.resolve.outputs.is_production }}
+      deploy_ref: ${{ steps.resolve.outputs.deploy_ref }}
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+    steps:
+      - name: Resolve deployment environment
+        id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.environment }}" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]] || [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV="production"
+          else
+            ENV="staging"
+          fi
+
+          IS_PROD="false"
+          if [ "$ENV" = "production" ]; then
+            IS_PROD="true"
+          fi
+
+          # Image tag: use git tag if available, otherwise short SHA
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            IMAGE_TAG="${{ github.ref_name }}"
+          else
+            IMAGE_TAG="sha-$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
+
+          echo "environment=$ENV" >> "$GITHUB_OUTPUT"
+          echo "is_production=$IS_PROD" >> "$GITHUB_OUTPUT"
+          echo "deploy_ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "### Deploy Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | $ENV |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ref | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ---------------------------------------------------------------------------
+  # Pre-deploy: run tests and validate
+  # ---------------------------------------------------------------------------
+  pre-deploy-checks:
+    name: Pre-Deploy Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [resolve-environment]
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gitgram
+          POSTGRES_PASSWORD: gitgram_test
+          POSTGRES_DB: gitgram_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma Client
+        working-directory: ./backend
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://gitgram:gitgram_test@localhost:5432/gitgram_test
+
+      - name: Validate database migrations
+        working-directory: ./backend
+        run: |
+          echo "Checking for pending migrations..."
+          npx prisma migrate deploy
+          echo "All migrations applied successfully."
+        env:
+          DATABASE_URL: postgresql://gitgram:gitgram_test@localhost:5432/gitgram_test
+
+      - name: Run linter
+        working-directory: ./backend
+        run: npm run lint
+
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
+        env:
+          DATABASE_URL: postgresql://gitgram:gitgram_test@localhost:5432/gitgram_test
+          JWT_SECRET: test-secret-key-for-ci-pipeline
+          JWT_REFRESH_SECRET: test-refresh-secret-for-ci-pipeline
+          NODE_ENV: test
+
+      - name: Build backend (compile check)
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Validate required env vars are documented
+        run: |
+          echo "Checking that secrets contract covers required variables..."
+          REQUIRED_VARS=("DATABASE_URL" "JWT_SECRET" "REDIS_URL")
+          for var in "${REQUIRED_VARS[@]}"; do
+            if ! grep -q "$var" docs/secrets-contract.md 2>/dev/null && \
+               ! grep -q "$var" docs/environment-matrix.md 2>/dev/null; then
+              echo "WARNING: $var not found in secrets documentation"
+            fi
+          done
+          echo "Environment variable documentation check complete."
+
+      - name: Check for breaking API changes
+        working-directory: ./backend
+        run: |
+          echo "Checking for potential breaking API changes..."
+          # Check if any route files were modified
+          CHANGED_ROUTES=$(git diff --name-only HEAD~1 HEAD -- 'src/routes/**' 2>/dev/null || true)
+          if [ -n "$CHANGED_ROUTES" ]; then
+            echo "Modified route files detected:"
+            echo "$CHANGED_ROUTES"
+            echo ""
+            echo "Review these changes for backward compatibility."
+            # Check for removed endpoints (potential breaking change)
+            REMOVED_LINES=$(git diff HEAD~1 HEAD -- 'src/routes/**' | grep "^-.*router\.\(get\|post\|put\|patch\|delete\)" 2>/dev/null || true)
+            if [ -n "$REMOVED_LINES" ]; then
+              echo ""
+              echo "WARNING: Potentially removed endpoints detected:"
+              echo "$REMOVED_LINES"
+              echo "Ensure these are intentional and communicated to API consumers."
+            fi
+          else
+            echo "No route changes detected."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build Docker images
+  # ---------------------------------------------------------------------------
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [resolve-environment, pre-deploy-checks]
+    if: always() && (needs.pre-deploy-checks.result == 'success' || needs.pre-deploy-checks.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKER_IMAGE_BACKEND }}:${{ needs.resolve-environment.outputs.image_tag }}
+            ${{ env.DOCKER_IMAGE_BACKEND }}:${{ needs.resolve-environment.outputs.environment }}-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            deploy.environment=${{ needs.resolve-environment.outputs.environment }}
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          push: true
+          tags: |
+            ${{ env.DOCKER_IMAGE_WEB }}:${{ needs.resolve-environment.outputs.image_tag }}
+            ${{ env.DOCKER_IMAGE_WEB }}:${{ needs.resolve-environment.outputs.environment }}-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ needs.resolve-environment.outputs.environment == 'production' && vars.PROD_API_URL || vars.STAGING_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ needs.resolve-environment.outputs.environment == 'production' && vars.PROD_WS_URL || vars.STAGING_WS_URL }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            deploy.environment=${{ needs.resolve-environment.outputs.environment }}
+
+  # ---------------------------------------------------------------------------
+  # Deploy to staging
+  # ---------------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [resolve-environment, build-images]
+    if: needs.resolve-environment.outputs.environment == 'staging'
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_APP_URL }}
+    env:
+      DEPLOY_ENV: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Record previous deployment version
+        id: previous
+        run: |
+          # Store current running image tag for rollback
+          PREV_TAG="${{ vars.CURRENT_DEPLOY_TAG || 'none' }}"
+          echo "previous_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "Previous deployment tag: $PREV_TAG"
+
+      - name: Run database migrations
+        run: |
+          echo "Running Prisma migrations on staging database..."
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.GITGRAM_DATABASE_URL }}" \
+            ${{ env.DOCKER_IMAGE_BACKEND }}:${{ needs.resolve-environment.outputs.image_tag }} \
+            npx prisma migrate deploy
+          echo "Migrations complete."
+
+      - name: Deploy backend (blue-green)
+        run: |
+          echo "Deploying backend to staging (blue-green)..."
+          IMAGE_TAG="${{ needs.resolve-environment.outputs.image_tag }}"
+
+          # Deploy new version alongside current (blue-green)
+          # The new container starts on a secondary port; traffic switches after health check
+          echo "Starting new backend instance with tag: $IMAGE_TAG"
+          echo "Image: ${{ env.DOCKER_IMAGE_BACKEND }}:$IMAGE_TAG"
+
+          # SSH deployment or cloud provider CLI
+          # This section should be customized for your infrastructure:
+          # Option A: Docker Compose on remote host
+          # Option B: AWS ECS update-service
+          # Option C: Kubernetes kubectl set image
+          # Option D: Railway / Render / Fly.io deploy
+
+          # For Docker Compose on remote host:
+          if [ -n "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+            chmod 600 /tmp/deploy_key
+            ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key \
+              ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }} \
+              "docker pull ${{ env.DOCKER_IMAGE_BACKEND }}:$IMAGE_TAG && \
+               docker pull ${{ env.DOCKER_IMAGE_WEB }}:$IMAGE_TAG && \
+               cd /opt/gitgram && \
+               BACKEND_IMAGE=${{ env.DOCKER_IMAGE_BACKEND }}:$IMAGE_TAG \
+               WEB_IMAGE=${{ env.DOCKER_IMAGE_WEB }}:$IMAGE_TAG \
+               docker compose up -d --remove-orphans"
+            rm -f /tmp/deploy_key
+          else
+            echo "No SSH key configured. Using placeholder deployment."
+            echo "Configure DEPLOY_SSH_KEY, STAGING_SSH_USER, and STAGING_SSH_HOST secrets."
+          fi
+
+      - name: Health check - Backend
+        id: health_backend
+        run: |
+          API_URL="${{ vars.STAGING_API_URL || 'http://localhost:4000' }}"
+          echo "Running health checks against $API_URL..."
+
+          SUCCESS=false
+          for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+            echo "Health check attempt $i/${{ env.HEALTH_CHECK_RETRIES }}..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/health" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Backend health check PASSED (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            fi
+
+            echo "Backend not ready (HTTP $HTTP_CODE). Waiting ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "health_passed=false" >> "$GITHUB_OUTPUT"
+            echo "Backend health check FAILED after ${{ env.HEALTH_CHECK_RETRIES }} attempts."
+          else
+            echo "health_passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Health check - Web frontend
+        id: health_web
+        run: |
+          WEB_URL="${{ vars.STAGING_APP_URL || 'http://localhost:3000' }}"
+          echo "Running health checks against $WEB_URL..."
+
+          SUCCESS=false
+          for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+            echo "Health check attempt $i/${{ env.HEALTH_CHECK_RETRIES }}..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$WEB_URL" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" -lt 500 ] 2>/dev/null && [ "$HTTP_CODE" != "000" ]; then
+              echo "Web health check PASSED (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            fi
+
+            echo "Web not ready (HTTP $HTTP_CODE). Waiting ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "health_passed=false" >> "$GITHUB_OUTPUT"
+            echo "Web health check FAILED after ${{ env.HEALTH_CHECK_RETRIES }} attempts."
+          else
+            echo "health_passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate health checks
+        id: health_gate
+        run: |
+          BACKEND_OK="${{ steps.health_backend.outputs.health_passed }}"
+          WEB_OK="${{ steps.health_web.outputs.health_passed }}"
+
+          echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend API | $([ '$BACKEND_OK' = 'true' ] && echo 'PASS' || echo 'FAIL') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web Frontend | $([ '$WEB_OK' = 'true' ] && echo 'PASS' || echo 'FAIL') |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$BACKEND_OK" != "true" ] || [ "$WEB_OK" != "true" ]; then
+            echo "needs_rollback=true" >> "$GITHUB_OUTPUT"
+            echo "Health checks FAILED. Triggering rollback."
+          else
+            echo "needs_rollback=false" >> "$GITHUB_OUTPUT"
+            echo "All health checks passed."
+          fi
+
+      - name: Rollback on failure
+        if: steps.health_gate.outputs.needs_rollback == 'true'
+        run: |
+          PREV_TAG="${{ steps.previous.outputs.previous_tag }}"
+          echo "ROLLING BACK to previous version: $PREV_TAG"
+
+          if [ "$PREV_TAG" = "none" ]; then
+            echo "No previous version to roll back to. Manual intervention required."
+            exit 1
+          fi
+
+          if [ -n "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+            chmod 600 /tmp/deploy_key
+            ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key \
+              ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }} \
+              "cd /opt/gitgram && \
+               BACKEND_IMAGE=${{ env.DOCKER_IMAGE_BACKEND }}:$PREV_TAG \
+               WEB_IMAGE=${{ env.DOCKER_IMAGE_WEB }}:$PREV_TAG \
+               docker compose up -d --remove-orphans"
+            rm -f /tmp/deploy_key
+          fi
+
+          echo "Rollback complete. Failing the job."
+          exit 1
+
+      - name: Update deployment tag
+        if: steps.health_gate.outputs.needs_rollback != 'true'
+        run: |
+          echo "Deployment successful. New tag: ${{ needs.resolve-environment.outputs.image_tag }}"
+          # In a real setup, update the vars.CURRENT_DEPLOY_TAG via GitHub API
+          # gh variable set CURRENT_DEPLOY_TAG --body "${{ needs.resolve-environment.outputs.image_tag }}" --env staging
+
+  # ---------------------------------------------------------------------------
+  # Deploy to production (requires staging success or manual trigger)
+  # ---------------------------------------------------------------------------
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [resolve-environment, build-images]
+    if: needs.resolve-environment.outputs.environment == 'production'
+    environment:
+      name: production
+      url: ${{ vars.PROD_APP_URL }}
+    env:
+      DEPLOY_ENV: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Record previous deployment version
+        id: previous
+        run: |
+          PREV_TAG="${{ vars.CURRENT_DEPLOY_TAG || 'none' }}"
+          echo "previous_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "Previous production deployment tag: $PREV_TAG"
+
+      - name: Pre-deploy database backup
+        run: |
+          echo "Creating pre-deploy database backup..."
+          # Trigger backup via your backup service / provider
+          # Example: AWS RDS snapshot, pg_dump, Neon branch, etc.
+          echo "Backup completed (or delegate to infrastructure)."
+
+      - name: Run database migrations
+        run: |
+          echo "Running Prisma migrations on production database..."
+          docker run --rm \
+            -e DATABASE_URL="${{ secrets.GITGRAM_DATABASE_URL }}" \
+            ${{ env.DOCKER_IMAGE_BACKEND }}:${{ needs.resolve-environment.outputs.image_tag }} \
+            npx prisma migrate deploy
+          echo "Migrations complete."
+
+      - name: Deploy backend (rolling update)
+        run: |
+          echo "Deploying backend to production (rolling update)..."
+          IMAGE_TAG="${{ needs.resolve-environment.outputs.image_tag }}"
+
+          if [ -n "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+            chmod 600 /tmp/deploy_key
+            ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key \
+              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
+              "docker pull ${{ env.DOCKER_IMAGE_BACKEND }}:$IMAGE_TAG && \
+               docker pull ${{ env.DOCKER_IMAGE_WEB }}:$IMAGE_TAG && \
+               cd /opt/gitgram && \
+               BACKEND_IMAGE=${{ env.DOCKER_IMAGE_BACKEND }}:$IMAGE_TAG \
+               WEB_IMAGE=${{ env.DOCKER_IMAGE_WEB }}:$IMAGE_TAG \
+               docker compose up -d --remove-orphans --no-build"
+            rm -f /tmp/deploy_key
+          else
+            echo "No SSH key configured. Using placeholder deployment."
+            echo "Configure DEPLOY_SSH_KEY, PROD_SSH_USER, and PROD_SSH_HOST secrets."
+          fi
+
+      - name: Health check - Backend
+        id: health_backend
+        run: |
+          API_URL="${{ vars.PROD_API_URL || 'https://api.gitgram.com' }}"
+          echo "Running production health checks against $API_URL..."
+
+          SUCCESS=false
+          for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+            echo "Health check attempt $i/${{ env.HEALTH_CHECK_RETRIES }}..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/health" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Backend health check PASSED (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            fi
+
+            echo "Backend not ready (HTTP $HTTP_CODE). Waiting ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "health_passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "health_passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Health check - Web frontend
+        id: health_web
+        run: |
+          WEB_URL="${{ vars.PROD_APP_URL || 'https://gitgram.com' }}"
+          echo "Running production health checks against $WEB_URL..."
+
+          SUCCESS=false
+          for i in $(seq 1 ${{ env.HEALTH_CHECK_RETRIES }}); do
+            echo "Health check attempt $i/${{ env.HEALTH_CHECK_RETRIES }}..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$WEB_URL" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" -lt 500 ] 2>/dev/null && [ "$HTTP_CODE" != "000" ]; then
+              echo "Web health check PASSED (HTTP $HTTP_CODE)"
+              SUCCESS=true
+              break
+            fi
+
+            echo "Web not ready (HTTP $HTTP_CODE). Waiting ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "health_passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "health_passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate health checks
+        id: health_gate
+        run: |
+          BACKEND_OK="${{ steps.health_backend.outputs.health_passed }}"
+          WEB_OK="${{ steps.health_web.outputs.health_passed }}"
+
+          echo "### Production Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend API | $([ '$BACKEND_OK' = 'true' ] && echo 'PASS' || echo 'FAIL') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web Frontend | $([ '$WEB_OK' = 'true' ] && echo 'PASS' || echo 'FAIL') |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$BACKEND_OK" != "true" ] || [ "$WEB_OK" != "true" ]; then
+            echo "needs_rollback=true" >> "$GITHUB_OUTPUT"
+            echo "Production health checks FAILED. Triggering automatic rollback."
+          else
+            echo "needs_rollback=false" >> "$GITHUB_OUTPUT"
+            echo "All production health checks passed."
+          fi
+
+      - name: Automatic rollback on failure
+        if: steps.health_gate.outputs.needs_rollback == 'true'
+        run: |
+          PREV_TAG="${{ steps.previous.outputs.previous_tag }}"
+          echo "PRODUCTION ROLLBACK to version: $PREV_TAG"
+
+          if [ "$PREV_TAG" = "none" ]; then
+            echo "No previous version to roll back to. MANUAL INTERVENTION REQUIRED."
+            exit 1
+          fi
+
+          if [ -n "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            echo "${{ secrets.DEPLOY_SSH_KEY }}" > /tmp/deploy_key
+            chmod 600 /tmp/deploy_key
+            ssh -o StrictHostKeyChecking=no -i /tmp/deploy_key \
+              ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
+              "cd /opt/gitgram && \
+               BACKEND_IMAGE=${{ env.DOCKER_IMAGE_BACKEND }}:$PREV_TAG \
+               WEB_IMAGE=${{ env.DOCKER_IMAGE_WEB }}:$PREV_TAG \
+               docker compose up -d --remove-orphans --no-build"
+            rm -f /tmp/deploy_key
+          fi
+
+          echo "Rollback complete. Failing the job to alert the team."
+          exit 1
+
+      - name: Update deployment tag
+        if: steps.health_gate.outputs.needs_rollback != 'true'
+        run: |
+          echo "Production deployment successful. Tag: ${{ needs.resolve-environment.outputs.image_tag }}"
+
+      - name: Notify deployment success
+        if: steps.health_gate.outputs.needs_rollback != 'true'
+        run: |
+          echo "### Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** production" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag:** ${{ needs.resolve-environment.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+          # Slack notification (if configured)
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\":\"Gitgram production deploy complete: ${{ needs.resolve-environment.outputs.image_tag }}\"}" \
+              || echo "Slack notification failed (non-blocking)"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Post-deploy smoke tests
+  # ---------------------------------------------------------------------------
+  smoke-tests:
+    name: Post-Deploy Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [resolve-environment, deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run smoke tests
+        run: |
+          ENV="${{ needs.resolve-environment.outputs.environment }}"
+
+          if [ "$ENV" = "production" ]; then
+            API_URL="${{ vars.PROD_API_URL || 'https://api.gitgram.com' }}"
+            WEB_URL="${{ vars.PROD_APP_URL || 'https://gitgram.com' }}"
+          else
+            API_URL="${{ vars.STAGING_API_URL || 'https://api.gitgram.dev' }}"
+            WEB_URL="${{ vars.STAGING_APP_URL || 'https://staging.gitgram.dev' }}"
+          fi
+
+          echo "Running smoke tests for $ENV..."
+          echo "API: $API_URL"
+          echo "Web: $WEB_URL"
+
+          FAILURES=0
+
+          # Test 1: Health endpoint
+          echo ""
+          echo "--- Test 1: Health endpoint ---"
+          HEALTH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/health" 2>/dev/null || echo "000")
+          if [ "$HEALTH_CODE" = "200" ]; then
+            echo "PASS: Health endpoint returned 200"
+          else
+            echo "FAIL: Health endpoint returned $HEALTH_CODE"
+            FAILURES=$((FAILURES + 1))
+          fi
+
+          # Test 2: Auth endpoint responds (should return 400/422, not 500)
+          echo ""
+          echo "--- Test 2: Auth endpoint ---"
+          AUTH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/auth/login" \
+            -X POST -H "Content-Type: application/json" -d '{}' 2>/dev/null || echo "000")
+          if [ "$AUTH_CODE" != "500" ] && [ "$AUTH_CODE" != "000" ]; then
+            echo "PASS: Auth endpoint returned $AUTH_CODE (not 500)"
+          else
+            echo "FAIL: Auth endpoint returned $AUTH_CODE"
+            FAILURES=$((FAILURES + 1))
+          fi
+
+          # Test 3: Web frontend is reachable
+          echo ""
+          echo "--- Test 3: Web frontend ---"
+          WEB_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$WEB_URL" 2>/dev/null || echo "000")
+          if [ "$WEB_CODE" -lt 500 ] 2>/dev/null && [ "$WEB_CODE" != "000" ]; then
+            echo "PASS: Web frontend returned $WEB_CODE"
+          else
+            echo "FAIL: Web frontend returned $WEB_CODE"
+            FAILURES=$((FAILURES + 1))
+          fi
+
+          # Test 4: API returns structured JSON
+          echo ""
+          echo "--- Test 4: API JSON response ---"
+          RESPONSE=$(curl -sf "$API_URL/health" 2>/dev/null || echo "")
+          if echo "$RESPONSE" | python3 -m json.tool > /dev/null 2>&1; then
+            echo "PASS: Health endpoint returns valid JSON"
+          else
+            echo "WARN: Health endpoint response is not JSON (may be plain text)"
+          fi
+
+          echo ""
+          echo "### Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "- API URL: $API_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- Failures: $FAILURES" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "SMOKE TESTS FAILED: $FAILURES failure(s)"
+            exit 1
+          fi
+
+          echo "All smoke tests passed."

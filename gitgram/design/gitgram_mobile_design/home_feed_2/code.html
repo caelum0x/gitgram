@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CodeFeed</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+            'FILL' 0,
+            'wght' 400,
+            'GRAD' 0,
+            'opsz' 24
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#135bec",
+              "background-light": "#f6f6f8",
+              "background-dark": "#0D1117",
+            },
+            fontFamily: {
+              "display": ["Space Grotesk", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-display">
+<div class="relative flex min-h-screen w-full flex-col group/design-root overflow-x-hidden text-gray-200">
+<header class="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-800 bg-background-dark/80 px-4 backdrop-blur-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-3xl">data_object</span>
+<h1 class="text-xl font-bold tracking-tight text-white">CodeFeed</h1>
+</div>
+<div class="flex items-center gap-1">
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">favorite_border</span>
+</button>
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">send</span>
+</button>
+</div>
+</header>
+<main class="flex-1 pb-24">
+<div class="w-full border-b border-gray-800 py-3">
+<div class="flex items-center justify-between px-4 pb-3">
+<div class="flex items-center gap-3">
+<img alt="User avatar for eliza_codes" class="h-10 w-10 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGhpu070JIqdXdod7G6B9rSfOIpxfhe3JK-JA2jzQE0ttcqN-yI1WjtFaJsLB2wu2WH_MvqS85vW-N-wimRweyjajoNYwsad__ip4XvZ-BOitNs9Ajj_mUjeY6zFWny8BQ_Hu3UThqkghyVnvpKR1mO1d1lNJgRWXN40BgTZ93Cl6BkCwjDTvk1AKS2dwxRTNEiHpwpRkUXfhqddLX5UUC2JYJCB_l1trlO6bY3tieCk4mrxxPoSdY8zQG5Ym-q_HeudkKvk3vM2A"/>
+<span class="font-bold text-sm text-white">eliza_codes</span>
+</div>
+<button class="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">more_horiz</span>
+</button>
+</div>
+<div class="aspect-square w-full bg-cover bg-center" data-alt="A stylized code snippet with glowing text on a dark background." style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBdk-VcWhiESxoLvQAgsCSWbEF79WvjMjXfxsORFX36QpKxmju0kyP0TmcpEIRPlixIhJITsNMCr9SqRj1TgiGyMbFGw9K71tTYqBzLMLAntpmA3SLNo07P3dLiOlo9PfDgNSTyHll9Ep9ByrIIwaJq1HUr8LtyehCPxZmX4ilnH605GK6M20EqExs3oMI2W5bG1Aw4xtdzwnH2e0vIsh_s4Sy_PwzXO0UktJ1R4uRpifjk9aiVZu5OjVr0-E0ria--Yo3crb-FS0A");'></div>
+<div class="flex items-center justify-between px-4 pt-3">
+<div class="flex items-center gap-2">
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl text-red-500" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">chat_bubble_outline</span>
+</button>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">share</span>
+</button>
+</div>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">bookmark_border</span>
+</button>
+</div>
+<div class="px-4 pt-1 pb-2">
+<p class="font-bold text-sm text-white">1,024 likes</p>
+<p class="pt-2 text-sm text-gray-300"><span class="font-bold text-white">eliza_codes/aura-ui</span> Just shipped a new design system! Built with React and Tailwind CSS. So excited to see what people build with it. ✨ #react #tailwindcss #designsystem</p>
+<p class="text-sm text-gray-500 pt-2 cursor-pointer hover:underline">View all 42 comments</p>
+<p class="text-xs text-gray-600 pt-2">2 HOURS AGO</p>
+</div>
+</div>
+<div class="w-full border-b border-gray-800 py-3">
+<div class="flex items-center justify-between px-4 pb-3">
+<div class="flex items-center gap-3">
+<img alt="User avatar for david_dev" class="h-10 w-10 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSJ-0G28cp1TECQaDUE08M2DA1ssEiLOrZ-3b_cVSJ7KTxol8wmFE3OtNAa9cQMa8XbCpoeIUK9gS_u2V-PBFGmwrt7UQNLXkuHBIPMn-ZCopWWqKz2UDuwInkQJc1K84Z670JuTxAFuBhIP-booWN5qZxS3ePlioUI7PIfFn3tOeWClAUvQwzdx1Ks8egIumf_9Z249Ia-gabQ-zby_jjQ5Up-44C-kZalDJjgsZ1nCuvSlW3SSkFfBnuhrGNEedhIu4fYwdspi0"/>
+<span class="font-bold text-sm text-white">david_dev</span>
+</div>
+<button class="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">more_horiz</span>
+</button>
+</div>
+<div class="aspect-square w-full bg-cover bg-center" data-alt="Laptop screen showing HTML code." style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBpAilZaXes2W4LPtTsi59IFXl-qhyBjt26YfCPsGYt4w50rVi5D-lQc6CC5KzwXfBUOpES6XV38QWYgkGzDZVTc8di-ipoQvkXxhwhBuKwyzdJuOMjZrxghQTRHABoWbtW14tvYnpyuqP3qMYHE7DqTb44-Cg4qvdv4sesQfvEsK31eEfWYuMBEBcBpRvSCVfM1tuL4LoDFZeMqIHIpwVxQybLDb0sqXExM3LgU_bI8zoS3zwF5eIoK8eBNKLRQ1-aiysSSdv-yak");'></div>
+<div class="flex items-center justify-between px-4 pt-3">
+<div class="flex items-center gap-2">
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">favorite_border</span>
+</button>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">chat_bubble_outline</span>
+</button>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl">share</span>
+</button>
+</div>
+<button class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-gray-800">
+<span class="material-symbols-outlined text-2xl text-white" style="font-variation-settings: 'FILL' 1;">bookmark</span>
+</button>
+</div>
+<div class="px-4 pt-1 pb-2">
+<p class="font-bold text-sm text-white">512 likes</p>
+<p class="pt-2 text-sm text-gray-300"><span class="font-bold text-white">david_dev/py-data-cli</span> A little command-line tool for data analysis I've been hacking on. It's written in Python. Let me know what you think! #python #cli #opensource</p>
+<p class="text-sm text-gray-500 pt-2 cursor-pointer hover:underline">View all 16 comments</p>
+<p class="text-xs text-gray-600 pt-2">8 HOURS AGO</p>
+</div>
+</div>
+</main>
+<nav class="fixed bottom-0 left-0 right-0 z-10 flex h-20 items-center justify-around border-t border-gray-800 bg-background-dark/80 backdrop-blur-sm">
+<a class="flex flex-col items-center gap-1 text-white" href="#">
+<span class="material-symbols-outlined !fill-1 text-2xl">home</span>
+<span class="text-xs font-bold">Home</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400 transition-colors hover:text-white" href="#">
+<span class="material-symbols-outlined text-2xl">search</span>
+<span class="text-xs">Discover</span>
+</a>
+<a class="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/50 transition-transform hover:scale-105" href="#">
+<span class="material-symbols-outlined text-3xl">add</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400 transition-colors hover:text-white" href="#">
+<span class="material-symbols-outlined text-2xl">code</span>
+<span class="text-xs">Activity</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400 transition-colors hover:text-white" href="#">
+<img alt="User's profile avatar, a woman smiling." class="h-6 w-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmEegXlVIN1s5IfB6lp3mKLCe6SdACpM3aSaoBXjbI_Rnv-2zhPN6sLAKogjxRoHUOuQtSI5Nqb2fN5CW9pr3oYx7cwfjzjkt6ZI1_B2Pn5kgxPL7FB4V1OM1yChkK5P12znfdp6CTdEZcuzyfNTz8-cxGzqNemPK0OVrKd6fC6oEWO-pgyR1RVd_auD-N_Xn6NyF-9ZknGAe9X9o9MZwVcKUNYXgup0-4zXVlz332kZPXdRpie29T4vfayhVnz-u3-ST7cvJqVDg"/>
+<span class="text-xs">Profile</span>
+</a>
+</nav>
+</div>
+
+</body></html>

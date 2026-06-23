@@ -1,0 +1,51 @@
+// Add this to your existing schema.prisma
+
+// New model for caching any GitHub repository
+model Repository {
+  id          String   @id @default(cuid())
+  owner       String
+  name        String
+  fullName    String   // "microsoft/vscode"
+  description String?  @db.Text
+  stars       Int      @default(0)
+  forks       Int      @default(0)
+  language    String?
+  topics      String[]
+  avatarUrl   String?
+  htmlUrl     String
+  lastFetched DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  posts       Post[]   @relation("RepositoryPosts")
+  followers   RepositoryFollow[]
+  
+  @@unique([owner, name])
+  @@index([stars])
+  @@index([language])
+  @@index([fullName])
+}
+
+model RepositoryFollow {
+  id           String   @id @default(cuid())
+  userId       String
+  repositoryId String
+  createdAt    DateTime @default(now())
+  
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, repositoryId])
+  @@index([userId])
+  @@index([repositoryId])
+}
+
+// Update Post model - add these fields:
+// repoOwner   String?
+// repoName    String?
+// repositoryId String?
+// repository  Repository? @relation("RepositoryPosts", fields: [repositoryId], references: [id])
+// @@index([repositoryId])
+
+// Update User model - add:
+// repositoryFollows RepositoryFollow[]

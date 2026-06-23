@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Gitgram - Where Your Code Tells a Story</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1337ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101322",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-gray-800 dark:text-gray-200">
+<div class="relative flex min-h-screen w-full flex-col">
+<!-- Main Container -->
+<div class="flex h-full grow flex-col items-center">
+<div class="w-full max-w-5xl px-4 sm:px-6 lg:px-8">
+<!-- TopNavBar -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-gray-200/20 dark:border-white/10 py-4">
+<div class="flex items-center gap-3 text-gray-900 dark:text-white">
+<span class="material-symbols-outlined text-primary text-2xl">data_object</span>
+<h2 class="text-xl font-bold">Gitgram</h2>
+</div>
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-white transition-colors" href="#">Features</a>
+<a class="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-white transition-colors" href="#">About</a>
+</nav>
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-wide hover:bg-primary/90 transition-colors">
+<span class="truncate">Log In with GitHub</span>
+</button>
+</header>
+<main class="flex flex-col">
+<!-- HeroSection -->
+<section class="py-20 sm:py-28 text-center">
+<div class="flex flex-col items-center gap-6">
+<h1 class="text-4xl font-black leading-tight tracking-tighter text-gray-900 dark:text-white sm:text-5xl md:text-6xl max-w-3xl">
+                                Where Your Code Tells a Story
+                            </h1>
+<p class="text-base font-normal text-gray-600 dark:text-gray-400 sm:text-lg max-w-2xl">
+                                Share progress, discover inspiring projects, and connect with developers around the world.
+                            </p>
+<div class="flex flex-wrap items-center justify-center gap-4 mt-4">
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-12 px-6 bg-primary text-white text-base font-bold leading-normal tracking-wide hover:bg-primary/90 transition-colors">
+<svg class="bi bi-github" fill="currentColor" height="20" viewbox="0 0 16 16" width="20" xmlns="http://www.w3.org/2000/svg">
+<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"></path>
+</svg>
+<span class="truncate">Connect with GitHub</span>
+</button>
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-gray-500/10 dark:bg-white/10 text-gray-800 dark:text-white text-base font-bold leading-normal tracking-wide hover:bg-gray-500/20 dark:hover:bg-white/20 transition-colors">
+<span class="truncate">Learn More</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Visual Element Placeholder -->
+<div class="relative w-full h-64 sm:h-80 md:h-96 my-10">
+<div class="absolute inset-0 bg-gradient-to-tr from-primary/30 to-purple-500/30 dark:from-primary/50 dark:to-purple-500/50 rounded-xl blur-2xl opacity-40 dark:opacity-30"></div>
+<img class="relative w-full h-full object-cover rounded-xl border border-gray-200/20 dark:border-white/10 shadow-2xl shadow-primary/10" data-alt="Abstract visualization of code connections and social graph nodes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7-GnHgrYPLalP1nUhe-G6h7K2JfSWbpfoJqm5dFBRETWI_bxMdt8QJt8U46vXucWw9sr_Zv5S6zfXMnzwoKtVl4yStjwvUQChPWaD0HOybu3qxiejwTsHrpFJF0Mgsm9QWwY5YoL6SgT4WLmtmtaZjlBc4qydqInl-taojj-Fovml6nZn65s8g8V3FVBD0ISixrbYnWeyUjCuFtzapuLnKXXbYDYHYNE648cgqUyub_8g_LcsJnamQjGep0m8pULLtgSwd7Kl_HM"/>
+</div>
+<!-- FeatureSection -->
+<section class="py-20 sm:py-28">
+<div class="flex flex-col gap-12">
+<div class="flex flex-col gap-4 text-center">
+<h2 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
+                                    Discover Gitgram's Core Features
+                                </h2>
+<p class="text-base text-gray-600 dark:text-gray-400 sm:text-lg max-w-3xl mx-auto">
+                                    Everything you need to showcase your work and connect with the developer community.
+                                </p>
+</div>
+<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+<div class="flex flex-col gap-4 rounded-xl border border-gray-200/50 dark:border-white/10 bg-gray-500/5 dark:bg-white/5 p-6 text-center items-center transition-all hover:bg-gray-500/10 dark:hover:bg-white/10">
+<div class="flex items-center justify-center size-12 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined text-3xl">share</span>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="text-lg font-bold text-gray-900 dark:text-white">Share</h3>
+<p class="text-sm text-gray-600 dark:text-gray-400">Instantly create visual posts from your commits and pull requests.</p>
+</div>
+</div>
+<div class="flex flex-col gap-4 rounded-xl border border-gray-200/50 dark:border-white/10 bg-gray-500/5 dark:bg-white/5 p-6 text-center items-center transition-all hover:bg-gray-500/10 dark:hover:bg-white/10">
+<div class="flex items-center justify-center size-12 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined text-3xl">explore</span>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="text-lg font-bold text-gray-900 dark:text-white">Discover</h3>
+<p class="text-sm text-gray-600 dark:text-gray-400">Explore a feed of trending projects and innovative code.</p>
+</div>
+</div>
+<div class="flex flex-col gap-4 rounded-xl border border-gray-200/50 dark:border-white/10 bg-gray-500/5 dark:bg-white/5 p-6 text-center items-center transition-all hover:bg-gray-500/10 dark:hover:bg-white/10">
+<div class="flex items-center justify-center size-12 rounded-lg bg-primary/10 text-primary">
+<span class="material-symbols-outlined text-3xl">group</span>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="text-lg font-bold text-gray-900 dark:text-white">Connect</h3>
+<p class="text-sm text-gray-600 dark:text-gray-400">Follow developers, join discussions, and build your network.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="flex flex-col items-center gap-8 border-t border-gray-200/20 dark:border-white/10 py-10">
+<div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
+<a class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">Privacy Policy</a>
+<a class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">Terms of Service</a>
+<a class="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">Contact Us</a>
+</div>
+<div class="flex justify-center gap-6">
+<a class="text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">
+<span class="material-symbols-outlined">code</span>
+</a>
+<a class="text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">
+<svg class="bi bi-twitter-x" fill="currentColor" height="24" viewbox="0 0 16 16" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M12.6.75h2.454l-5.36 6.142L16 15.25h-4.937l-3.867-5.07-4.425 5.07H.316l5.733-6.57L0 .75h5.063l3.495 4.633L12.601.75Zm-.86 13.028h1.36L4.323 2.145H2.865z"></path></svg>
+</a>
+<a class="text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-white" href="#">
+<svg class="bi bi-linkedin" fill="currentColor" height="24" viewbox="0 0 16 16" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854zm4.943 12.248V6.169H2.542v7.225zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248S2.4 3.226 2.4 3.934c0 .694.521 1.248 1.327 1.248zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.325 0-1.95.724-2.28 1.25h-.02v-1.07h-2.168zm-6.54 1.348H7.163V6.169h-2.4c.03.658 0 7.225 0 7.225z"></path></svg>
+</a>
+</div>
+<p class="text-sm text-gray-500 dark:text-gray-400">© 2024 Gitgram. All rights reserved.</p>
+</footer>
+</div>
+</div>
+</div>
+</body></html>

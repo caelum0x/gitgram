@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ai-time-machine": {
+      "command": "node",
+      "args": ["./mcp/dist/index.js"],
+      "env": {
+        "TM_DATA_DIR": "${HOME}/.aitimemachine-server"
+      }
+    }
+  }
+}

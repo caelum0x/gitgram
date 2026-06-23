@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Gitgram Project Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0,
+      'wght' 400,
+      'GRAD' 0,
+      'opsz' 24
+    }
+    .readme-content h1 {
+      @apply text-2xl font-bold mt-6 mb-4;
+    }
+    .readme-content h2 {
+      @apply text-xl font-bold mt-5 mb-3;
+    }
+    .readme-content h3 {
+      @apply text-lg font-bold mt-4 mb-2;
+    }
+    .readme-content p {
+      @apply text-base text-[#9da6b9] mb-4;
+    }
+    .readme-content ul {
+      @apply list-disc list-inside mb-4 pl-2 text-[#9da6b9];
+    }
+    .readme-content ol {
+      @apply list-decimal list-inside mb-4 text-[#9da6b9];
+    }
+    .readme-content a {
+      @apply text-[#4a9cff] hover:underline;
+    }
+    .readme-content code:not(pre > code) {
+      @apply bg-gray-500/20 text-[#9da6b9] rounded px-1.5 py-1 text-sm font-mono;
+    }
+    .readme-content pre {
+      @apply bg-[#1c212c] p-4 rounded-md overflow-x-auto mb-4 border border-[#3b4354];
+    }
+    .readme-content pre code {
+       @apply text-sm;
+    }
+    .readme-content blockquote {
+        @apply pl-4 border-l-4 border-gray-700 text-gray-400 italic my-4;
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#238636", // GitHub green for primary actions
+            "background-light": "#f6f6f8",
+            "background-dark": "#0d1117", // GitHub dark background
+            "header-dark": "#161b22",
+            "border-dark": "#30363d",
+            "text-primary-dark": "#c9d1d9",
+            "text-secondary-dark": "#8b949e",
+            "button-dark": "#21262d",
+            "button-dark-hover": "#30363d",
+            "icon-dark": "#8b949e",
+            "link-dark": "#58a6ff"
+          },
+          fontFamily: {
+            "display": ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", "sans-serif", "Apple Color Emoji", "Segoe UI Emoji"]
+          },
+          borderRadius: {
+            "DEFAULT": "6px",
+            "lg": "8px",
+            "xl": "12px",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-display text-text-primary-dark">
+<div class="relative flex h-auto min-h-screen w-full flex-col overflow-x-hidden group/design-root">
+<header class="sticky top-0 z-10 flex items-center bg-header-dark/90 backdrop-blur-sm px-4 py-3 justify-between border-b border-border-dark">
+<div class="flex size-10 shrink-0 items-center justify-start">
+<span class="material-symbols-outlined text-text-primary-dark cursor-pointer">arrow_back_ios_new</span>
+</div>
+<div class="flex flex-col items-center">
+<h1 class="text-text-primary-dark text-base font-semibold leading-tight">Gitgram</h1>
+<h2 class="text-text-secondary-dark text-xs font-normal leading-tight">facebook/react</h2>
+</div>
+<div class="flex w-10 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-transparent text-text-primary-dark gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined text-text-primary-dark">more_horiz</span>
+</button>
+</div>
+</header>
+<main class="flex flex-col">
+<div class="p-4 border-b border-border-dark">
+<div class="flex items-center gap-4 mb-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full h-12 w-12" data-alt="React project logo" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCTCYG7PTputKI6LLVMQ3Y-2_HCtfwpYOw6Nt4a5imcOpMGV2gOr9S2SeEnA-DVsFhfvdEZIecib9jKM1paBJ9OmyA-U2OmWb4o2_3sv6D7HEZ-7AHqzZbu6ynar9OHgw7Kn_vSZrjcUZKtCq65cOx9LcFoUpUP8VcaQHOmoscxbzjdiRj0bMBC9sICHXMcItU7UsezAMF2SXWFFXcvMZ4Zbx-2ewmAr71T7uq3UNlDKOI0pt12yO1g7miDMSkrXXBxQlCDOOdh3A0");'></div>
+<div>
+<p class="text-text-primary-dark text-xl font-semibold leading-tight">react</p>
+<p class="text-text-secondary-dark text-sm font-normal leading-normal">facebook</p>
+</div>
+</div>
+<p class="text-text-primary-dark text-sm mb-4">A declarative, efficient, and flexible JavaScript library for building user interfaces.</p>
+<div class="flex gap-4">
+<button class="flex-1 flex items-center justify-center gap-2 h-8 rounded-md bg-button-dark border border-border-dark text-text-primary-dark text-xs font-semibold hover:bg-button-dark-hover">
+<span class="material-symbols-outlined !text-base !font-normal text-icon-dark">star_outline</span>
+            Star
+            <span class="bg-[#30363d] px-2 py-0.5 rounded-full text-xs">219k</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-2 h-8 rounded-md bg-button-dark border border-border-dark text-text-primary-dark text-xs font-semibold hover:bg-button-dark-hover">
+<span class="material-symbols-outlined !text-base !font-normal text-icon-dark">fork_right</span>
+            Fork
+            <span class="bg-[#30363d] px-2 py-0.5 rounded-full text-xs">44.8k</span>
+</button>
+</div>
+</div>
+<div class="w-full">
+<div class="flex border-b border-border-dark text-sm text-center">
+<a class="flex-1 whitespace-nowrap border-b-2 border-orange-500 py-3 px-2 font-semibold text-text-primary-dark" href="#">
+            About
+          </a>
+<a class="flex-1 whitespace-nowrap border-b-2 border-transparent py-3 px-2 font-medium text-text-secondary-dark hover:border-gray-500 hover:text-text-primary-dark" href="#">
+            Highlights
+          </a>
+<a class="flex-1 whitespace-nowrap border-b-2 border-transparent py-3 px-2 font-medium text-text-secondary-dark hover:border-gray-500 hover:text-text-primary-dark" href="#">
+            Contributors
+          </a>
+</div>
+<div class="p-4 readme-content">
+<h2 class="text-lg font-semibold text-text-primary-dark !mt-2 !mb-2 border-b border-border-dark pb-2">README.md</h2>
+<p>React is a JavaScript library for building user interfaces. It is maintained by Facebook and a community of individual developers and companies.</p>
+<p>React can be used as a base in the development of single-page or mobile applications. Complex React applications usually require the use of additional libraries for state management, routing, and interaction with an API.</p>
+<h3 class="text-base font-semibold text-text-primary-dark !mt-6 !mb-2">Key Features</h3>
+<ul>
+<li><strong>Component-Based:</strong> Build encapsulated components that manage their own state, then compose them to make complex UIs.</li>
+<li><strong>Declarative:</strong> React makes it painless to create interactive UIs. Design simple views for each state in your application, and React will efficiently update and render just the right components when your data changes.</li>
+<li><strong>Learn Once, Write Anywhere:</strong> You can develop new features in React without rewriting existing code. React can also render on the server using Node and power mobile apps using React Native.</li>
+</ul>
+<h3 class="text-base font-semibold text-text-primary-dark !mt-6 !mb-2">Installation</h3>
+<p>React is available as a package on npm. You can install it using:</p>
+<pre><code class="language-bash">npm install react react-dom</code></pre>
+<h3 class="text-base font-semibold text-text-primary-dark !mt-6 !mb-2">Example Usage</h3>
+<pre><code class="language-jsx">import React from 'react';
+import ReactDOM from 'react-dom';
+function HelloWorld() {
+  return &lt;h1&gt;Hello, world!&lt;/h1&gt;;
+}
+ReactDOM.render(&lt;HelloWorld /&gt;, document.getElementById('root'));</code></pre>
+</div>
+</div>
+<div class="h-20"></div>
+</main>
+</div>
+
+</body></html>

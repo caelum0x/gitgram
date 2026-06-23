@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Time Machine</title>
+  <style>
+    :root {
+      --bg: var(--vscode-editor-background);
+      --fg: var(--vscode-editor-foreground);
+      --border: var(--vscode-panel-border);
+      --accent: var(--vscode-button-background);
+      --hover: var(--vscode-list-hoverBackground);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--vscode-font-family); background: var(--bg); color: var(--fg); padding: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .btn { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .btn:hover { opacity: 0.9; }
+    .timeline { display: flex; flex-direction: column; gap: 8px; }
+    .checkpoint { background: var(--vscode-list-inactiveSelectionBackground); border-radius: 6px; padding: 12px; cursor: pointer; border-left: 3px solid transparent; }
+    .checkpoint:hover { background: var(--hover); }
+    .checkpoint.before { border-left-color: #3b82f6; }
+    .checkpoint.after { border-left-color: #22c55e; }
+    .checkpoint.failed { border-left-color: #ef4444; }
+    .checkpoint-header { display: flex; justify-content: space-between; align-items: start; }
+    .checkpoint-title { font-weight: 500; font-size: 13px; }
+    .checkpoint-time { font-size: 11px; opacity: 0.7; }
+    .checkpoint-meta { font-size: 11px; opacity: 0.6; margin-top: 4px; }
+    .checkpoint-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .checkpoint-actions button { font-size: 11px; padding: 4px 8px; background: transparent; border: 1px solid var(--border); color: var(--fg); border-radius: 3px; cursor: pointer; }
+    .checkpoint-actions button:hover { background: var(--hover); }
+    .empty { text-align: center; padding: 40px; opacity: 0.6; }
+    .diff-panel { margin-top: 16px; border: 1px solid var(--border); border-radius: 6px; }
+    .diff-header { padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500; font-size: 12px; }
+    .diff-content { padding: 12px; font-family: monospace; font-size: 12px; max-height: 300px; overflow: auto; }
+    .diff-add { color: #22c55e; }
+    .diff-del { color: #ef4444; }
+    .diff-file { opacity: 0.7; margin: 8px 0 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🕐 AI Time Machine</h1>
+    <button class="btn" onclick="createCheckpoint()">+ Checkpoint</button>
+  </div>
+  
+  <div id="timeline" class="timeline">
+    <div class="empty">Loading checkpoints...</div>
+  </div>
+  
+  <div id="diff-panel" class="diff-panel" style="display: none;">
+    <div class="diff-header">Changes</div>
+    <div id="diff-content" class="diff-content"></div>
+  </div>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+    let checkpoints = [];
+
+    window.addEventListener('message', event => {
+      const msg = event.data;
+      if (msg.type === 'checkpoints') {
+        checkpoints = msg.data;
+        renderTimeline();
+      } else if (msg.type === 'diff') {
+        showDiff(msg.data);
+      }
+    });
+
+    function renderTimeline() {
+      const el = document.getElementById('timeline');
+      if (!checkpoints.length) {
+        el.innerHTML = '<div class="empty">No checkpoints yet.<br>Create one to start tracking!</div>';
+        return;
+      }
+      
+      el.innerHTML = checkpoints.map((cp, i) => {
+        const status = cp.metadata?.status || '';
+        const statusClass = status === 'before' ? 'before' : status.includes('after') ? 'after' : status === 'failed' ? 'failed' : '';
+        const time = timeAgo(new Date(cp.timestamp));
+        
+        return `
+          <div class="checkpoint ${statusClass}" data-id="${cp.id}">
+            <div class="checkpoint-header">
+              <div class="checkpoint-title">${escapeHtml(cp.description)}</div>
+              <div class="checkpoint-time">${time}</div>
+            </div>
+            <div class="checkpoint-meta">${cp.stats.totalFiles} files</div>
+            <div class="checkpoint-actions">
+              <button onclick="restore('${cp.id}')">↩ Restore</button>
+              <button onclick="showDiffFor('${cp.id}', '${checkpoints[i+1]?.id || ''}')">⇄ Diff</button>
+              <button onclick="showConversation('${cp.id}')">💬 Chat</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function createCheckpoint() {
+      vscode.postMessage({ type: 'createCheckpoint' });
+    }
+
+    function restore(id) {
+      vscode.postMessage({ type: 'restore', id });
+    }
+
+    function showDiffFor(toId, fromId) {
+      if (!fromId) return;
+      vscode.postMessage({ type: 'diff', fromId, toId });
+    }
+
+    function showConversation(id) {
+      vscode.postMessage({ type: 'conversation', id });
+    }
+
+    function showDiff(data) {
+      const panel = document.getElementById('diff-panel');
+      const content = document.getElementById('diff-content');
+      
+      let html = '';
+      if (data.added?.length) {
+        html += '<div class="diff-file">Added:</div>';
+        html += data.added.map(f => `<div class="diff-add">+ ${f}</div>`).join('');
+      }
+      if (data.modified?.length) {
+        html += '<div class="diff-file">Modified:</div>';
+        html += data.modified.map(f => `<div class="diff-mod">~ ${f}</div>`).join('');
+      }
+      if (data.deleted?.length) {
+        html += '<div class="diff-file">Deleted:</div>';
+        html += data.deleted.map(f => `<div class="diff-del">- ${f}</div>`).join('');
+      }
+      
+      content.innerHTML = html || '<div>No changes</div>';
+      panel.style.display = 'block';
+    }
+
+    function timeAgo(date) {
+      const seconds = Math.floor((new Date() - date) / 1000);
+      if (seconds < 60) return 'just now';
+      if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+      return Math.floor(seconds / 86400) + 'd ago';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // Request initial data
+    vscode.postMessage({ type: 'ready' });
+  </script>
+</body>
+</html>

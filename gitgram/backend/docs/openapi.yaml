@@ -1,0 +1,1818 @@
+openapi: 3.1.0
+info:
+  title: Gitgram API
+  description: Social platform for developers with GitHub integration. Share code, collaborate, and discover projects.
+  version: 1.0.0
+  contact:
+    name: Gitgram Team
+
+servers:
+  - url: /api/v1
+    description: V1 API (primary)
+  - url: /api
+    description: Legacy API (backwards compatibility)
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+
+    AitmCheckpointRef:
+      type: object
+      description: Snapshot of AITM checkpoint metadata stored with the post
+      properties:
+        sha:
+          type: string
+          description: Checkpoint SHA hash
+          example: "a1b2c3d4e5f6"
+        message:
+          type: string
+          description: Checkpoint commit message
+          example: "Refactor auth middleware"
+        files:
+          type: array
+          description: List of files changed in the checkpoint
+          items:
+            type: string
+          example: ["src/middleware/auth.ts", "src/utils/token.ts"]
+        createdAt:
+          type: string
+          description: ISO 8601 timestamp of when the checkpoint was created
+          example: "2026-04-08T12:00:00.000Z"
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        userId:
+          type: string
+        content:
+          type: string
+        mediaUrls:
+          type: array
+          items:
+            type: string
+        repoUrl:
+          type: string
+          nullable: true
+        repositoryId:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [POST, CHANGE_STORY]
+        aitmCheckpointId:
+          type: string
+          nullable: true
+          description: AITM checkpoint ID linked to this post
+        aitmProjectId:
+          type: string
+          nullable: true
+          description: AITM project ID linked to this post
+        aitmCheckpointRef:
+          nullable: true
+          description: Embedded AITM checkpoint metadata snapshot
+          allOf:
+            - $ref: "#/components/schemas/AitmCheckpointRef"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            username:
+              type: string
+            avatar:
+              type: string
+              nullable: true
+            verified:
+              type: boolean
+        repository:
+          type: object
+          nullable: true
+
+    CreatePostFromCheckpointRequest:
+      type: object
+      required:
+        - checkpointId
+        - projectId
+      properties:
+        checkpointId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: AITM checkpoint ID to create the post from
+          example: "a1b2c3d4e5f6"
+        projectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: AITM project ID the checkpoint belongs to
+          example: "proj_abc123"
+        message:
+          type: string
+          maxLength: 2200
+          description: Optional post message (auto-generated from checkpoint metadata if omitted)
+        visibility:
+          type: string
+          enum: [public, followers, private]
+          description: Post visibility level (defaults to public)
+
+paths:
+  # ===========================================================================
+  # Health
+  # ===========================================================================
+  /:
+    get:
+      tags: [Info]
+      summary: API root info
+      security: []
+      operationId: getRoot
+      responses:
+        "200":
+          description: API info
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check endpoint
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is healthy
+        "503":
+          description: Server is degraded
+
+  /metrics:
+    get:
+      tags: [Monitoring]
+      summary: Prometheus metrics endpoint
+      security: []
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Metrics data
+
+  # ===========================================================================
+  # Auth
+  # ===========================================================================
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      operationId: register
+      responses:
+        "201":
+          description: User registered
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      security: []
+      operationId: login
+      responses:
+        "200":
+          description: Login successful
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      operationId: refreshToken
+      responses:
+        "200":
+          description: Token refreshed
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      operationId: logout
+      responses:
+        "200":
+          description: Logged out
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user info
+
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      security: []
+      operationId: forgotPassword
+      responses:
+        "200":
+          description: Password reset email sent
+
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      security: []
+      operationId: resetPassword
+      responses:
+        "200":
+          description: Password reset successful
+
+  /api/v1/auth/verify-email:
+    get:
+      tags: [Auth]
+      summary: Verify email address
+      security: []
+      operationId: verifyEmail
+      responses:
+        "200":
+          description: Email verified
+
+  /api/v1/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend verification email
+      security: []
+      operationId: resendVerification
+      responses:
+        "200":
+          description: Verification email sent
+
+  /api/v1/auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Setup two-factor authentication
+      operationId: setup2FA
+      responses:
+        "200":
+          description: 2FA setup initiated
+
+  /api/v1/auth/2fa/setup/verify:
+    post:
+      tags: [Auth]
+      summary: Verify 2FA setup
+      operationId: verify2FASetup
+      responses:
+        "200":
+          description: 2FA verified
+
+  /api/v1/auth/verify-2fa:
+    post:
+      tags: [Auth]
+      summary: Verify 2FA code during login
+      security: []
+      operationId: verify2FA
+      responses:
+        "200":
+          description: 2FA code verified
+
+  /api/v1/auth/resend-2fa:
+    post:
+      tags: [Auth]
+      summary: Resend 2FA code
+      operationId: resend2FA
+      responses:
+        "200":
+          description: 2FA code resent
+
+  /api/v1/auth/recover-account:
+    post:
+      tags: [Auth]
+      summary: Recover account with backup code
+      security: []
+      operationId: recoverAccount
+      responses:
+        "200":
+          description: Account recovered
+
+  /api/v1/auth/delete-account:
+    delete:
+      tags: [Auth]
+      summary: Delete user account
+      operationId: deleteAccount
+      responses:
+        "200":
+          description: Account deleted
+
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      operationId: changePassword
+      responses:
+        "200":
+          description: Password changed
+
+  /api/v1/auth/github:
+    post:
+      tags: [Auth]
+      summary: Authenticate with GitHub
+      security: []
+      operationId: authGithub
+      responses:
+        "200":
+          description: GitHub auth successful
+
+  /api/v1/auth/google:
+    post:
+      tags: [Auth]
+      summary: Authenticate with Google
+      security: []
+      operationId: authGoogle
+      responses:
+        "200":
+          description: Google auth successful
+
+  # ===========================================================================
+  # Posts
+  # ===========================================================================
+  /api/v1/posts:
+    get:
+      tags: [Posts]
+      summary: List posts
+      security: []
+      operationId: getPosts
+      responses:
+        "200":
+          description: List of posts
+    post:
+      tags: [Posts]
+      summary: Create a post
+      operationId: createPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  maxLength: 2200
+                  description: Post text content
+                mediaUrls:
+                  type: array
+                  items:
+                    type: string
+                  description: Media attachment URLs
+                repoUrl:
+                  type: string
+                  description: GitHub repository URL to link
+                hashtags:
+                  type: array
+                  items:
+                    type: string
+                  description: Hashtags to attach to the post
+                checkpointId:
+                  type: string
+                  description: Optional AITM checkpoint ID to link to this post
+                aitmProjectId:
+                  type: string
+                  description: Optional AITM project ID associated with the checkpoint
+                aitmCheckpointRef:
+                  description: Optional embedded AITM checkpoint metadata
+                  allOf:
+                    - $ref: "#/components/schemas/AitmCheckpointRef"
+      responses:
+        "201":
+          description: Post created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+
+  /api/v1/posts/from-checkpoint:
+    post:
+      tags: [Posts]
+      summary: Create a post from an AITM checkpoint
+      description: Creates a post directly from an AITimeMachine checkpoint. The post content is auto-generated from checkpoint metadata when no message is provided.
+      operationId: createPostFromCheckpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePostFromCheckpointRequest"
+      responses:
+        "201":
+          description: Post created from checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        "400":
+          description: Validation error (missing or invalid checkpointId / projectId)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+
+  /api/v1/posts/feed:
+    get:
+      tags: [Posts]
+      summary: Get personalized feed
+      operationId: getFeed
+      responses:
+        "200":
+          description: Feed posts
+
+  /api/v1/posts/feed/unified:
+    get:
+      tags: [Posts]
+      summary: Get unified feed
+      operationId: getUnifiedFeed
+      responses:
+        "200":
+          description: Unified feed posts
+
+  /api/v1/posts/explore:
+    get:
+      tags: [Posts]
+      summary: Get explore feed
+      operationId: getExploreFeed
+      responses:
+        "200":
+          description: Explore posts
+
+  /api/v1/posts/trending:
+    get:
+      tags: [Posts]
+      summary: Get trending posts
+      security: []
+      operationId: getTrendingPosts
+      responses:
+        "200":
+          description: Trending posts
+
+  /api/v1/posts/search:
+    get:
+      tags: [Posts]
+      summary: Search posts
+      security: []
+      operationId: searchPosts
+      responses:
+        "200":
+          description: Search results
+
+  /api/v1/posts/optimal-times:
+    get:
+      tags: [Posts]
+      summary: Get optimal posting times
+      operationId: getOptimalPostingTimes
+      responses:
+        "200":
+          description: Optimal posting times
+
+  /api/v1/posts/archived:
+    get:
+      tags: [Posts]
+      summary: Get archived posts
+      operationId: getArchivedPosts
+      responses:
+        "200":
+          description: Archived posts
+
+  /api/v1/posts/saved:
+    get:
+      tags: [Posts]
+      summary: Get saved posts
+      operationId: getSavedPosts
+      responses:
+        "200":
+          description: Saved posts
+
+  /api/v1/posts/{id}:
+    get:
+      tags: [Posts]
+      summary: Get a single post
+      security: []
+      operationId: getPost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post details
+    delete:
+      tags: [Posts]
+      summary: Delete a post
+      operationId: deletePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post deleted
+
+  /api/v1/posts/{id}/comments:
+    get:
+      tags: [Posts]
+      summary: Get post comments
+      security: []
+      operationId: getComments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post comments
+    post:
+      tags: [Posts]
+      summary: Add a comment
+      operationId: addComment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Comment added
+
+  /api/v1/posts/{id}/like:
+    post:
+      tags: [Posts]
+      summary: Like a post
+      operationId: likePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post liked
+
+  /api/v1/posts/{id}/likes:
+    get:
+      tags: [Posts]
+      summary: Get post likes
+      security: []
+      operationId: getPostLikes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post likes
+
+  /api/v1/posts/{id}/save:
+    post:
+      tags: [Posts]
+      summary: Save a post
+      operationId: savePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post saved
+    delete:
+      tags: [Posts]
+      summary: Unsave a post
+      operationId: unsavePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post unsaved
+
+  /api/v1/posts/{id}/share:
+    post:
+      tags: [Posts]
+      summary: Share a post
+      operationId: sharePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post shared
+
+  /api/v1/posts/{id}/report:
+    post:
+      tags: [Posts]
+      summary: Report a post
+      operationId: reportPost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post reported
+
+  /api/v1/posts/{id}/retweet:
+    post:
+      tags: [Posts]
+      summary: Retweet a post
+      operationId: retweetPost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post retweeted
+
+  /api/v1/posts/{id}/archive:
+    post:
+      tags: [Posts]
+      summary: Archive a post
+      operationId: archivePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post archived
+
+  /api/v1/posts/{id}/unarchive:
+    post:
+      tags: [Posts]
+      summary: Unarchive a post
+      operationId: unarchivePost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post unarchived
+
+  /api/v1/posts/{id}/analytics:
+    get:
+      tags: [Posts]
+      summary: Get post analytics
+      operationId: getPostAnalytics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Post analytics
+
+  # ===========================================================================
+  # Users
+  # ===========================================================================
+  /api/v1/users:
+    put:
+      tags: [Users]
+      summary: Update current user profile
+      operationId: updateUser
+      responses:
+        "200":
+          description: User updated
+
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: User profile
+
+  /api/v1/users/search:
+    get:
+      tags: [Users]
+      summary: Search users
+      security: []
+      operationId: searchUsers
+      responses:
+        "200":
+          description: Search results
+
+  /api/v1/users/mention-search:
+    get:
+      tags: [Users]
+      summary: Search users for mentions
+      security: []
+      operationId: mentionSearch
+      responses:
+        "200":
+          description: Mention search results
+
+  /api/v1/users/suggested:
+    get:
+      tags: [Users]
+      summary: Get suggested users
+      operationId: getSuggestedUsers
+      responses:
+        "200":
+          description: Suggested users
+
+  /api/v1/users/activity:
+    get:
+      tags: [Users]
+      summary: Get user activity
+      operationId: getUserActivity
+      responses:
+        "200":
+          description: User activity
+
+  /api/v1/users/blocked:
+    get:
+      tags: [Users]
+      summary: Get blocked users
+      operationId: getBlockedUsers
+      responses:
+        "200":
+          description: Blocked users
+
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user profile by ID
+      security: []
+      operationId: getUserById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User profile
+
+  /api/v1/users/{id}/follow:
+    post:
+      tags: [Users]
+      summary: Follow a user
+      operationId: followUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User followed
+
+  /api/v1/users/{id}/block:
+    post:
+      tags: [Users]
+      summary: Block a user
+      operationId: blockUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User blocked
+    delete:
+      tags: [Users]
+      summary: Unblock a user
+      operationId: unblockUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User unblocked
+
+  /api/v1/users/{id}/followers:
+    get:
+      tags: [Users]
+      summary: Get user followers
+      security: []
+      operationId: getUserFollowers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User followers
+
+  /api/v1/users/{id}/following:
+    get:
+      tags: [Users]
+      summary: Get user following
+      security: []
+      operationId: getUserFollowing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User following
+
+  # ===========================================================================
+  # Repositories
+  # ===========================================================================
+  /api/v1/repositories/search:
+    get:
+      tags: [Repositories]
+      summary: Search repositories
+      security: []
+      operationId: searchRepositories
+      responses:
+        "200":
+          description: Repository search results
+
+  /api/v1/repositories/trending:
+    get:
+      tags: [Repositories]
+      summary: Get trending repositories
+      security: []
+      operationId: getTrendingRepositories
+      responses:
+        "200":
+          description: Trending repositories
+
+  /api/v1/repositories/following:
+    get:
+      tags: [Repositories]
+      summary: Get followed repositories
+      operationId: getFollowingRepositories
+      responses:
+        "200":
+          description: Following repositories
+
+  /api/v1/repositories/bookmarks:
+    get:
+      tags: [Repositories]
+      summary: Get bookmarked repositories
+      operationId: getBookmarkedRepositories
+      responses:
+        "200":
+          description: Bookmarked repositories
+
+  /api/v1/repositories/{owner}/{name}:
+    get:
+      tags: [Repositories]
+      summary: Get repository details
+      security: []
+      operationId: getRepository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repository details
+    put:
+      tags: [Repositories]
+      summary: Update repository
+      operationId: updateRepository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repository updated
+    delete:
+      tags: [Repositories]
+      summary: Delete repository
+      operationId: deleteRepository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repository deleted
+
+  /api/v1/repositories/{owner}/{name}/follow:
+    post:
+      tags: [Repositories]
+      summary: Follow a repository
+      operationId: followRepository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repository followed
+    delete:
+      tags: [Repositories]
+      summary: Unfollow a repository
+      operationId: unfollowRepository
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repository unfollowed
+
+  # ===========================================================================
+  # GitHub
+  # ===========================================================================
+  /api/v1/github/sync:
+    post:
+      tags: [GitHub]
+      summary: Sync GitHub projects
+      operationId: syncGithubProjects
+      responses:
+        "200":
+          description: Projects synced
+
+  /api/v1/github/projects:
+    get:
+      tags: [GitHub]
+      summary: List GitHub projects
+      operationId: listGithubProjects
+      responses:
+        "200":
+          description: List of projects
+
+  /api/v1/github/popular:
+    get:
+      tags: [GitHub]
+      summary: Get popular GitHub projects
+      security: []
+      operationId: getPopularGithubProjects
+      responses:
+        "200":
+          description: Popular projects
+
+  /api/v1/github/trending/{period}:
+    get:
+      tags: [GitHub]
+      summary: Get trending repositories by period
+      security: []
+      operationId: getGithubTrending
+      parameters:
+        - name: period
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [daily, weekly, monthly]
+      responses:
+        "200":
+          description: Trending repositories
+
+  /api/v1/github/search:
+    get:
+      tags: [GitHub]
+      summary: Search GitHub repositories
+      security: []
+      operationId: searchGithubRepos
+      responses:
+        "200":
+          description: Search results
+
+  /api/v1/github/recommended:
+    get:
+      tags: [GitHub]
+      summary: Get recommended repositories
+      operationId: getRecommendedRepos
+      responses:
+        "200":
+          description: Recommended repositories
+
+  /api/v1/github/activity:
+    get:
+      tags: [GitHub]
+      summary: Get current user GitHub activity
+      operationId: getGithubActivity
+      responses:
+        "200":
+          description: GitHub activity
+
+  /api/v1/github/activity/feed:
+    get:
+      tags: [GitHub]
+      summary: Get combined activity feed
+      operationId: getGithubActivityFeed
+      responses:
+        "200":
+          description: Combined activity feed
+
+  /api/v1/github/rate-limit:
+    get:
+      tags: [GitHub]
+      summary: Get GitHub API rate limit status
+      operationId: getGithubRateLimit
+      responses:
+        "200":
+          description: Rate limit status
+
+  # ===========================================================================
+  # Search
+  # ===========================================================================
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Search all content
+      security: []
+      operationId: searchAll
+      responses:
+        "200":
+          description: Search results
+
+  /api/v1/search/advanced:
+    get:
+      tags: [Search]
+      summary: Advanced search
+      security: []
+      operationId: advancedSearch
+      responses:
+        "200":
+          description: Advanced search results
+
+  /api/v1/search/repositories:
+    get:
+      tags: [Search]
+      summary: Search repositories
+      security: []
+      operationId: searchReposInSearch
+      responses:
+        "200":
+          description: Repository search results
+
+  /api/v1/search/snippets:
+    get:
+      tags: [Search]
+      summary: Search code snippets
+      security: []
+      operationId: searchSnippets
+      responses:
+        "200":
+          description: Snippet search results
+
+  /api/v1/search/recommended:
+    get:
+      tags: [Search]
+      summary: Get recommended posts
+      operationId: getRecommendedPosts
+      responses:
+        "200":
+          description: Recommended posts
+
+  /api/v1/search/trending:
+    get:
+      tags: [Search]
+      summary: Get personalized trending
+      security: []
+      operationId: getPersonalizedTrending
+      responses:
+        "200":
+          description: Trending content
+
+  /api/v1/search/activities:
+    get:
+      tags: [Search]
+      summary: Search activities
+      security: []
+      operationId: searchActivities
+      responses:
+        "200":
+          description: Activity search results
+
+  # ===========================================================================
+  # Trending
+  # ===========================================================================
+  /api/v1/trending:
+    get:
+      tags: [Trending]
+      summary: Get overall trending content
+      security: []
+      operationId: getTrending
+      responses:
+        "200":
+          description: Trending content
+
+  /api/v1/trending/posts:
+    get:
+      tags: [Trending]
+      summary: Get trending posts
+      security: []
+      operationId: getTrendingPostsList
+      responses:
+        "200":
+          description: Trending posts
+
+  /api/v1/trending/repos:
+    get:
+      tags: [Trending]
+      summary: Get trending repositories
+      security: []
+      operationId: getTrendingRepos
+      responses:
+        "200":
+          description: Trending repositories
+
+  /api/v1/trending/creators:
+    get:
+      tags: [Trending]
+      summary: Get trending creators
+      security: []
+      operationId: getTrendingCreators
+      responses:
+        "200":
+          description: Trending creators
+
+  # ===========================================================================
+  # Stories
+  # ===========================================================================
+  /api/v1/stories:
+    get:
+      tags: [Stories]
+      summary: Get stories feed
+      operationId: getStories
+      responses:
+        "200":
+          description: Stories feed
+
+  # ===========================================================================
+  # Messages
+  # ===========================================================================
+  /api/v1/messages:
+    get:
+      tags: [Messages]
+      summary: Get message threads
+      operationId: getMessages
+      responses:
+        "200":
+          description: Message threads
+
+  # ===========================================================================
+  # Notifications
+  # ===========================================================================
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get notifications
+      operationId: getNotifications
+      responses:
+        "200":
+          description: Notifications
+
+  # ===========================================================================
+  # Collections
+  # ===========================================================================
+  /api/v1/collections:
+    get:
+      tags: [Collections]
+      summary: Get user collections
+      operationId: getCollections
+      responses:
+        "200":
+          description: Collections
+
+  # ===========================================================================
+  # Snippets
+  # ===========================================================================
+  /api/v1/snippets:
+    get:
+      tags: [Snippets]
+      summary: Get code snippets
+      operationId: getSnippets
+      responses:
+        "200":
+          description: Code snippets
+
+  # ===========================================================================
+  # Upload
+  # ===========================================================================
+  /api/v1/upload:
+    post:
+      tags: [Upload]
+      summary: Upload media
+      operationId: uploadMedia
+      responses:
+        "200":
+          description: Media uploaded
+
+  # ===========================================================================
+  # Analytics
+  # ===========================================================================
+  /api/v1/analytics:
+    get:
+      tags: [Analytics]
+      summary: Get user analytics
+      operationId: getAnalytics
+      responses:
+        "200":
+          description: Analytics data
+
+  # ===========================================================================
+  # Admin
+  # ===========================================================================
+  /api/v1/admin:
+    get:
+      tags: [Admin]
+      summary: Admin dashboard
+      operationId: adminDashboard
+      responses:
+        "200":
+          description: Admin dashboard data
+
+  # ===========================================================================
+  # Other Endpoints
+  # ===========================================================================
+  /api/v1/tags:
+    get:
+      tags: [Tags]
+      summary: Get hashtags
+      security: []
+      operationId: getTags
+      responses:
+        "200":
+          description: Hashtag list
+
+  /api/v1/popular:
+    get:
+      tags: [Popular]
+      summary: Get popular content
+      security: []
+      operationId: getPopular
+      responses:
+        "200":
+          description: Popular content
+
+  /api/v1/giphy:
+    get:
+      tags: [Giphy]
+      summary: Search GIFs
+      operationId: searchGiphy
+      responses:
+        "200":
+          description: GIF search results
+
+  /api/v1/reels:
+    get:
+      tags: [Reels]
+      summary: Get reels feed
+      operationId: getReels
+      responses:
+        "200":
+          description: Reels feed
+
+  /api/v1/accounts:
+    get:
+      tags: [Accounts]
+      summary: Get linked accounts
+      operationId: getAccounts
+      responses:
+        "200":
+          description: Linked accounts
+
+  /api/v1/privacy:
+    get:
+      tags: [Privacy]
+      summary: Get privacy settings
+      operationId: getPrivacySettings
+      responses:
+        "200":
+          description: Privacy settings
+
+  /api/v1/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: Get subscription status
+      operationId: getSubscriptions
+      responses:
+        "200":
+          description: Subscription info
+
+  /api/v1/moderation:
+    get:
+      tags: [Moderation]
+      summary: Get moderation queue
+      operationId: getModerationQueue
+      responses:
+        "200":
+          description: Moderation queue
+
+  /api/v1/drafts:
+    get:
+      tags: [Drafts]
+      summary: Get post drafts
+      operationId: getDrafts
+      responses:
+        "200":
+          description: Post drafts
+
+  /api/v1/music:
+    get:
+      tags: [Music]
+      summary: Search music
+      operationId: searchMusic
+      responses:
+        "200":
+          description: Music search results
+
+  /api/v1/reports:
+    get:
+      tags: [Reports]
+      summary: Get content reports
+      operationId: getReports
+      responses:
+        "200":
+          description: Content reports
+
+  /api/v1/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: Get user webhooks
+      operationId: getUserWebhooks
+      responses:
+        "200":
+          description: User webhooks
+
+  /api/v1/data-export:
+    post:
+      tags: [DataExport]
+      summary: Request data export (GDPR)
+      operationId: requestDataExport
+      responses:
+        "200":
+          description: Export requested
+
+  /api/v1/insights:
+    get:
+      tags: [Insights]
+      summary: Get content insights
+      operationId: getInsights
+      responses:
+        "200":
+          description: Content insights
+
+  /api/v1/follow-requests:
+    get:
+      tags: [FollowRequests]
+      summary: Get pending follow requests
+      operationId: getFollowRequests
+      responses:
+        "200":
+          description: Follow requests
+
+  /api/v1/link-preview:
+    get:
+      tags: [LinkPreview]
+      summary: Get link preview
+      operationId: getLinkPreview
+      responses:
+        "200":
+          description: Link preview data
+
+  /api/v1/scheduled-posts:
+    get:
+      tags: [ScheduledPosts]
+      summary: Get scheduled posts
+      operationId: getScheduledPosts
+      responses:
+        "200":
+          description: Scheduled posts
+
+  /api/v1/advertisements:
+    get:
+      tags: [Advertisements]
+      summary: Get advertisements
+      operationId: getAdvertisements
+      responses:
+        "200":
+          description: Advertisements
+
+  /api/v1/interactions:
+    get:
+      tags: [Interactions]
+      summary: Get user interactions
+      operationId: getInteractions
+      responses:
+        "200":
+          description: User interactions
+
+  /api/v1/push-notifications:
+    post:
+      tags: [PushNotifications]
+      summary: Register push notification token
+      operationId: registerPushToken
+      responses:
+        "200":
+          description: Token registered
+
+  /api/v1/claim:
+    post:
+      tags: [Claim]
+      summary: Claim a username/account
+      operationId: claimAccount
+      responses:
+        "200":
+          description: Account claimed
+
+  /api/v1/switch:
+    post:
+      tags: [Switch]
+      summary: Switch active account
+      operationId: switchAccount
+      responses:
+        "200":
+          description: Account switched
+
+  # ===========================================================================
+  # Change Stories (AITM Integration)
+  # ===========================================================================
+  /api/v1/change-stories/auto-generate:
+    post:
+      tags: [ChangeStories]
+      summary: Auto-generate a change story draft from checkpoint diff
+      operationId: autoGenerateChangeStory
+      responses:
+        "201":
+          description: Change story draft created
+        "200":
+          description: No auto-story repository linked
+
+  /api/v1/change-stories/publish:
+    post:
+      tags: [ChangeStories]
+      summary: Publish a draft change story as a post
+      operationId: publishChangeStory
+      responses:
+        "200":
+          description: Change story published
+
+  # ===========================================================================
+  # Email Preferences
+  # ===========================================================================
+  /api/v1/users/email-preferences:
+    get:
+      tags: [Users]
+      summary: Get email notification preferences
+      operationId: getEmailPreferences
+      responses:
+        "200":
+          description: Email preferences
+    put:
+      tags: [Users]
+      summary: Update email notification preferences
+      operationId: updateEmailPreferences
+      responses:
+        "200":
+          description: Preferences updated
+
+  # ===========================================================================
+  # Notification Preferences
+  # ===========================================================================
+  /api/v1/notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get notification preferences
+      operationId: getNotificationPreferences
+      responses:
+        "200":
+          description: Notification preferences
+    put:
+      tags: [Notifications]
+      summary: Update notification preferences
+      operationId: updateNotificationPreferences
+      responses:
+        "200":
+          description: Preferences updated
+
+  # ===========================================================================
+  # GitHub Webhooks
+  # ===========================================================================
+  /api/v1/github/webhooks/incoming:
+    post:
+      tags: [GitHub]
+      summary: Incoming GitHub webhook handler
+      operationId: handleGitHubWebhook
+      security: []
+      responses:
+        "200":
+          description: Webhook processed
+
+  /api/v1/github/webhooks/register:
+    post:
+      tags: [GitHub]
+      summary: Register a GitHub webhook for a repository
+      operationId: registerGitHubWebhook
+      responses:
+        "200":
+          description: Webhook registered
+
+  /api/v1/github/webhooks/{owner}/{repo}:
+    delete:
+      tags: [GitHub]
+      summary: Deactivate a GitHub webhook
+      operationId: deactivateGitHubWebhook
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Webhook deactivated
+
+  /api/v1/github/webhooks/{owner}/{repo}/status:
+    get:
+      tags: [GitHub]
+      summary: Get webhook status for a repository
+      operationId: getGitHubWebhookStatus
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Webhook status
+
+  # ===========================================================================
+  # Comment Actions (mounted on /api/v1/posts)
+  # ===========================================================================
+  /api/v1/posts/{postId}/comments/pinned:
+    get:
+      tags: [Posts]
+      summary: Get pinned comment for a post
+      operationId: getPinnedComment
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pinned comment
+
+  /api/v1/posts/{postId}/comments/{commentId}/replies:
+    get:
+      tags: [Posts]
+      summary: Get replies to a comment
+      operationId: getCommentReplies
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comment replies
+
+  /api/v1/posts/{postId}/comments/{commentId}/likes:
+    get:
+      tags: [Posts]
+      summary: Get likes on a comment
+      operationId: getCommentLikes
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comment likes
+
+  /api/v1/posts/{postId}/comments/{commentId}/like:
+    post:
+      tags: [Posts]
+      summary: Toggle like on a comment
+      operationId: toggleCommentLike
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Like toggled
+
+  /api/v1/posts/{postId}/comments/{commentId}/reply:
+    post:
+      tags: [Posts]
+      summary: Reply to a comment
+      operationId: replyToComment
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Reply created
+
+  /api/v1/posts/{postId}/comments/{commentId}/pin:
+    post:
+      tags: [Posts]
+      summary: Toggle pin on a comment
+      operationId: togglePinComment
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pin toggled
+
+  /api/v1/posts/{postId}/comments/{commentId}:
+    put:
+      tags: [Posts]
+      summary: Update a comment
+      operationId: updateComment
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comment updated
+    delete:
+      tags: [Posts]
+      summary: Delete a comment
+      operationId: deleteComment
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comment deleted

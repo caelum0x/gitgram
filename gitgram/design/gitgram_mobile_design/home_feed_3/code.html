@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Gitgram</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 24
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#316dff",
+            "background-light": "#f6f6f8",
+            "background-dark": "#0D1117",
+            "border-dark": "#30363d",
+            "text-secondary": "#848d97",
+            "text-primary": "#e6edf3",
+          },
+          fontFamily: {
+            "sans": ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "Helvetica", "Arial", "sans-serif", "Apple Color Emoji", "Segoe UI Emoji"],
+            "display": ["Space Grotesk", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-sans text-text-primary">
+<div class="relative flex min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+<header class="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border-dark bg-background-dark/80 px-4 backdrop-blur-sm">
+<div class="flex items-center gap-2">
+<svg aria-hidden="true" class="h-8 w-8 text-white" data-view-component="true" fill="currentColor" version="1.1" viewBox="0 0 16 16">
+<path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.19.01-.82.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21-.15.46-.55.38A8.013 8.013 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path>
+</svg>
+<h1 class="font-display text-xl font-bold tracking-tight text-white">Gitgram</h1>
+</div>
+<div class="flex items-center gap-1">
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">notifications</span>
+</button>
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">send</span>
+</button>
+</div>
+</header>
+<main class="flex-1 pb-24">
+<div class="w-full border-b border-border-dark py-3">
+<div class="flex items-center justify-between px-4 pb-3">
+<div class="flex items-center gap-3">
+<img alt="User avatar for eliza_codes" class="h-8 w-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGhpu070JIqdXdod7G6B9rSfOIpxfhe3JK-JA2jzQE0ttcqN-yI1WjtFaJsLB2wu2WH_MvqS85vW-N-wimRweyjajoNYwsad__ip4XvZ-BOitNs9Ajj_mUjeY6zFWny8BQ_Hu3UThqkghyVnvpKR1mO1d1lNJgRWXN40BgTZ93Cl6BkCwjDTvk1AKS2dwxRTNEiHpwpRkUXfhqddLX5UUC2JYJCB_l1trlO6bY3tieCk4mrxxPoSdY8zQG5Ym-q_HeudkKvk3vM2A"/>
+<span class="font-semibold text-sm text-text-primary">eliza_codes</span>
+</div>
+<button class="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">more_horiz</span>
+</button>
+</div>
+<div class="flex items-center gap-3 border-y border-border-dark bg-[#161b22] px-4 py-3">
+<span class="material-symbols-outlined text-text-secondary">folder_managed</span>
+<div class="flex-1">
+<h2 class="font-semibold text-base text-primary">aura-ui</h2>
+<p class="text-sm text-text-secondary">A beautiful and accessible design system for React.</p>
+</div>
+</div>
+<div class="px-4 pt-3">
+<div class="flex items-center gap-2">
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl text-red-500" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl">chat_bubble_outline</span>
+</button>
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl">send</span>
+</button>
+</div>
+</div>
+<div class="px-4 pt-2 pb-2">
+<p class="font-semibold text-sm text-text-primary">1,024 likes</p>
+<p class="pt-2 text-sm text-text-secondary"><span class="font-semibold text-text-primary">eliza_codes</span> Just shipped a new version! Built with React and Tailwind CSS. So excited to see what people build with it. ✨ #react #tailwindcss</p>
+<p class="text-sm text-text-secondary pt-2 cursor-pointer hover:underline">View all 42 comments</p>
+</div>
+</div>
+<div class="w-full border-b border-border-dark py-3">
+<div class="flex items-center justify-between px-4 pb-3">
+<div class="flex items-center gap-3">
+<img alt="User avatar for david_dev" class="h-8 w-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSJ-0G28cp1TECQaDUE08M2DA1ssEiLOrZ-3b_cVSJ7KTxol8wmFE3OtNAa9cQMa8XbCpoeIUK9gS_u2V-PBFGmwrt7UQNLXkuHBIPMn-ZCopWWqKz2UDuwInkQJc1K84Z670JuTxAFuBhIP-booWN5qZxS3ePlioUI7PIfFn3tOeWClAUvQwzdx1Ks8egIumf_9Z249Ia-gabQ-zby_jjQ5Up-44C-kZalDJjgsZ1nCuvSlW3SSkFfBnuhrGNEedhIu4fYwdspi0"/>
+<span class="font-semibold text-sm text-text-primary">david_dev</span>
+</div>
+<button class="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-gray-500/10">
+<span class="material-symbols-outlined text-2xl">more_horiz</span>
+</button>
+</div>
+<div class="flex items-center gap-3 border-y border-border-dark bg-[#161b22] px-4 py-3">
+<span class="material-symbols-outlined text-text-secondary">terminal</span>
+<div class="flex-1">
+<h2 class="font-semibold text-base text-primary">py-data-cli</h2>
+<p class="text-sm text-text-secondary">A command-line tool for data analysis in Python.</p>
+</div>
+</div>
+<div class="px-4 pt-3">
+<div class="flex items-center gap-2">
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl">favorite_border</span>
+</button>
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl">chat_bubble_outline</span>
+</button>
+<button class="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-[#21262d]">
+<span class="material-symbols-outlined text-2xl">send</span>
+</button>
+</div>
+</div>
+<div class="px-4 pt-2 pb-2">
+<p class="font-semibold text-sm text-text-primary">512 likes</p>
+<p class="pt-2 text-sm text-text-secondary"><span class="font-semibold text-text-primary">david_dev</span> Been hacking on this little CLI tool. Let me know what you think! #python #cli #opensource</p>
+<p class="text-sm text-text-secondary pt-2 cursor-pointer hover:underline">View all 16 comments</p>
+</div>
+</div>
+</main>
+<nav class="fixed bottom-0 left-0 right-0 z-10 flex h-20 items-center justify-around border-t border-border-dark bg-background-dark/80 backdrop-blur-sm">
+<a class="flex flex-col items-center gap-1 text-text-primary" href="#">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="text-xs font-semibold">Home</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-text-secondary transition-colors hover:text-text-primary" href="#">
+<span class="material-symbols-outlined text-2xl">search</span>
+<span class="text-xs">Discover</span>
+</a>
+<a class="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/50 transition-transform hover:scale-105" href="#">
+<span class="material-symbols-outlined text-3xl">add</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-text-secondary transition-colors hover:text-text-primary" href="#">
+<span class="material-symbols-outlined text-2xl">notifications</span>
+<span class="text-xs">Activity</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-text-secondary transition-colors hover:text-text-primary" href="#">
+<img alt="User's profile avatar, a woman smiling." class="h-6 w-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmEegXlVIN1s5IfB6lp3mKLCe6SdACpM3aSaoBXjbI_Rnv-2zhPN6sLAKogjxRoHUOuQtSI5Nqb2fN5CW9pr3oYx7cwfjzjkt6ZI1_B2Pn5kgxPL7FB4V1OM1yChkK5P12znfdp6CTdEZcuzyfNTz8-cxGzqNemPK0OVrKd6fC6oEWO-pgyR1RVd_auD-N_Xn6NyF-9ZknGAe9X9o9MZwVcKUNYXgup0-4zXVlz332kZPXdRpie29T4vfayhVnz-u3-ST7cvJqVDg"/>
+<span class="text-xs">Profile</span>
+</a>
+</nav>
+</div>
+
+</body></html>

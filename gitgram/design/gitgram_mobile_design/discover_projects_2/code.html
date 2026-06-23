@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Discover Projects</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#135bec",
+            "background-light": "#f6f6f8",
+            "background-dark": "#101622",
+          },
+          fontFamily: {
+            "display": ["Space Grotesk", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 24
+    }
+    body {
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+    }
+    html {
+        height: -webkit-fill-available;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-display text-white">
+<div class="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
+<main class="flex-1 px-4 py-6">
+<h1 class="text-3xl font-bold leading-tight tracking-[-0.015em] mb-6">Discover</h1>
+<div class="relative mb-6">
+<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+<span class="material-symbols-outlined text-gray-400">search</span>
+</div>
+<input class="form-input block w-full rounded-xl border-none bg-white/5 py-3 pl-12 pr-4 text-base text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-dark" placeholder="Search projects, developers..." type="search"/>
+</div>
+<div class="mb-8">
+<h2 class="text-xl font-bold leading-tight tracking-[-0.015em] mb-4">Trending Projects</h2>
+<div class="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-white">All</button>
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-white/10 px-5 text-sm font-semibold text-gray-300">JavaScript</button>
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-white/10 px-5 text-sm font-semibold text-gray-300">Python</button>
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-white/10 px-5 text-sm font-semibold text-gray-300">AI/ML</button>
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-white/10 px-5 text-sm font-semibold text-gray-300">Go</button>
+<button class="flex h-10 shrink-0 items-center justify-center rounded-full bg-white/10 px-5 text-sm font-semibold text-gray-300">Rust</button>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between mb-4">
+<h2 class="text-xl font-bold leading-tight tracking-[-0.015em]">Suggested to Follow</h2>
+<a class="text-sm font-semibold text-primary" href="#">See All</a>
+</div>
+<div class="space-y-4">
+<div class="flex items-center gap-4 rounded-xl bg-white/5 p-4">
+<img alt="Portrait of Sarah Drasner" class="size-12 shrink-0 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCza4aX3Ku8Ck7yY8CRdtopX8Jd2Tu5L47Up22maLSszFwWxzEM3cG_djm0bOwhaK6BW40epHPqNODN9CNIrc8ORz3217vzcSYelcxvhgw7jv2rSrM9aPkM7GssXO3YYs2bJBIhRbZHsoH_-71_MWIZEFwU7m4VtrWrMCyQRhkEmZ59LJWUNSW-M8N11C8qCjhwCtRu_0ZSiiPixwPvHG7-uUtPtBfXwtHE39xJTiNMg-2J_Mm70EzlvyHEI_xYdg6z6Of_UwIDx7g"/>
+<div class="flex-1">
+<p class="font-bold leading-tight text-white">Sarah Drasner</p>
+<p class="text-sm text-gray-400">Core team @ VueJS</p>
+</div>
+<button class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white">Follow</button>
+</div>
+<div class="flex items-center gap-4 rounded-xl bg-white/5 p-4">
+<img alt="Portrait of Evan You" class="size-12 shrink-0 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4j5EXe0M86zJKU0W5ZJU4E50zHE1E7OaU1TCK4tpu8YoChr-69DD3FiGFAJlVF_tFcor-AvfXEOUDxzbic9fQGQNQtEwO_x1fWyJFA4H1TneACwZhPzHO1nOT34gpME_aEsf-wPUKgzza24MpsAXOlQwn3GXM7zsDmz6stkeqqVcXXotPIpex4gbBmXEeC1wiYLHqfyG2rivMNz0EKIikrjdTcm-3jPxPXbeTU51TGze3U0mpsYokMiZZBNp7vf5OYS4SjXGwmV0"/>
+<div class="flex-1">
+<p class="font-bold leading-tight text-white">Evan You</p>
+<p class="text-sm text-gray-400">Creator of Vue.js</p>
+</div>
+<button class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/10 px-5 py-2 text-sm font-semibold text-white">Follow</button>
+</div>
+<div class="rounded-xl bg-white/5 p-4">
+<div class="flex items-center gap-4 mb-3">
+<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-700">
+<span class="material-symbols-outlined text-3xl">hub</span>
+</div>
+<div class="flex-1">
+<p class="font-bold leading-tight text-white">facebook/react</p>
+<p class="text-sm text-gray-400">A JavaScript library for building UIs</p>
+</div>
+</div>
+<div class="flex items-center gap-6 text-sm text-gray-400 mb-4">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-lg">star</span>
+<span>198k</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-lg">fork_right</span>
+<span>41k</span>
+</div>
+</div>
+<button class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-white/10 py-2 text-sm font-semibold text-white">
+<span class="material-symbols-outlined text-lg">star</span>
+<span>Star</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+<nav class="sticky bottom-0 z-10 border-t border-white/10 bg-background-dark/80 backdrop-blur-lg">
+<div class="mx-auto flex h-20 max-w-md items-center justify-around px-4">
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="text-xs font-medium">Home</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined">search</span>
+<span class="text-xs font-medium">Discover</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined">add_box</span>
+<span class="text-xs font-medium">Post</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined">notifications</span>
+<span class="text-xs font-medium">Activity</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<img alt="User profile picture" class="size-6 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCza4aX3Ku8Ck7yY8CRdtopX8Jd2Tu5L47Up22maLSszFwWxzEM3cG_djm0bOwhaK6BW40epHPqNODN9CNIrc8ORz3217vzcSYelcxvhgw7jv2rSrM9aPkM7GssXO3YYs2bJBIhRbZHsoH_-71_MWIZEFwU7m4VtrWrMCyQRhkEmZ59LJWUNSW-M8N11C8qCjhwCtRu_0ZSiiPixwPvHG7-uUtPtBfXwtHE39xJTiNMg-2J_Mm70EzlvyHEI_xYdg6z6Of_UwIDx7g"/>
+<span class="text-xs font-medium">Profile</span>
+</a>
+</div>
+</nav>
+</div>
+
+</body></html>

@@ -1,0 +1,79 @@
+# .dockerignore for the AITM api-server production image.
+# Build context is the aitimemachine root (see api-server/Dockerfile).
+# Goal: ship engine SOURCE only — let build-engines.sh produce all artifacts
+# from scratch inside the image, and keep the context small.
+
+# ── VCS / editor / OS cruft ──
+.git
+.gitignore
+.github
+.vscode
+.idea
+**/.DS_Store
+**/*.log
+
+# ── Pre-built artifacts (rebuilt inside the image) ──
+bin
+engines
+**/node_modules
+**/dist
+**/build
+**/out
+**/.tsbuildinfo
+**/*.tsbuildinfo
+
+# ── Engine intermediate build output (recompiled in stage 1) ──
+beads/bd
+git/git
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+
+# ── Test / coverage / tooling state ──
+coverage
+**/coverage
+**/tests
+**/test
+**/*.test.*
+**/*.spec.*
+**/vitest.config.*
+**/jest.config.*
+.tmp
+tmp
+**/.tmp
+
+# ── Local secrets / env (never bake into the image) ──
+**/.env
+**/.env.*
+!**/.env.example
+**/.kb-credentials.json
+**/.kb-indexer-state.json
+**/.mega-indexer-state.json
+**/.aitimemachine
+
+# ── Docker / compose (not needed in the build context) ──
+**/Dockerfile
+**/.dockerignore
+docker-compose*.yml
+
+# ── Subprojects not part of the api-server runtime ──
+# (engine source kept: a2a, context7, gitnexus, gitnexus-shared, beads, git,
+#  pal-mcp-server, scripts, api-server)
+gemini-cli
+gitnexus-web
+website
+extensions
+nvim-plugin
+asset
+docs
+deploy
+agents
+tools
+
+# ── Misc dev scripts / demos at the root ──
+*.mjs
+*-check.sh
+final-test.sh
+test-*.sh
+test-*.ts

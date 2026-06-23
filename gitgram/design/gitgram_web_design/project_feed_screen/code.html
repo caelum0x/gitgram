@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CodeConnect - Main Feed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+            'FILL' 0,
+            'wght' 400,
+            'GRAD' 0,
+            'opsz' 24
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#1337ec",
+              "background-light": "#f6f6f8",
+              "background-dark": "#101322",
+            },
+            fontFamily: {
+              "display": ["Space Grotesk", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="font-display bg-background-light dark:bg-background-dark text-white">
+<div class="relative flex h-auto min-h-screen w-full flex-col">
+<!-- TopNavBar -->
+<header class="sticky top-0 z-50 flex items-center justify-center whitespace-nowrap border-b border-solid border-white/10 dark:border-[#232948] bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm px-4 sm:px-8">
+<div class="flex items-center justify-between w-full max-w-7xl py-3">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-3 text-white">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_6_543)">
+<path d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133C42.7467 24.5355 43.4845 21.4845 42.1739 20.1739Z" fill="currentColor"></path>
+<path clip-rule="evenodd" d="M7.24189 26.4066C7.31369 26.4411 7.64204 26.5637 8.52504 26.3738C9.59462 26.1438 11.0343 25.5311 12.7183 24.4963C14.7583 23.2426 17.0256 21.4503 19.238 19.238C21.4503 17.0256 23.2426 14.7583 24.4963 12.7183C25.5311 11.0343 26.1438 9.59463 26.3738 8.52504C26.5637 7.64204 26.4411 7.31369 26.4066 7.24189C26.345 7.21246 26.143 7.14535 25.6664 7.1918C24.9745 7.25925 23.9954 7.5498 22.7699 8.14278C20.3369 9.32007 17.3369 11.4915 14.4142 14.4142C11.4915 17.3369 9.32007 20.3369 8.14278 22.7699C7.5498 23.9954 7.25925 24.9745 7.1918 25.6664C7.14534 26.143 7.21246 26.345 7.24189 26.4066ZM29.9001 10.7285C29.4519 12.0322 28.7617 13.4172 27.9042 14.8126C26.465 17.1544 24.4686 19.6641 22.0664 22.0664C19.6641 24.4686 17.1544 26.465 14.8126 27.9042C13.4172 28.7617 12.0322 29.4519 10.7285 29.9001L21.5754 40.747C21.6001 40.7606 21.8995 40.931 22.8729 40.7217C23.9424 40.4916 25.3821 39.879 27.0661 38.8441C29.1062 37.5904 31.3734 35.7982 33.5858 33.5858C35.7982 31.3734 37.5904 29.1062 38.8441 27.0661C39.879 25.3821 40.4916 23.9425 40.7216 22.8729C40.931 21.8995 40.7606 21.6001 40.747 21.5754L29.9001 10.7285ZM29.2403 4.41187L43.5881 18.7597C44.9757 20.1473 44.9743 22.1235 44.6322 23.7139C44.2714 25.3919 43.4158 27.2666 42.252 29.1604C40.8128 31.5022 38.8165 34.012 36.4142 36.4142C34.012 38.8165 31.5022 40.8128 29.1604 42.252C27.2666 43.4158 25.3919 44.2714 23.7139 44.6322C22.1235 44.9743 20.1473 44.9757 18.7597 43.5881L4.41187 29.2403C3.29027 28.1187 3.08209 26.5973 3.21067 25.2783C3.34099 23.9415 3.8369 22.4852 4.54214 21.0277C5.96129 18.0948 8.43335 14.7382 11.5858 11.5858C14.7382 8.43335 18.0948 5.9613 21.0277 4.54214C22.4852 3.8369 23.9415 3.34099 25.2783 3.21067C26.5973 3.08209 28.1187 3.29028 29.2403 4.41187Z" fill="currentColor" fill-rule="evenodd"></path>
+</g>
+<defs>
+<clippath id="clip0_6_543">
+<rect fill="white" height="48" width="48"></rect>
+</clippath>
+</defs>
+</svg>
+</div>
+<h2 class="text-white text-lg font-bold leading-tight tracking-[-0.015em]">CodeConnect</h2>
+</div>
+</div>
+<div class="flex-1 max-w-md hidden md:flex">
+<label class="flex flex-col w-full !h-10">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-[#929bc9] flex bg-[#232948] items-center justify-center pl-4 rounded-l-lg border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-white focus:outline-0 focus:ring-0 border-none bg-[#232948] focus:border-none h-full placeholder:text-[#929bc9] px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal" placeholder="Search projects, users, topics..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-4 sm:gap-6">
+<div class="hidden sm:flex items-center gap-6">
+<a class="text-white text-base font-medium leading-normal flex items-center gap-2" href="#"><span class="material-symbols-outlined">home</span>Home</a>
+<a class="text-white/70 hover:text-white transition-colors text-base font-medium leading-normal flex items-center gap-2" href="#"><span class="material-symbols-outlined">explore</span>Explore</a>
+<a class="text-white/70 hover:text-white transition-colors text-base font-medium leading-normal flex items-center gap-2" href="#"><span class="material-symbols-outlined">notifications</span>Notifications</a>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors">
+<span class="truncate">Share Project</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of Alex Doe" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDCV9-9kX8f37QEKLKbTpSHPN6GL5zzeVdyJLk_pu7FJtSHObm4UDkwWd-GYd4cT1PXxxwaAPBfGVhgyIPbzuaJ_uEVUanyGCPWuTwwQzx7E45IqdNTbbgKnbyI7ICMO8nym51ifbvFaM-Sv_4yeqFkbf_n9qHLy7OMw6LHO1w-m9nqvCM6kK91iOcdlqgZf0ktjSh4L5IM5b9-PGF5VnwvhlnaES4AejIcGX5KPbEG4eA83EJ25LMK090McTFzsEStlx7Vt8YYZHA");'></div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="w-full max-w-7xl mx-auto py-8 px-4 sm:px-8">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Left Column: Feed -->
+<div class="lg:col-span-2 flex flex-col gap-6">
+<!-- SegmentedButtons -->
+<div class="flex px-4 py-3">
+<div class="flex h-10 flex-1 items-center justify-center rounded-lg bg-[#232948] p-1 max-w-sm">
+<label class="flex cursor-pointer h-full grow items-center justify-center overflow-hidden rounded-md px-2 has-[:checked]:bg-background-dark has-[:checked]:shadow-[0_0_4px_rgba(0,0,0,0.1)] has-[:checked]:text-white text-[#929bc9] text-sm font-medium leading-normal transition-colors">
+<span class="truncate">Latest</span>
+<input checked="" class="invisible w-0" name="feed-sort" type="radio" value="Latest"/>
+</label>
+<label class="flex cursor-pointer h-full grow items-center justify-center overflow-hidden rounded-md px-2 has-[:checked]:bg-background-dark has-[:checked]:shadow-[0_0_4px_rgba(0,0,0,0.1)] has-[:checked]:text-white text-[#929bc9] text-sm font-medium leading-normal transition-colors">
+<span class="truncate">Trending</span>
+<input class="invisible w-0" name="feed-sort" type="radio" value="Trending"/>
+</label>
+</div>
+</div>
+<!-- Project Cards -->
+<div class="flex flex-col gap-8">
+<!-- Card 1 -->
+<div class="flex flex-col bg-[#1A1A2E] rounded-xl overflow-hidden border border-white/10">
+<div class="p-6">
+<div class="flex items-center gap-4 mb-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of sara-codes" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDOowkdUecMab90SXaS059mapQRRHbkh6dBVlrdIBEmDwSh1TsaWTvY2MhjN_MTm65X4H3vQu8Qag-2Gt6XCZpyTbBckD3c-HjTHvm58l3-oQxcobdCNArq5GnzpjByQnPVckPoYsPbXeDglgjPjrLjEjRHeC04CiMrJqiUcOOX15LQ3xGAV8bgGDHUiPZOqaZRIFKdFwcOaGl2cphAE530c5PnOGA2yNso10dcP7qhx-VEQ9PcDjQGpZBsi6v3N1flqVNaO-RAR7E");'></div>
+<div class="flex-grow">
+<p class="text-white text-base font-bold leading-tight">sara-codes</p>
+<p class="text-[#929bc9] text-sm font-normal leading-normal">2 hours ago</p>
+</div>
+</div>
+<p class="text-white text-xl font-bold leading-tight tracking-[-0.015em] mb-2">Project Title: AI-Powered Code Assistant</p>
+<p class="text-[#929bc9] text-base font-normal leading-normal mb-4">An intelligent assistant to help you write better code, faster. Integrated directly into your IDE.</p>
+<div class="flex gap-2 flex-wrap mb-4">
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">JavaScript</p></div>
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">AI</p></div>
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">VSCode</p></div>
+</div>
+</div>
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Screenshot of an AI-powered code assistant" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB2hXgjWY2eXu69JtEF1Mbr2DuyUDaLzVfIAkJP4p0bIOLYIXzVs3dpDSV5QaJHKPS6xaGlwvF_UgyN2xU4H8UyPXXnU2JdX31hCHUZAscs5hkfZ3_yrYcOdsIudlXaEyGX6F_fn4qqZraQgk8dp3ExY_WH10tm-OrxDW48TLZyzQ21Aghwuq1R7g3DSH3dMVwR4WTbVPAdNz6y4CkoiUI920SFsM-dwTqxZrgxDuqEgPWAr-QtYTIUgJ5z84loPldopK3AZLSpLA4");'></div>
+<div class="p-6">
+<div class="flex flex-wrap gap-4 mb-4">
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">1,204</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Stars</p></div></div>
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">312</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Forks</p></div></div>
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">15</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Open Issues</p></div></div>
+</div>
+<div class="border-t border-white/10 py-4 flex items-center justify-between gap-4">
+<div class="flex items-center gap-4 text-[#929bc9]">
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">star</span> Like</button>
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">chat_bubble</span> Comment</button>
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">share</span> Share</button>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 px-4 bg-[#232948] hover:bg-[#323b67] text-white text-sm font-medium leading-normal transition-colors">
+<span class="truncate">View on GitHub</span>
+</button>
+</div>
+<div class="pt-2">
+<p class="text-[#929bc9] text-sm font-normal leading-normal"><strong class="text-white">dev_guru:</strong> This looks amazing! Can't wait to try it out.</p>
+<a class="text-[#929bc9]/70 text-sm hover:text-[#929bc9]" href="#">View all 12 comments</a>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="flex flex-col bg-[#1A1A2E] rounded-xl overflow-hidden border border-white/10">
+<div class="p-6">
+<div class="flex items-center gap-4 mb-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of code_ninja" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAHxGxma176pNEn7M6t-UciYiHpJpgJhZy2pAozHgqMTBa8B8d_WhQP2Ddlzg9zUc7LyFe9o7Tz1wkRn_HK4BW7bNKxVCsnUalDH04QyAMtX8JDg7qGVhkbW4Qjm3WsyazFCVOyP0srepXOVk1hH6XtWr4lz_MuYf9Yr0JJ5P1KOhDQZpIMa0VNvL221xcL-MlPj00149bUIHzK6I-8N6kl_9XaONrF4TubO_3YycrVTwWSaX8SgQzEzcnMdQkeFqvUw4rLDKz1kg4");'></div>
+<div class="flex-grow">
+<p class="text-white text-base font-bold leading-tight">code_ninja</p>
+<p class="text-[#929bc9] text-sm font-normal leading-normal">5 hours ago</p>
+</div>
+</div>
+<p class="text-white text-xl font-bold leading-tight tracking-[-0.015em] mb-2">Project Title: Retro Terminal Dashboard</p>
+<p class="text-[#929bc9] text-base font-normal leading-normal mb-4">A customizable, nostalgic dashboard for your terminal. Monitor system stats with a cool retro vibe.</p>
+<div class="flex gap-2 flex-wrap mb-4">
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">Python</p></div>
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">CLI</p></div>
+<div class="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#232948] px-3"><p class="text-white text-xs font-medium leading-normal">DataViz</p></div>
+</div>
+</div>
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Screenshot of a retro terminal dashboard UI" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDu-CCMsuRxNXpQg3bOXnyII1DYHBO4uyTqQ6Q0MQg8YeBl4vz27nwxxjvfu9T6ZvS95ThFZGGiBantEg-T1X8xslihqO_arJf4cUGeuGZY5Dxmij7kKB7rpmo3nhBr-ezFm9LeMsGyydEBi55M1T27uoQtRpGxEJY1k83VnWulvwFPx6aAo-UXUeb0nzJBeegSaFTPmhzsIYGiswbykhTf8a6iGadGN6W2pLpUfWWnjOLFnFdbqOt_KqbvsLbF0TW33Ig1awnP_gw");'></div>
+<div class="p-6">
+<div class="flex flex-wrap gap-4 mb-4">
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">2,583</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Stars</p></div></div>
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">642</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Forks</p></div></div>
+<div class="flex flex-1 basis-[fit-content] flex-col gap-1 items-start"><p class="text-white tracking-light text-xl font-bold leading-tight">3</p><div class="flex items-center gap-1"><p class="text-[#929bc9] text-sm font-normal leading-normal">Open Issues</p></div></div>
+</div>
+<div class="border-t border-white/10 py-4 flex items-center justify-between gap-4">
+<div class="flex items-center gap-4 text-[#929bc9]">
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">star</span> Like</button>
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">chat_bubble</span> Comment</button>
+<button class="flex items-center gap-2 hover:text-white transition-colors"><span class="material-symbols-outlined">share</span> Share</button>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 px-4 bg-[#232948] hover:bg-[#323b67] text-white text-sm font-medium leading-normal transition-colors">
+<span class="truncate">View on GitHub</span>
+</button>
+</div>
+<div class="pt-2">
+<p class="text-[#929bc9] text-sm font-normal leading-normal"><strong class="text-white">pixel_perfect:</strong> This is sick! Takes me back.</p>
+<a class="text-[#929bc9]/70 text-sm hover:text-[#929bc9]" href="#">View all 27 comments</a>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Sidebar -->
+<div class="lg:col-span-1 hidden lg:block">
+<div class="sticky top-28 flex flex-col gap-8">
+<!-- Mini Profile Widget -->
+<div class="bg-[#1A1A2E] rounded-xl p-6 border border-white/10">
+<div class="flex items-center gap-4 mb-4">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-16" data-alt="User avatar of Alex Doe" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuA_rh3MD8jKxdEKbFAAndoh48dGrJ6JvnCECmg_e-PNya_emYWAIGqvzHViY8Yu6u-d3hWRg7cXBqBEvxR82yUncEsh3EJGyoXwmppNxiygMz7pnbAYVpWMyOeWzAgS1Uh0LL9vOXJVGjsU0uQ5Lrjajuc0mlyX2whp8R3zusLro_CUoyytNafHf7WgbcUJJRDymNr2YLzRDYhPoUydxUjhdJwF08POjs-_jLMyvsX6FljduuEPiK4knDemiL9o7mNQMjVVava3qNk");'></div>
+<div>
+<h3 class="text-white text-lg font-bold">Alex Doe</h3>
+<p class="text-[#929bc9] text-sm">@alex_doe</p>
+</div>
+</div>
+<div class="flex justify-around text-center">
+<div><p class="text-xl font-bold">42</p><p class="text-sm text-[#929bc9]">Shared</p></div>
+<div><p class="text-xl font-bold">1.2k</p><p class="text-sm text-[#929bc9]">Followers</p></div>
+<div><p class="text-xl font-bold">350</p><p class="text-sm text-[#929bc9]">Following</p></div>
+</div>
+</div>
+<!-- Suggested For You -->
+<div class="bg-[#1A1A2E] rounded-xl p-6 border border-white/10">
+<h3 class="text-white text-lg font-bold mb-4">Suggested For You</h3>
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of jane-dev" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCrYfRXcaOVPTjnXmynBTRYQShQbro35PLPSdcnM7dvNXBt4JDiZ-v1ANc997jJQXYnjiL8UE_FnYomMsxl8efbskohoSGwdyX667iFay2QIbfUC4jRPaOQe9vhnPe49LEbuPvvG1d85M_fOnsvvCVCp0JKDfL43cvVnyj6SmnKDkmL5CN3gJWLOwg9k4EFDU-ZNgfEgNCRdAkqlSkFH9D4YinWzeowGmB1Ra5j_6WYcoMGr6mCq-oQF8MXqXlaVO8rfqaQk120SXE");'></div>
+<div class="flex-grow"><p class="text-white">jane-dev</p><p class="text-[#929bc9] text-sm">Web Components Expert</p></div>
+<button class="text-primary font-bold text-sm">Follow</button>
+</div>
+<div class="flex items-center gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of react-god" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBP9QiJqs4gG6X3I17px_cGDxJhTq86juQtmhPx7_EUA92QBPBETuaeSHuewAxzuD9s09AtZBQwVZ-jYrOuBvxyA4OEC0mg4nDppeqyrI5L7yjDo1fNupPCua__EzwvWidp4oya06dLuHYEvY1o_8IxlcsraZANETvZJkVC9E5sjxZRqgF-KEj8K67gz2ucVy4OzCzPXzAYrqAaNqXpLPvE4upwfm-LPwcPi85ZKoo_8pOv2kXFwmDN6gtBONteEL_yq9MuRNOuSlQ");'></div>
+<div class="flex-grow"><p class="text-white">react-god</p><p class="text-[#929bc9] text-sm">Creator of StateCraft</p></div>
+<button class="text-primary font-bold text-sm">Follow</button>
+</div>
+<div class="flex items-center gap-3">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" data-alt="User avatar of py-master" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB7zXegNVPPfRvZUpVeF-_T0uIz6PKvppf1B440TYRJrZ3gjw-jv9ls2i9F5oIP7hvphR9thCADdaME1iQUhSgQFs4lx-Wv4FTuSuBzuVFW4IOBDZTEa8jypDQiLBSAFyS4mqXJmcAzNlIDGFJSR8YHBlHfy7M9OYNU0hnInBb5dvf3DWglc_raJElEFUNO7EFZgMqNh8tho31qcE8_WMge5IfLWkAiRIx9n7dwPKjGj6VlNjFXv-z7U4goPqeFwMamexfXcYFpwSM");'></div>
+<div class="flex-grow"><p class="text-white">py-master</p><p class="text-[#929bc9] text-sm">Data Science &amp; ML</p></div>
+<button class="text-primary font-bold text-sm">Follow</button>
+</div>
+</div>
+</div>
+<!-- Trending Tags -->
+<div class="bg-[#1A1A2E] rounded-xl p-6 border border-white/10">
+<h3 class="text-white text-lg font-bold mb-4">Trending Tags</h3>
+<div class="flex flex-col gap-2">
+<a class="text-[#929bc9] hover:text-white" href="#">#react</a>
+<a class="text-[#929bc9] hover:text-white" href="#">#rustlang</a>
+<a class="text-white font-bold" href="#">#ai</a>
+<a class="text-[#929bc9] hover:text-white" href="#">#gamedev</a>
+<a class="text-[#929bc9] hover:text-white" href="#">#docker</a>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/registry/main/schema/server.json",
+  "name": "com.gitgram/mcp-server",
+  "display_name": "Gitgram TimeMachine",
+  "description": "Time travel for AI-assisted development. Checkpoint, restore, and search through your complete development state including files, terminal history, and AI conversations.",
+  "version": "2.0.0",
+  "repository": {
+    "url": "https://github.com/gitgram-ai/gitgram-ai",
+    "source": "github"
+  },
+  "homepage": "https://timemachine.gitgram.app",
+  "license": "MIT",
+  "categories": ["developer-tools", "version-control"],
+  "tags": [
+    "checkpoint",
+    "restore",
+    "time-travel",
+    "backup",
+    "undo",
+    "ai-coding",
+    "claude",
+    "cursor",
+    "windsurf"
+  ],
+  "packages": [
+    {
+      "registry_name": "npm",
+      "name": "@gitgram/timemachine-mcp",
+      "version": "2.0.0",
+      "runtime": "node",
+      "runtime_arguments": [],
+      "package_arguments": [],
+      "environment_variables": [
+        {
+          "name": "AITM_EXPERIMENTAL_TOOLS",
+          "description": "Set to '1' to enable experimental tools",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "transportType": "streamable-http",
+      "url": "http://localhost:3002/mcp"
+    }
+  ],
+  "tools": [
+    {
+      "name": "before_action",
+      "description": "Create automatic checkpoint before making file changes"
+    },
+    {
+      "name": "after_action",
+      "description": "Record what was done after completing file changes"
+    },
+    {
+      "name": "tm_checkpoint_create",
+      "description": "Create a checkpoint (snapshot of current state)"
+    },
+    {
+      "name": "tm_checkpoint_list",
+      "description": "List all checkpoints/timepoints"
+    },
+    {
+      "name": "tm_checkpoint_restore",
+      "description": "Restore project to a checkpoint"
+    },
+    {
+      "name": "tm_checkpoint_preview",
+      "description": "Preview what restore would change"
+    },
+    {
+      "name": "tm_diff",
+      "description": "Show diff between two checkpoints or checkpoint and current"
+    },
+    {
+      "name": "tm_search",
+      "description": "Search across conversations and checkpoints"
+    },
+    {
+      "name": "tm_timeline",
+      "description": "Get timeline of events for a project"
+    },
+    {
+      "name": "tm_bisect",
+      "description": "Binary search to find when a test started failing"
+    },
+    {
+      "name": "tm_stats",
+      "description": "Get TimeMachine statistics"
+    }
+  ]
+}

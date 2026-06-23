@@ -1,0 +1,33 @@
+# Source (compiled output in lib/ is what gets published)
+src/
+tests/
+*.test.ts
+*.test.js
+*.spec.ts
+
+# Development
+.aitimemachine/
+coverage/
+*.log
+.DS_Store
+*.aitm
+tsconfig.json
+vitest.config.*
+jest.config.*
+.eslintrc*
+
+# Project files
+api-server/
+website/
+mcp/
+kilocode/
+gemini-cli/
+docs/
+.github/
+deploy/
+docker-compose*
+Dockerfile
+
+# IDE
+.vscode/
+.idea/

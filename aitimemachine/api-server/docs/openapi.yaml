@@ -1,0 +1,2481 @@
+openapi: 3.1.0
+info:
+  title: AITimeMachine API
+  description: Cloud sync, checkpoint management, and AI development time-travel API.
+  version: 1.0.0
+  contact:
+    name: AITimeMachine Team
+
+servers:
+  - url: /v1
+    description: V1 API (primary)
+  - url: /api
+    description: Legacy API (backwards compatibility)
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Bearer token using an aitm_ prefixed API key"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Success:
+      type: object
+      properties:
+        success:
+          type: boolean
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        hasMore:
+          type: boolean
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        rootPath:
+          type: string
+        userId:
+          type: string
+        lastSyncedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Checkpoint:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        userId:
+          type: string
+        parentId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        scope:
+          type: string
+        manifestHash:
+          type: string
+        rootTreeHash:
+          type: string
+        triggerType:
+          type: string
+        linkedCheckpointId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    Blob:
+      type: object
+      properties:
+        hash:
+          type: string
+        userId:
+          type: string
+        size:
+          type: integer
+        mimeType:
+          type: string
+        content:
+          type: string
+          description: Base64 encoded content
+        storageType:
+          type: string
+
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        userId:
+          type: string
+        tool:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        projectId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+        ipAddress:
+          type: string
+        userAgent:
+          type: string
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        keyPrefix:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        allowedIps:
+          type: array
+          items:
+            type: string
+        lastUsedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked, expired]
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        events:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastTriggeredAt:
+          type: string
+          format: date-time
+        failureCount:
+          type: integer
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        ownerId:
+          type: string
+        plan:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Consent:
+      type: object
+      properties:
+        id:
+          type: string
+        consentType:
+          type: string
+          enum: [operational_capture, training_export]
+        granted:
+          type: boolean
+        projectId:
+          type: string
+        organizationId:
+          type: string
+        grantedByUserId:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date-time
+        effectiveTo:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    RetentionPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        dataClass:
+          type: string
+        retentionDays:
+          type: integer
+        hardDelete:
+          type: boolean
+        projectId:
+          type: string
+        organizationId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TreeEntry:
+      type: object
+      properties:
+        hash:
+          type: string
+        parentPath:
+          type: string
+        entries:
+          type: array
+          items:
+            type: object
+
+    ExportJob:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        type:
+          type: string
+          enum: [training, analytics, full]
+        format:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        downloadUrl:
+          type: string
+        stats:
+          type: object
+        error:
+          type: string
+
+paths:
+  # ===========================================================================
+  # Health
+  # ===========================================================================
+  /health:
+    get:
+      tags: [Health]
+      summary: Basic health check
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                  version:
+                    type: string
+                  uptime:
+                    type: number
+                  uptimeFormatted:
+                    type: string
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      operationId: getHealthLive
+      responses:
+        "200":
+          description: Process is running
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (checks DB connectivity)
+      security: []
+      operationId: getHealthReady
+      responses:
+        "200":
+          description: Server is ready to accept traffic
+        "503":
+          description: Server is not ready
+
+  # ===========================================================================
+  # Auth
+  # ===========================================================================
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get authenticated user info
+      operationId: getAuthMe
+      responses:
+        "200":
+          description: Authenticated user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  email:
+                    type: string
+                  plan:
+                    type: string
+
+  # ===========================================================================
+  # API Keys
+  # ===========================================================================
+  /v1/keys:
+    get:
+      tags: [Keys]
+      summary: List all API keys
+      operationId: listKeys
+      responses:
+        "200":
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ApiKey"
+                  total:
+                    type: integer
+    post:
+      tags: [Keys]
+      summary: Create a new API key
+      operationId: createKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                allowedIps:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "201":
+          description: API key created (key shown only once)
+
+  /v1/keys/{id}:
+    get:
+      tags: [Keys]
+      summary: Get API key details
+      operationId: getKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: API key details
+        "404":
+          description: Key not found
+    delete:
+      tags: [Keys]
+      summary: Revoke an API key
+      operationId: revokeKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Key revoked
+        "404":
+          description: Key not found
+    patch:
+      tags: [Keys]
+      summary: Update API key metadata (name, expiration, IPs)
+      operationId: updateKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                allowedIps:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Key updated
+
+  /v1/keys/{id}/scopes:
+    patch:
+      tags: [Keys]
+      summary: Update API key scopes
+      operationId: updateKeyScopes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopes]
+              properties:
+                scopes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Scopes updated
+
+  /v1/keys/scopes/available:
+    get:
+      tags: [Keys]
+      summary: List available scopes
+      operationId: listAvailableScopes
+      responses:
+        "200":
+          description: Available scopes
+
+  # ===========================================================================
+  # Sessions
+  # ===========================================================================
+  /v1/sessions:
+    get:
+      tags: [Sessions]
+      summary: List active sessions
+      operationId: listSessions
+      responses:
+        "200":
+          description: List of sessions
+
+  /v1/sessions/{id}:
+    delete:
+      tags: [Sessions]
+      summary: Delete a session
+      operationId: deleteSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session deleted
+
+  /v1/sessions/cleanup:
+    post:
+      tags: [Sessions]
+      summary: Cleanup expired sessions
+      operationId: cleanupSessions
+      responses:
+        "200":
+          description: Sessions cleaned up
+
+  # ===========================================================================
+  # Audit
+  # ===========================================================================
+  /v1/audit:
+    get:
+      tags: [Audit]
+      summary: List audit logs with filtering and pagination
+      operationId: listAuditLogs
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          schema:
+            type: string
+        - name: end_date
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditLog"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+
+  /v1/audit/summary:
+    get:
+      tags: [Audit]
+      summary: Get audit activity summary
+      operationId: getAuditSummary
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Audit activity summary
+
+  /v1/audit/actions:
+    get:
+      tags: [Audit]
+      summary: List available audit action types
+      operationId: listAuditActions
+      responses:
+        "200":
+          description: Available audit action types
+
+  /v1/audit/{logId}:
+    get:
+      tags: [Audit]
+      summary: Get a specific audit log entry
+      operationId: getAuditLog
+      parameters:
+        - name: logId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit log entry
+        "404":
+          description: Log not found
+
+  # ===========================================================================
+  # Sync
+  # ===========================================================================
+  /v1/sync/projects:
+    post:
+      tags: [Sync]
+      summary: Sync a project
+      operationId: syncProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                rootPath:
+                  type: string
+      responses:
+        "200":
+          description: Project synced
+
+  /v1/sync/checkpoints:
+    post:
+      tags: [Sync]
+      summary: Sync a checkpoint
+      operationId: syncCheckpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, projectId, name, manifestHash]
+              properties:
+                id:
+                  type: string
+                projectId:
+                  type: string
+                parentId:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+                scope:
+                  type: string
+                manifestHash:
+                  type: string
+                rootTreeHash:
+                  type: string
+                triggerType:
+                  type: string
+                linkedCheckpointId:
+                  type: string
+                createdAt:
+                  type: string
+                metadata:
+                  type: object
+                files:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+                      hash:
+                        type: string
+                      size:
+                        type: number
+                      mode:
+                        type: number
+      responses:
+        "200":
+          description: Checkpoint synced
+
+  /v1/sync/checkpoints/batch:
+    post:
+      tags: [Sync]
+      summary: Batch sync checkpoints
+      operationId: batchSyncCheckpoints
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkpoints]
+              properties:
+                checkpoints:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        "200":
+          description: Batch sync results
+
+  /v1/sync/blobs:
+    post:
+      tags: [Sync]
+      summary: Sync a blob (file content)
+      operationId: syncBlob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hash, size, content]
+              properties:
+                hash:
+                  type: string
+                size:
+                  type: integer
+                mimeType:
+                  type: string
+                content:
+                  type: string
+                  description: Base64 encoded
+      responses:
+        "200":
+          description: Blob synced
+
+  /v1/sync/blobs/check:
+    post:
+      tags: [Sync]
+      summary: Check which blobs already exist
+      operationId: checkBlobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hashes]
+              properties:
+                hashes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Existing and missing blob hashes
+
+  /v1/sync/sessions:
+    post:
+      tags: [Sync]
+      summary: Sync a chat session
+      operationId: syncSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, projectId, tool]
+              properties:
+                id:
+                  type: string
+                projectId:
+                  type: string
+                tool:
+                  type: string
+                startedAt:
+                  type: string
+                endedAt:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Session synced
+
+  /v1/sync/messages:
+    post:
+      tags: [Sync]
+      summary: Sync a chat message
+      operationId: syncMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, projectId, role, content]
+              properties:
+                sessionId:
+                  type: string
+                projectId:
+                  type: string
+                checkpointId:
+                  type: string
+                role:
+                  type: string
+                  enum: [user, assistant, system]
+                content:
+                  type: string
+                contentHash:
+                  type: string
+                isContextInjection:
+                  type: boolean
+                timestamp:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Message synced
+
+  /v1/sync/messages/batch:
+    post:
+      tags: [Sync]
+      summary: Batch sync messages
+      operationId: batchSyncMessages
+      responses:
+        "200":
+          description: Batch sync results
+
+  /v1/sync/tool-calls:
+    post:
+      tags: [Sync]
+      summary: Sync a tool call
+      operationId: syncToolCall
+      responses:
+        "200":
+          description: Tool call synced
+
+  /v1/sync/terminal-events:
+    post:
+      tags: [Sync]
+      summary: Sync a terminal event
+      operationId: syncTerminalEvent
+      responses:
+        "200":
+          description: Terminal event synced
+
+  /v1/sync/events:
+    post:
+      tags: [Sync]
+      summary: Sync a generic event
+      operationId: syncEvent
+      responses:
+        "200":
+          description: Event synced
+
+  /v1/sync/quota:
+    get:
+      tags: [Sync]
+      summary: Get current storage quota and usage
+      operationId: getQuota
+      responses:
+        "200":
+          description: Storage quota info
+
+  /v1/sync/quota/recalculate:
+    post:
+      tags: [Sync]
+      summary: Recalculate storage usage
+      operationId: recalculateQuota
+      responses:
+        "200":
+          description: Quota recalculated
+
+  # ===========================================================================
+  # Restore
+  # ===========================================================================
+  /v1/restore/projects:
+    get:
+      tags: [Restore]
+      summary: List user projects
+      operationId: listProjects
+      responses:
+        "200":
+          description: List of projects
+
+  /v1/restore/projects/{projectId}:
+    get:
+      tags: [Restore]
+      summary: Get project details
+      operationId: getProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project details
+        "404":
+          description: Project not found
+
+  /v1/restore/projects/{projectId}/checkpoints:
+    get:
+      tags: [Restore]
+      summary: List checkpoints for a project
+      operationId: listCheckpoints
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of checkpoints
+
+  /v1/restore/projects/{projectId}/checkpoints/last-green:
+    get:
+      tags: [Restore]
+      summary: Find last passing checkpoint
+      operationId: getLastGreenCheckpoint
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Last green checkpoint
+        "404":
+          description: No green checkpoint found
+
+  /v1/restore/projects/{projectId}/checkpoints/{checkpointId}:
+    get:
+      tags: [Restore]
+      summary: Get checkpoint details
+      operationId: getCheckpoint
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checkpoint details
+        "404":
+          description: Checkpoint not found
+
+  /v1/restore/projects/{projectId}/checkpoints/{checkpointId}/manifest:
+    get:
+      tags: [Restore]
+      summary: Get checkpoint manifest for restore
+      operationId: getCheckpointManifest
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checkpoint with manifest
+
+  /v1/restore/projects/{projectId}/checkpoints/{checkpointId}/full:
+    get:
+      tags: [Restore]
+      summary: Full context restore (checkpoint + messages + terminal events)
+      operationId: getFullRestore
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: includeMessages
+          in: query
+          schema:
+            type: string
+            default: "true"
+        - name: messageLimit
+          in: query
+          schema:
+            type: string
+            default: "20"
+      responses:
+        "200":
+          description: Full restore data
+
+  /v1/restore/blobs/{hash}:
+    get:
+      tags: [Restore]
+      summary: Get a blob by hash
+      operationId: getBlob
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Blob content
+        "404":
+          description: Blob not found
+
+  /v1/restore/blobs/batch:
+    post:
+      tags: [Restore]
+      summary: Batch get blobs
+      operationId: batchGetBlobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hashes]
+              properties:
+                hashes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Batch blob results
+
+  /v1/restore/projects/{projectId}/sessions:
+    get:
+      tags: [Restore]
+      summary: List chat sessions for a project
+      operationId: listProjectSessions
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of sessions
+
+  /v1/restore/projects/{projectId}/sessions/{sessionId}/messages:
+    get:
+      tags: [Restore]
+      summary: Get messages for a session
+      operationId: getSessionMessages
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of messages
+
+  /v1/restore/projects/{projectId}/messages:
+    get:
+      tags: [Restore]
+      summary: Get recent messages for a project
+      operationId: getProjectMessages
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of messages
+
+  /v1/restore/projects/{projectId}/tool-calls:
+    get:
+      tags: [Restore]
+      summary: Get tool calls for a project
+      operationId: getProjectToolCalls
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tool calls
+
+  /v1/restore/projects/{projectId}/terminal-events:
+    get:
+      tags: [Restore]
+      summary: Get terminal events for a project
+      operationId: getProjectTerminalEvents
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of terminal events
+
+  # ===========================================================================
+  # Time (Advanced Restore)
+  # ===========================================================================
+  /v1/time/restore:
+    post:
+      tags: [Time]
+      summary: Restore to a checkpoint (project/folder/file scope)
+      operationId: timeRestore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: string
+                checkpointId:
+                  type: string
+                restoreTime:
+                  type: string
+                  format: date-time
+                scopeType:
+                  type: string
+                  enum: [project, folder, file]
+                  default: project
+                scopePath:
+                  type: string
+                includeContext:
+                  type: boolean
+                  default: true
+                messageLimit:
+                  type: integer
+                  default: 50
+      responses:
+        "200":
+          description: Restore result
+        "404":
+          description: Project or checkpoint not found
+
+  /v1/time/restore-file:
+    post:
+      tags: [Time]
+      summary: Restore a single file
+      operationId: timeRestoreFile
+      responses:
+        "200":
+          description: File restore result
+
+  /v1/time/restore-folder:
+    post:
+      tags: [Time]
+      summary: Restore a folder
+      operationId: timeRestoreFolder
+      responses:
+        "200":
+          description: Folder restore result
+
+  /v1/time/undo:
+    post:
+      tags: [Time]
+      summary: Undo the last action
+      operationId: timeUndo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: string
+                includeContext:
+                  type: boolean
+                  default: true
+                messageLimit:
+                  type: integer
+                  default: 50
+      responses:
+        "200":
+          description: Undo result
+
+  /v1/time/preview:
+    post:
+      tags: [Time]
+      summary: Preview diff between checkpoints
+      operationId: timePreview
+      responses:
+        "200":
+          description: Preview diff results
+
+  /v1/time/restore-preview:
+    post:
+      tags: [Time]
+      summary: Detailed restore preview without executing
+      operationId: timeRestorePreview
+      responses:
+        "200":
+          description: Detailed restore preview
+
+  /v1/time/diff:
+    get:
+      tags: [Time]
+      summary: Get diff between checkpoints
+      operationId: timeDiff
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: toCheckpointId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: fromCheckpointId
+          in: query
+          schema:
+            type: string
+        - name: scopeType
+          in: query
+          schema:
+            type: string
+            enum: [project, folder, file]
+        - name: scopePath
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diff results
+
+  /v1/time/timeline:
+    get:
+      tags: [Time]
+      summary: Get checkpoint timeline
+      operationId: timeTimeline
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: triggerType
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Timeline entries
+
+  /v1/time/restore-events:
+    get:
+      tags: [Time]
+      summary: List restore events
+      operationId: timeRestoreEvents
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of restore events
+
+  # ===========================================================================
+  # Actions (Before/After)
+  # ===========================================================================
+  /v1/actions/before:
+    post:
+      tags: [Actions]
+      summary: Create a before-action checkpoint
+      operationId: beforeAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, sessionId, action]
+              properties:
+                projectId:
+                  type: string
+                sessionId:
+                  type: string
+                action:
+                  type: string
+                args:
+                  type: object
+                message:
+                  type: object
+                  properties:
+                    role:
+                      type: string
+                    content:
+                      type: string
+                files:
+                  type: array
+                  items:
+                    type: object
+                idempotencyKey:
+                  type: string
+      responses:
+        "200":
+          description: Before action checkpoint created
+
+  /v1/actions/after:
+    post:
+      tags: [Actions]
+      summary: Create an after-action checkpoint
+      operationId: afterAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, sessionId, action, beforeCheckpointId]
+              properties:
+                projectId:
+                  type: string
+                sessionId:
+                  type: string
+                action:
+                  type: string
+                actionId:
+                  type: string
+                beforeCheckpointId:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: object
+                result:
+                  type: object
+                success:
+                  type: boolean
+                error:
+                  type: string
+                idempotencyKey:
+                  type: string
+      responses:
+        "200":
+          description: After action checkpoint created
+
+  # ===========================================================================
+  # Trees
+  # ===========================================================================
+  /v1/trees/{checkpointId}:
+    get:
+      tags: [Trees]
+      summary: Get root tree entries for a checkpoint
+      operationId: getTreeForCheckpoint
+      parameters:
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Root tree entries
+        "404":
+          description: Tree not found
+
+  /v1/trees/{checkpointId}/path/{path}:
+    get:
+      tags: [Trees]
+      summary: Get tree entries at a directory path
+      operationId: getTreeAtPath
+      parameters:
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tree entries at path
+
+  /v1/trees/hash/{hash}:
+    get:
+      tags: [Trees]
+      summary: Get tree by content hash
+      operationId: getTreeByHash
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tree object
+        "404":
+          description: Tree not found
+
+  # ===========================================================================
+  # Consent
+  # ===========================================================================
+  /v1/consent:
+    post:
+      tags: [Consent]
+      summary: Create or update a consent record
+      operationId: createConsent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consentType, granted]
+              properties:
+                consentType:
+                  type: string
+                  enum: [operational_capture, training_export]
+                granted:
+                  type: boolean
+                projectId:
+                  type: string
+                organizationId:
+                  type: string
+                effectiveFrom:
+                  type: string
+                  format: date-time
+                effectiveTo:
+                  type: string
+                  format: date-time
+                metadata:
+                  type: object
+      responses:
+        "201":
+          description: Consent record created
+    get:
+      tags: [Consent]
+      summary: List active consent records
+      operationId: listConsents
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+        - name: organizationId
+          in: query
+          schema:
+            type: string
+        - name: consentType
+          in: query
+          schema:
+            type: string
+        - name: includeExpired
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: List of consent records
+
+  /v1/consent/history:
+    get:
+      tags: [Consent]
+      summary: Get full consent history
+      operationId: getConsentHistory
+      responses:
+        "200":
+          description: Consent history
+
+  # ===========================================================================
+  # Retention
+  # ===========================================================================
+  /v1/retention:
+    post:
+      tags: [Retention]
+      summary: Create or update a retention policy
+      operationId: upsertRetentionPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataClass, retentionDays]
+              properties:
+                dataClass:
+                  type: string
+                retentionDays:
+                  type: integer
+                hardDelete:
+                  type: boolean
+                  default: false
+                projectId:
+                  type: string
+                organizationId:
+                  type: string
+      responses:
+        "201":
+          description: Retention policy created/updated
+    get:
+      tags: [Retention]
+      summary: List retention policies
+      operationId: listRetentionPolicies
+      responses:
+        "200":
+          description: List of retention policies
+
+  /v1/retention/apply:
+    post:
+      tags: [Retention]
+      summary: Apply retention policies to a project
+      operationId: applyRetention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId]
+              properties:
+                projectId:
+                  type: string
+                dataClass:
+                  type: string
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Retention applied
+
+  # ===========================================================================
+  # Data (Deletion Requests)
+  # ===========================================================================
+  /v1/data/delete-request:
+    post:
+      tags: [Data]
+      summary: Create a data deletion request
+      operationId: createDeleteRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope:
+                  type: string
+                  enum: [project, user]
+                projectId:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        "202":
+          description: Delete request created
+    get:
+      tags: [Data]
+      summary: List deletion requests
+      operationId: listDeleteRequests
+      responses:
+        "200":
+          description: List of delete requests
+
+  /v1/data/delete-request/{requestId}:
+    get:
+      tags: [Data]
+      summary: Get delete request status
+      operationId: getDeleteRequest
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete request details
+
+  /v1/data/delete-request/{requestId}/process:
+    post:
+      tags: [Data]
+      summary: Process a delete request
+      operationId: processDeleteRequest
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete request processed
+
+  /v1/data/delete-request/process-pending:
+    post:
+      tags: [Data]
+      summary: Process all pending delete requests
+      operationId: processPendingDeleteRequests
+      responses:
+        "200":
+          description: Pending requests processed
+
+  # ===========================================================================
+  # Export
+  # ===========================================================================
+  /v1/export/training:
+    post:
+      tags: [Export]
+      summary: Export training data (JSONL)
+      operationId: exportTraining
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [openai, anthropic, generic]
+                  default: generic
+                includeTools:
+                  type: boolean
+                  default: true
+                includeErrors:
+                  type: boolean
+                  default: true
+                redact:
+                  type: boolean
+                  default: true
+                since:
+                  type: string
+                  format: date-time
+                projectId:
+                  type: string
+                destination:
+                  type: string
+                s3_bucket:
+                  type: string
+                s3_prefix:
+                  type: string
+      responses:
+        "202":
+          description: Export job created
+
+  /v1/export/analytics:
+    post:
+      tags: [Export]
+      summary: Export analytics data
+      operationId: exportAnalytics
+      responses:
+        "202":
+          description: Export job created
+
+  /v1/export/status/{id}:
+    get:
+      tags: [Export]
+      summary: Check export job status
+      operationId: getExportStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Export job status
+
+  /v1/export/download/{id}:
+    get:
+      tags: [Export]
+      summary: Download export data
+      operationId: downloadExport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Export data download
+        "409":
+          description: Export not ready
+
+  /v1/export/jobs:
+    get:
+      tags: [Export]
+      summary: List export jobs
+      operationId: listExportJobs
+      responses:
+        "200":
+          description: List of export jobs
+
+  # ===========================================================================
+  # Webhooks
+  # ===========================================================================
+  /v1/webhooks/register:
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook
+      operationId: registerWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url:
+                  type: string
+                events:
+                  type: array
+                  items:
+                    type: string
+                secret:
+                  type: string
+      responses:
+        "200":
+          description: Webhook registered
+
+  /v1/webhooks/list:
+    get:
+      tags: [Webhooks]
+      summary: List webhooks
+      operationId: listWebhooks
+      responses:
+        "200":
+          description: List of webhooks
+
+  /v1/webhooks/test:
+    post:
+      tags: [Webhooks]
+      summary: Test a webhook (simple)
+      operationId: testWebhookSimple
+      responses:
+        "200":
+          description: Test result
+
+  /v1/webhooks/events:
+    get:
+      tags: [Webhooks]
+      summary: SSE stream for real-time events
+      operationId: webhookSSE
+      responses:
+        "200":
+          description: SSE event stream
+
+  /v1/webhooks/{webhookId}:
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook
+      operationId: deleteWebhook
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Webhook deleted
+    patch:
+      tags: [Webhooks]
+      summary: Update a webhook
+      operationId: updateWebhook
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Webhook updated
+
+  /v1/webhooks/{webhookId}/test:
+    post:
+      tags: [Webhooks]
+      summary: Test a specific webhook (reliable delivery)
+      operationId: testWebhook
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test delivery result
+
+  /v1/webhooks/{webhookId}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: List webhook deliveries
+      operationId: listWebhookDeliveries
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of deliveries
+
+  /v1/webhooks/{webhookId}/deliveries/{deliveryId}:
+    get:
+      tags: [Webhooks]
+      summary: Get delivery details
+      operationId: getWebhookDelivery
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delivery details
+
+  /v1/webhooks/{webhookId}/deliveries/{deliveryId}/retry:
+    post:
+      tags: [Webhooks]
+      summary: Retry a failed delivery
+      operationId: retryWebhookDelivery
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Retry result
+
+  /v1/webhooks/{webhookId}/stats:
+    get:
+      tags: [Webhooks]
+      summary: Get webhook delivery stats
+      operationId: getWebhookStats
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delivery stats
+
+  # ===========================================================================
+  # Search
+  # ===========================================================================
+  /v1/search/universal:
+    post:
+      tags: [Search]
+      summary: Search across all sources
+      operationId: searchUniversal
+      responses:
+        "200":
+          description: Universal search results
+
+  /v1/search/checkpoints:
+    post:
+      tags: [Search]
+      summary: Search checkpoint history
+      operationId: searchCheckpoints
+      responses:
+        "200":
+          description: Checkpoint search results
+
+  /v1/search/conversations:
+    post:
+      tags: [Search]
+      summary: Search conversation history
+      operationId: searchConversations
+      responses:
+        "200":
+          description: Conversation search results
+
+  /v1/search/code:
+    post:
+      tags: [Search]
+      summary: Search code across repositories
+      operationId: searchCode
+      responses:
+        "200":
+          description: Code search results
+
+  /v1/search/symbols:
+    post:
+      tags: [Search]
+      summary: Search for symbols (functions, classes)
+      operationId: searchSymbols
+      responses:
+        "200":
+          description: Symbol search results
+
+  /v1/search/find-definition:
+    post:
+      tags: [Search]
+      summary: Find definition of a symbol
+      operationId: findDefinition
+      responses:
+        "200":
+          description: Symbol definition
+
+  /v1/search/find-usages:
+    post:
+      tags: [Search]
+      summary: Find all usages of a symbol
+      operationId: findUsages
+      responses:
+        "200":
+          description: Symbol usage results
+
+  # ===========================================================================
+  # Dashboard
+  # ===========================================================================
+  /v1/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Get dashboard overview
+      operationId: getDashboardOverview
+      responses:
+        "200":
+          description: Dashboard overview data
+
+  /v1/dashboard/activity:
+    get:
+      tags: [Dashboard]
+      summary: Get recent activity
+      operationId: getDashboardActivity
+      responses:
+        "200":
+          description: Activity data
+
+  /v1/dashboard/search:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard search
+      operationId: dashboardSearch
+      responses:
+        "200":
+          description: Dashboard search results
+
+  /v1/dashboard/projects/{projectId}/stats:
+    get:
+      tags: [Dashboard]
+      summary: Get project stats
+      operationId: getProjectStats
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project statistics
+
+  # ===========================================================================
+  # Usage
+  # ===========================================================================
+  /v1/usage:
+    get:
+      tags: [Usage]
+      summary: Get current usage metrics
+      operationId: getUsage
+      responses:
+        "200":
+          description: Usage metrics
+
+  /v1/usage/history:
+    get:
+      tags: [Usage]
+      summary: Get usage history
+      operationId: getUsageHistory
+      responses:
+        "200":
+          description: Usage history
+
+  /v1/usage/breakdown:
+    get:
+      tags: [Usage]
+      summary: Get usage breakdown by category
+      operationId: getUsageBreakdown
+      responses:
+        "200":
+          description: Usage breakdown
+
+  /v1/usage/limits:
+    get:
+      tags: [Usage]
+      summary: Get usage limits
+      operationId: getUsageLimits
+      responses:
+        "200":
+          description: Usage limits
+
+  # ===========================================================================
+  # Billing
+  # ===========================================================================
+  /v1/billing/checkout:
+    post:
+      tags: [Billing]
+      summary: Create a checkout session
+      operationId: createCheckout
+      responses:
+        "200":
+          description: Checkout session created
+
+  /v1/billing/portal:
+    get:
+      tags: [Billing]
+      summary: Get billing portal URL
+      operationId: getBillingPortal
+      responses:
+        "200":
+          description: Portal URL
+
+  /v1/billing/webhooks:
+    post:
+      tags: [Billing]
+      summary: Handle billing webhooks
+      operationId: handleBillingWebhook
+      security: []
+      responses:
+        "200":
+          description: Webhook processed
+
+  # ===========================================================================
+  # Contexts
+  # ===========================================================================
+  /v1/contexts:
+    get:
+      tags: [Contexts]
+      summary: List contexts
+      operationId: listContexts
+      responses:
+        "200":
+          description: List of contexts
+    post:
+      tags: [Contexts]
+      summary: Create a context
+      operationId: createContext
+      responses:
+        "200":
+          description: Context created
+
+  # ===========================================================================
+  # Repositories
+  # ===========================================================================
+  /v1/repositories:
+    post:
+      tags: [Repositories]
+      summary: Index a repository
+      operationId: indexRepository
+      responses:
+        "200":
+          description: Repository indexed
+    get:
+      tags: [Repositories]
+      summary: List repositories
+      operationId: listRepositories
+      responses:
+        "200":
+          description: List of repositories
+
+  # ===========================================================================
+  # Research
+  # ===========================================================================
+  /v1/research:
+    post:
+      tags: [Research]
+      summary: Start a research job
+      operationId: startResearch
+      responses:
+        "200":
+          description: Research job started
+    get:
+      tags: [Research]
+      summary: List research jobs
+      operationId: listResearchJobs
+      responses:
+        "200":
+          description: List of research jobs
+
+  # ===========================================================================
+  # Oracle / Deep Research
+  # ===========================================================================
+  /v1/oracle/query:
+    post:
+      tags: [Oracle]
+      summary: Submit an oracle query
+      operationId: oracleQuery
+      responses:
+        "200":
+          description: Oracle query result
+
+  # ===========================================================================
+  # Universal Search / Query
+  # ===========================================================================
+  /v1/universal-search:
+    post:
+      tags: [UniversalSearch]
+      summary: Universal semantic search
+      operationId: universalSearch
+      responses:
+        "200":
+          description: Universal search results
+
+  # ===========================================================================
+  # Web Search
+  # ===========================================================================
+  /v1/web-search:
+    post:
+      tags: [WebSearch]
+      summary: Perform a web search
+      operationId: webSearch
+      responses:
+        "200":
+          description: Web search results
+
+  # ===========================================================================
+  # Package Search
+  # ===========================================================================
+  /v1/package-search:
+    get:
+      tags: [PackageSearch]
+      summary: Search packages
+      operationId: searchPackages
+      responses:
+        "200":
+          description: Package search results
+
+  # ===========================================================================
+  # Shared Checkpoints
+  # ===========================================================================
+  /v1/shared-checkpoints:
+    get:
+      tags: [SharedCheckpoints]
+      summary: List shared checkpoints
+      operationId: listSharedCheckpoints
+      responses:
+        "200":
+          description: List of shared checkpoints
+    post:
+      tags: [SharedCheckpoints]
+      summary: Share a checkpoint
+      operationId: shareCheckpoint
+      responses:
+        "200":
+          description: Checkpoint shared
+
+  # ===========================================================================
+  # SSO
+  # ===========================================================================
+  /v1/sso/config:
+    get:
+      tags: [SSO]
+      summary: Get SSO configuration
+      operationId: getSSOConfig
+      responses:
+        "200":
+          description: SSO configuration
+    post:
+      tags: [SSO]
+      summary: Create SSO configuration
+      operationId: createSSOConfig
+      responses:
+        "200":
+          description: SSO configuration created
+
+  # ===========================================================================
+  # Research Papers
+  # ===========================================================================
+  /v1/research-papers:
+    get:
+      tags: [ResearchPapers]
+      summary: List research papers
+      operationId: listResearchPapers
+      responses:
+        "200":
+          description: List of research papers
+    post:
+      tags: [ResearchPapers]
+      summary: Submit a research paper
+      operationId: submitResearchPaper
+      responses:
+        "200":
+          description: Paper submitted
+
+  # ===========================================================================
+  # Pipeline
+  # ===========================================================================
+  /v1/pipeline:
+    post:
+      tags: [Pipeline]
+      summary: Create a pipeline
+      operationId: createPipeline
+      responses:
+        "200":
+          description: Pipeline created
+    get:
+      tags: [Pipeline]
+      summary: List pipelines
+      operationId: listPipelines
+      responses:
+        "200":
+          description: List of pipelines
+
+  # ===========================================================================
+  # Knowledge Base
+  # ===========================================================================
+  /v1/knowledge-base:
+    get:
+      tags: [KnowledgeBase]
+      summary: List knowledge base artifacts
+      operationId: listKnowledgeBase
+      responses:
+        "200":
+          description: List of artifacts
+
+  # ===========================================================================
+  # Data Sources
+  # ===========================================================================
+  /v1/data-sources:
+    get:
+      tags: [DataSources]
+      summary: List data sources
+      operationId: listDataSources
+      responses:
+        "200":
+          description: List of data sources
+    post:
+      tags: [DataSources]
+      summary: Register a data source
+      operationId: registerDataSource
+      responses:
+        "200":
+          description: Data source registered
+
+  # ===========================================================================
+  # Context (checkpoint context)
+  # ===========================================================================
+  /v1/context/{checkpointId}:
+    get:
+      tags: [Context]
+      summary: Get checkpoint context
+      operationId: getCheckpointContext
+      parameters:
+        - name: checkpointId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checkpoint context data
+
+  # ===========================================================================
+  # Gitgram Social (AITM integration)
+  # ===========================================================================
+  /v1/gitgram/repos/import:
+    post:
+      tags: [Gitgram]
+      summary: Import repositories
+      operationId: importRepos
+      responses:
+        "200":
+          description: Repositories imported
+
+  /v1/gitgram/posts:
+    post:
+      tags: [Gitgram]
+      summary: Create a social post
+      operationId: createGitgramPost
+      responses:
+        "200":
+          description: Post created
+    get:
+      tags: [Gitgram]
+      summary: List social posts
+      operationId: listGitgramPosts
+      responses:
+        "200":
+          description: List of posts
+
+  /v1/gitgram/trending:
+    get:
+      tags: [Gitgram]
+      summary: Get trending content
+      operationId: getGitgramTrending
+      responses:
+        "200":
+          description: Trending content
+
+  # ===========================================================================
+  # V1 Info
+  # ===========================================================================
+  /v1:
+    get:
+      tags: [Info]
+      summary: API version and endpoint listing
+      security: []
+      operationId: getApiInfo
+      responses:
+        "200":
+          description: API info and available endpoints

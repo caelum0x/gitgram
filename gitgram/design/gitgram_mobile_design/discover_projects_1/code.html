@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Discover Projects</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#135bec",
+            "background-light": "#f6f6f8",
+            "background-dark": "#101622",
+          },
+          fontFamily: {
+            "display": ["Space Grotesk", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 24
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col overflow-x-hidden">
+<!-- Top App Bar -->
+<div class="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10">
+<div class="flex size-12 shrink-0 items-center">
+<span class="material-symbols-outlined text-gray-800 dark:text-white text-3xl">hub</span>
+</div>
+<h1 class="text-gray-900 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center">Discover</h1>
+<div class="flex w-12 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 bg-transparent text-gray-800 dark:text-white gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined text-2xl">notifications</span>
+</button>
+</div>
+</div>
+<!-- Search Bar -->
+<div class="px-4 py-3">
+<label class="flex flex-col min-w-40 h-12 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-gray-500 dark:text-gray-400 flex border-none bg-white/10 dark:bg-white/5 items-center justify-center pl-4 rounded-l-lg border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-r-lg text-gray-900 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary border-none bg-white/10 dark:bg-white/5 h-full placeholder:text-gray-500 dark:placeholder:text-gray-400 px-4 pl-2 text-base font-normal leading-normal" placeholder="Search projects, languages, users..." value=""/>
+</div>
+</label>
+</div>
+<!-- Tabs -->
+<div class="px-4">
+<div class="flex border-b border-gray-200 dark:border-white/10 justify-between">
+<a class="flex flex-col items-center justify-center border-b-[3px] border-primary text-gray-900 dark:text-white pb-[13px] pt-4 flex-1" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Projects</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-transparent text-gray-500 dark:text-gray-400 pb-[13px] pt-4 flex-1" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Users</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-transparent text-gray-500 dark:text-gray-400 pb-[13px] pt-4 flex-1" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Trending</p>
+</a>
+</div>
+</div>
+<!-- Section Header: Trending -->
+<h2 class="text-gray-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Trending This Week</h2>
+<!-- Chips -->
+<div class="flex gap-3 px-4 py-3 overflow-x-auto">
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary pl-4 pr-4 cursor-pointer">
+<p class="text-white text-sm font-medium leading-normal">All</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-gray-200 dark:bg-white/10 pl-4 pr-4 cursor-pointer">
+<p class="text-gray-800 dark:text-gray-300 text-sm font-medium leading-normal">JavaScript</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-gray-200 dark:bg-white/10 pl-4 pr-4 cursor-pointer">
+<p class="text-gray-800 dark:text-gray-300 text-sm font-medium leading-normal">Python</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-gray-200 dark:bg-white/10 pl-4 pr-4 cursor-pointer">
+<p class="text-gray-800 dark:text-gray-300 text-sm font-medium leading-normal">AI/ML</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-gray-200 dark:bg-white/10 pl-4 pr-4 cursor-pointer">
+<p class="text-gray-800 dark:text-gray-300 text-sm font-medium leading-normal">Mobile</p>
+</div>
+</div>
+<!-- Project Cards Feed -->
+<div class="flex flex-col gap-4 p-4">
+<!-- Project Card 1 -->
+<div class="flex flex-col gap-4 rounded-xl border border-gray-200 dark:border-white/10 p-4 bg-white dark:bg-white/5">
+<div class="flex flex-col gap-1">
+<h3 class="text-gray-900 dark:text-white text-base font-bold leading-tight">facebook/react</h3>
+<p class="text-gray-600 dark:text-gray-400 text-sm font-normal leading-normal">A declarative, efficient, and flexible JavaScript library for building user interfaces.</p>
+</div>
+<div class="flex items-center gap-6 text-gray-500 dark:text-gray-400">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-base">star</span>
+<p class="text-sm font-medium leading-normal">198k</p>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<p class="text-sm font-medium leading-normal">41k</p>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="size-2.5 rounded-full bg-blue-500"></div>
+<p class="text-sm font-medium leading-normal">JavaScript</p>
+</div>
+</div>
+<button class="flex w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-primary text-white gap-2 text-sm font-bold leading-normal tracking-[0.015em]">
+<span class="material-symbols-outlined text-lg">star_outline</span>
+<span>Star</span>
+</button>
+</div>
+<!-- Project Card 2 -->
+<div class="flex flex-col gap-4 rounded-xl border border-gray-200 dark:border-white/10 p-4 bg-white dark:bg-white/5">
+<div class="flex flex-col gap-1">
+<h3 class="text-gray-900 dark:text-white text-base font-bold leading-tight">tensorflow/tensorflow</h3>
+<p class="text-gray-600 dark:text-gray-400 text-sm font-normal leading-normal">An end-to-end open source platform for machine learning.</p>
+</div>
+<div class="flex items-center gap-6 text-gray-500 dark:text-gray-400">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-base">star</span>
+<p class="text-sm font-medium leading-normal">170k</p>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<p class="text-sm font-medium leading-normal">87k</p>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="size-2.5 rounded-full bg-orange-500"></div>
+<p class="text-sm font-medium leading-normal">C++</p>
+</div>
+</div>
+<button class="flex w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-white gap-2 text-sm font-bold leading-normal tracking-[0.015em]">
+<span class="material-symbols-outlined text-lg">star_outline</span>
+<span>Star</span>
+</button>
+</div>
+</div>
+<!-- Section Header: Suggested Developers -->
+<h2 class="text-gray-900 dark:text-white text-[22px] font-bold leading-tight tracking-[-0.015em] px-4 pb-3 pt-5">Developers to Follow</h2>
+<!-- User Profile Cards Feed -->
+<div class="flex flex-col gap-4 p-4">
+<!-- User Card 1 -->
+<div class="flex items-center gap-4 rounded-xl border border-gray-200 dark:border-white/10 p-4 bg-white dark:bg-white/5">
+<img class="size-12 shrink-0 rounded-full" data-alt="A portrait of a smiling woman with dark hair." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCza4aX3Ku8Ck7yY8CRdtopX8Jd2Tu5L47Up22maLSszFwWxzEM3cG_djm0bOwhaK6BW40epHPqNODN9CNIrc8ORz3217vzcSYelcxvhgw7jv2rSrM9aPkM7GssXO3YYs2bJBIhRbZHsoH_-71_MWIZEFwU7m4VtrWrMCyQRhkEmZ59LJWUNSW-M8N11C8qCjhwCtRu_0ZSiiPixwPvHG7-uUtPtBfXwtHE39xJTiNMg-2J_Mm70EzlvyHEI_xYdg6z6Of_UwIDx7g"/>
+<div class="flex flex-1 flex-col">
+<p class="text-gray-900 dark:text-white text-base font-bold leading-tight">Sarah Drasner</p>
+<p class="text-gray-600 dark:text-gray-400 text-sm font-normal leading-normal">Core team @ VueJS</p>
+</div>
+<button class="flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 bg-primary text-white gap-2 text-sm font-bold leading-normal tracking-[0.015em] px-4">
+<span>Follow</span>
+</button>
+</div>
+<!-- User Card 2 -->
+<div class="flex items-center gap-4 rounded-xl border border-gray-200 dark:border-white/10 p-4 bg-white dark:bg-white/5">
+<img class="size-12 shrink-0 rounded-full" data-alt="A portrait of a man with short hair and a beard, looking slightly to the side." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4j5EXe0M86zJKU0W5ZJU4E50zHE1E7OaU1TCK4tpu8YoChr-69DD3FiGFAJlVF_tFcor-AvfXEOUDxzbic9fQGQNQtEwO_x1fWyJFA4H1TneACwZhPzHO1nOT34gpME_aEsf-wPUKgzza24MpsAXOlQwn3GXM7zsDmz6stkeqqVcXXotPIpex4gbBmXEeC1wiYLHqfyG2rivMNz0EKIikrjdTcm-3jPxPXbeTU51TGze3U0mpsYokMiZZBNp7vf5OYS4SjXGwmV0"/>
+<div class="flex flex-1 flex-col">
+<p class="text-gray-900 dark:text-white text-base font-bold leading-tight">Evan You</p>
+<p class="text-gray-600 dark:text-gray-400 text-sm font-normal leading-normal">Creator of Vue.js</p>
+</div>
+<button class="flex shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-white gap-2 text-sm font-bold leading-normal tracking-[0.015em] px-4">
+<span>Follow</span>
+</button>
+</div>
+</div>
+</div>
+</body></html>

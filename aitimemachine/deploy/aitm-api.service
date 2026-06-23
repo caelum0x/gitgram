@@ -1,0 +1,18 @@
+[Unit]
+Description=Gitgram TimeMachine API Server
+After=network.target
+
+[Service]
+Type=simple
+User=aitm
+WorkingDirectory=/opt/aitimemachine/api-server
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+EnvironmentFile=/opt/aitimemachine/api-server/.env
+
+[Install]
+WantedBy=multi-user.target

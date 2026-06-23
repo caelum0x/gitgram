@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Gitgram Splash Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+<style>
+        .github-pattern {
+            background-color: #0D1117;
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 0),
+                radial-gradient(circle at 10px 10px, rgba(255,255,255,0.1) 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+        .github-pattern-light {
+             background-color: #f6f8fa;
+             background-image:
+                radial-gradient(circle at 1px 1px, rgba(0,0,0,0.1) 1px, transparent 0),
+                radial-gradient(circle at 10px 10px, rgba(0,0,0,0.1) 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+    </style>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#3371FF", // A vibrant blue for primary actions
+              "background-light": "#f6f8fa",
+              "background-dark": "#0D1117",
+            },
+            fontFamily: {
+              display: ["Roboto", "sans-serif"],
+            },
+            borderRadius: {
+              DEFAULT: "0.5rem",
+            },
+          },
+        },
+      };
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display">
+<div class="h-screen w-full flex flex-col justify-center items-center bg-background-light dark:bg-background-dark">
+<div class="absolute inset-0 github-pattern-light dark:github-pattern"></div>
+<div class="relative z-10 flex flex-col items-center justify-center text-center px-4">
+<div class="w-32 h-32 mb-6">
+<svg class="text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.165 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.031-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.82c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.378.203 2.398.1 2.651.64.7 1.03 1.595 1.03 2.688 0 3.848-2.338 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.001 10.001 0 0022 12c0-5.523-4.477-10-10-10z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+<h1 class="text-5xl font-bold text-slate-800 dark:text-white tracking-tight">Gitgram</h1>
+<p class="mt-4 text-lg text-slate-600 dark:text-slate-400">Share, discover, and connect through code.</p>
+</div>
+</div>
+
+</body></html>

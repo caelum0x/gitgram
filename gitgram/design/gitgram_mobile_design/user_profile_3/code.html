@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>User Profile - Gitgram</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#2f81f7",
+            "background-dark": "#0d1117",
+            "border-dark": "#30363d",
+            "card-dark": "#161b22",
+            "text-primary": "#c9d1d9",
+            "text-secondary": "#8b949e",
+            "text-accent": "#58a6ff",
+          },
+          fontFamily: {
+            "sans": ["Inter", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.375rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 20
+    }
+    .material-symbols-outlined.fill {
+      font-variation-settings:
+        'FILL' 1,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 20
+    }
+    body {
+        background-color: #0d1117;
+        font-family: 'Inter', sans-serif;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-sans text-text-primary">
+<div class="relative flex min-h-screen w-full flex-col">
+<header class="flex items-center bg-background-dark p-4 justify-between sticky top-0 z-20 border-b border-border-dark">
+<div class="flex w-12 shrink-0 items-center">
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-text-primary">
+<span class="material-symbols-outlined text-2xl">arrow_back_ios_new</span>
+</button>
+</div>
+<h1 class="text-lg font-semibold text-text-primary">Gitgram</h1>
+<div class="flex w-12 items-center justify-end">
+<button class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-text-primary">
+<span class="material-symbols-outlined text-2xl">more_horiz</span>
+</button>
+</div>
+</header>
+<main class="flex flex-col p-4">
+<div class="flex items-center gap-4">
+<div class="h-20 w-20 shrink-0">
+<img alt="User profile picture of Alex" class="rounded-full border-2 border-border-dark" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9LFRKTnVIfVEUO7Qnb4uO5_oyXDkpSupci1cY6xNb6i9dyfozclBAp05eli0pVsQNgxNHB3PsBQ-pTp0jrGeIig2vYE5VHadv2WighHlHaIxWQ17aHSUZuXUkXqHq96fatS7yYRRRm18G38JQJpicacJ37uyR5Nh1_S3zGYyWddVv6BIVMYv-QPqMIsjwWGIBqw2S4RqdVQk2XAMYJ-58_qKWVR9sJ_hew_sNzh3FdHg8WV8LZjmSOt7RbLXUEEhtNgowO41ckWA"/>
+</div>
+<div class="flex flex-1 flex-col">
+<h2 class="text-xl font-semibold text-text-primary">Alex Thompson</h2>
+<p class="text-base text-text-secondary">alex_dev</p>
+</div>
+</div>
+<p class="mt-4 text-base text-text-primary">Building the future, one line of code at a time. Open-source advocate.</p>
+<div class="mt-4 flex items-center gap-4 text-sm text-text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">group</span>
+<p><span class="font-semibold text-text-primary">4.7k</span> followers</p>
+</div>
+<div class="flex items-center gap-1">
+<p><span class="font-semibold text-text-primary">312</span> following</p>
+</div>
+</div>
+<div class="mt-4 flex gap-2">
+<button class="flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md bg-zinc-800 text-sm font-semibold text-text-primary hover:bg-zinc-700 border border-border-dark">
+<span>Follow</span>
+</button>
+<button class="flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md bg-zinc-800 text-sm font-semibold text-text-primary hover:bg-zinc-700 border border-border-dark">
+<span>Sponsor</span>
+</button>
+</div>
+</main>
+<div class="sticky top-[69px] z-10 border-b border-border-dark bg-background-dark">
+<div class="flex">
+<a class="flex flex-1 flex-col items-center justify-center gap-1 border-b-2 border-orange-500 py-3 text-text-primary" href="#">
+<span class="material-symbols-outlined text-xl">source_notes</span>
+<span class="text-sm font-medium">Projects</span>
+</a>
+<a class="flex flex-1 flex-col items-center justify-center gap-1 border-b-2 border-transparent py-3 text-text-secondary hover:text-text-primary" href="#">
+<span class="material-symbols-outlined text-xl">star</span>
+<span class="text-sm font-medium">Starred</span>
+</a>
+</div>
+</div>
+<div class="divide-y divide-border-dark">
+<div class="p-4">
+<div class="flex items-center gap-2 text-sm">
+<img alt="User profile picture of Alex" class="h-5 w-5 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9LFRKTnVIfVEUO7Qnb4uO5_oyXDkpSupci1cY6xNb6i9dyfozclBAp05eli0pVsQNgxNHB3PsBQ-pTp0jrGeIig2vYE5VHadv2WighHlHaIxWQ17aHSUZuXUkXqHq96fatS7yYRRRm18G38JQJpicacJ37uyR5Nh1_S3zGYyWddVv6BIVMYv-QPqMIsjwWGIBqw2S4RqdVQk2XAMYJ-58_qKWVR9sJ_hew_sNzh3FdHg8WV8LZjmSOt7RbLXUEEhtNgowO41ckWA"/>
+<span class="font-medium text-text-primary">alex_dev</span>
+<span class="text-text-secondary">shared a project</span>
+</div>
+<div class="mt-3 flex gap-4 rounded-lg border border-border-dark bg-card-dark p-4">
+<div class="w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 bg-cover bg-center rounded-md" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAb5ronG0YVaxaRkTltzJMRcPWUrnppEbATkJowYDCg6qC61okjXi6ItOHHYbdwsmXMRCSac6vWpiIuYZlNJ3y0No9-d8jC_qv48Wvfa3ppZtEAR1vwkvjJNNhSp_bi7kqYxhI43UypANk8e_pY1qorgj_wHJAgTqArZVtwDmGfp_ghoXGw9LfUGz36bL9hl0V0t3lbXT7MYqv9ZJeBgDzoxHL8jMI024u2oH4f13dlNGOmvfi2qtW6q9rTlfhnmC2D56RcfnWJJtI");'></div>
+<div class="flex flex-col">
+<h3 class="font-semibold text-text-primary">NextGen-UI</h3>
+<p class="mt-1 text-sm text-text-secondary line-clamp-2">A futuristic UI component library built with React and Tailwind CSS.</p>
+<div class="mt-auto flex items-center gap-4 text-sm text-text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined fill text-base text-yellow-400">star</span>
+<span>1.2k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>256</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4">
+<div class="flex items-center gap-2 text-sm">
+<img alt="User profile picture of Alex" class="h-5 w-5 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9LFRKTnVIfVEUO7Qnb4uO5_oyXDkpSupci1cY6xNb6i9dyfozclBAp05eli0pVsQNgxNHB3PsBQ-pTp0jrGeIig2vYE5VHadv2WighHlHaIxWQ17aHSUZuXUkXqHq96fatS7yYRRRm18G38JQJpicacJ37uyR5Nh1_S3zGYyWddVv6BIVMYv-QPqMIsjwWGIBqw2S4RqdVQk2XAMYJ-58_qKWVR9sJ_hew_sNzh3FdHg8WV8LZjmSOt7RbLXUEEhtNgowO41ckWA"/>
+<span class="font-medium text-text-primary">alex_dev</span>
+<span class="text-text-secondary">shared a project</span>
+</div>
+<div class="mt-3 flex gap-4 rounded-lg border border-border-dark bg-card-dark p-4">
+<div class="w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 bg-cover bg-center rounded-md" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCcoSow2-Sv6kGVmCT6QnETnUzO7l6r-GobgWojl02X1hem4H7hjVR_5_iNcPd1O-akkN2U-MUGBJHVpjDBSHBJSCBSkobV9YE1n-UU9iSyf3EMnwmFHYxOMuBiqUBnYk_YwBUDS1zbunwsjmmquuyx68ae3PSUnzWFcpHWcUa-XGMnbBVFdyD7in4beeiLvI4AuondPkvxXXbhKF_4wOPuMnoQs7NB4wB5rT10Li_AkqKIPK17ibOXOuLw0R0tFm2mE0-orMLXiBo");'></div>
+<div class="flex flex-col">
+<h3 class="font-semibold text-text-primary">Code-Analyzer</h3>
+<p class="mt-1 text-sm text-text-secondary line-clamp-2">Static analysis tool for Python to find bugs and improve code quality.</p>
+<div class="mt-auto flex items-center gap-4 text-sm text-text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined fill text-base text-yellow-400">star</span>
+<span>890</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>120</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4">
+<div class="flex items-center gap-2 text-sm">
+<img alt="User profile picture of Alex" class="h-5 w-5 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9LFRKTnVIfVEUO7Qnb4uO5_oyXDkpSupci1cY6xNb6i9dyfozclBAp05eli0pVsQNgxNHB3PsBQ-pTp0jrGeIig2vYE5VHadv2WighHlHaIxWQ17aHSUZuXUkXqHq96fatS7yYRRRm18G38JQJpicacJ37uyR5Nh1_S3zGYyWddVv6BIVMYv-QPqMIsjwWGIBqw2S4RqdVQk2XAMYJ-58_qKWVR9sJ_hew_sNzh3FdHg8WV8LZjmSOt7RbLXUEEhtNgowO41ckWA"/>
+<span class="font-medium text-text-primary">alex_dev</span>
+<span class="text-text-secondary">shared a project</span>
+</div>
+<div class="mt-3 flex gap-4 rounded-lg border border-border-dark bg-card-dark p-4">
+<div class="w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 bg-cover bg-center rounded-md" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCVqKu0xg6ll4vnvnoavyTCKSHhjjxE1aRDmV72SwJ0LY2Ez0lMHFa0v_AmPbcCZQ2nGD7JkwXG_j8iqrSWgRG5LU09rfGArxcf0n4JvVlTPIgGkEs4Kb7EVdGCSZ-HOe3N4jFqEsz1oVPMemy8G59p-9noP8vqt7ZqUj20ggkY0u1iOz8y5HpXsh8j11oXKyUFwu9tnFG6I2pViYEFKcl_itlEWVyKoDOF4j-5felkDh8A-Ap59Eq2oDHdrs_2_ihGh5u7qnGT0Gs");'></div>
+<div class="flex flex-col">
+<h3 class="font-semibold text-text-primary">API-Gateway</h3>
+<p class="mt-1 text-sm text-text-secondary line-clamp-2">A lightweight and flexible API Gateway for microservices architecture.</p>
+<div class="mt-auto flex items-center gap-4 text-sm text-text-secondary">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined fill text-base text-yellow-400">star</span>
+<span>3.5k</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span>789</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</body></html>

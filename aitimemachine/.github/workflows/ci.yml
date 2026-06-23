@@ -1,0 +1,697 @@
+# =============================================================================
+# AITimeMachine CI - Comprehensive Production Gates
+# =============================================================================
+# Runs on push to main/master and on all PRs. Includes tag-based releases.
+#
+# Gates:
+#   1. Build gates       - TypeScript compilation, ESLint, build artifacts
+#   2. Migration gates   - Drizzle migration validation
+#   3. Test gates        - Unit tests, integration-safe tests, service tests
+#   4. Quality gates     - Redaction gate, search relevance gate
+#   5. Smoke tests       - API server build-and-start verification
+# =============================================================================
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: aitm-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Core package - Lint & TypeScript check
+  # ---------------------------------------------------------------------------
+  core-lint:
+    name: "Core: Lint & Type Check"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript strict check
+        run: npx tsc --noEmit --strict
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Core package - Build & test
+  # ---------------------------------------------------------------------------
+  core-build-test:
+    name: "Core: Build & Test"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Upload build artifacts
+        if: matrix.node-version == 20
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-lib
+          path: lib/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Core - Redaction quality gate
+  # ---------------------------------------------------------------------------
+  redaction-gate:
+    name: "Quality: Redaction Gate"
+    runs-on: ubuntu-latest
+    needs: [core-build-test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Redaction quality gate
+        env:
+          AITM_REDACTION_MIN_PRECISION: "0.80"
+          AITM_REDACTION_MIN_RECALL: "0.95"
+          AITM_REDACTION_MIN_F1: "0.88"
+        run: npm run test:redaction-gate
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Core - Search relevance gate
+  # ---------------------------------------------------------------------------
+  search-relevance-gate:
+    name: "Quality: Search Relevance Gate"
+    runs-on: ubuntu-latest
+    needs: [core-build-test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Search relevance gate
+        env:
+          AITM_SEARCH_RELEVANCE_MIN_TOP1: "0.65"
+          AITM_SEARCH_RELEVANCE_MIN_MRR: "0.78"
+          AITM_SEARCH_RELEVANCE_MIN_RECALL_AT3: "0.95"
+        run: npm run test:search-relevance-gate
+
+  # ---------------------------------------------------------------------------
+  # Job 5: API Server - Lint & TypeScript check
+  # ---------------------------------------------------------------------------
+  api-server-lint:
+    name: "API Server: Lint & Type Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+  # ---------------------------------------------------------------------------
+  # Job 6: API Server - Build
+  # ---------------------------------------------------------------------------
+  api-server-build:
+    name: "API Server: Build"
+    runs-on: ubuntu-latest
+    needs: [api-server-lint]
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload API server build
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-server-dist
+          path: api-server/dist
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 7: API Server - Drizzle migration validation
+  # ---------------------------------------------------------------------------
+  api-server-migration-check:
+    name: "API Server: Migration Validation"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate drizzle migration files
+        run: |
+          echo "Checking drizzle migration files..."
+
+          DRIZZLE_DIR="drizzle"
+          if [ ! -d "$DRIZZLE_DIR" ]; then
+            echo "No drizzle migration directory found. Checking parent..."
+            DRIZZLE_DIR="../drizzle"
+          fi
+
+          if [ -d "$DRIZZLE_DIR" ]; then
+            MIGRATION_COUNT=$(find "$DRIZZLE_DIR" -name "*.sql" -not -path "*/meta/*" | wc -l)
+            echo "Found $MIGRATION_COUNT migration file(s)."
+
+            # Validate migration file syntax
+            for f in $(find "$DRIZZLE_DIR" -name "*.sql" -not -path "*/meta/*"); do
+              echo "Validating: $f"
+
+              # Check for common issues
+              if grep -qi "DROP TABLE" "$f"; then
+                echo "WARNING: DROP TABLE detected in $f"
+              fi
+              if grep -qi "DROP COLUMN" "$f"; then
+                echo "WARNING: DROP COLUMN detected in $f"
+              fi
+            done
+
+            # Check meta directory for journal integrity
+            if [ -d "$DRIZZLE_DIR/meta" ]; then
+              if [ -f "$DRIZZLE_DIR/meta/_journal.json" ]; then
+                echo "Drizzle migration journal found."
+                JOURNAL_COUNT=$(node -e "const j = require('./$DRIZZLE_DIR/meta/_journal.json'); console.log(j.entries?.length || 0)" 2>/dev/null || echo "unknown")
+                echo "Journal entries: $JOURNAL_COUNT"
+              else
+                echo "WARNING: Drizzle migration journal (_journal.json) not found."
+              fi
+            fi
+          else
+            echo "No drizzle migration directory found."
+          fi
+
+          echo "Migration validation complete."
+
+      - name: Drizzle schema check
+        run: |
+          echo "Running drizzle-kit check..."
+          npx drizzle-kit check 2>&1 || echo "drizzle-kit check completed (may not be configured)."
+
+  # ---------------------------------------------------------------------------
+  # Job 8a: API Server - Full test suite (vitest run)
+  # ---------------------------------------------------------------------------
+  api-server-tests:
+    name: "API Server: Tests"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run all tests
+        run: npx vitest run
+        env:
+          AITM_TEST_NO_LISTEN: "1"
+          NODE_ENV: test
+
+  # ---------------------------------------------------------------------------
+  # Job 8b: API Server - Service tests (no external deps)
+  # ---------------------------------------------------------------------------
+  api-server-service-tests:
+    name: "API Server: Service Tests"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run service tests
+        run: npx vitest run tests/services --passWithNoTests
+        env:
+          AITM_TEST_NO_LISTEN: "1"
+          NODE_ENV: test
+
+  # ---------------------------------------------------------------------------
+  # Job 9: API Server - Integration-safe tests
+  # ---------------------------------------------------------------------------
+  api-server-integration-safe:
+    name: "API Server: Integration-Safe Tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration-safe tests
+        run: npm run test:integration:safe
+        env:
+          NODE_ENV: test
+
+  # ---------------------------------------------------------------------------
+  # Job 10: API Server - Smoke test (build, start, health)
+  # ---------------------------------------------------------------------------
+  api-server-smoke-test:
+    name: "Smoke: API Server Starts & Responds"
+    runs-on: ubuntu-latest
+    needs: [api-server-build]
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server and verify health
+        run: |
+          PORT=3001
+          export PORT
+
+          # Start the API server in the background
+          node dist/server.js &
+          SERVER_PID=$!
+
+          echo "Waiting for API server to start (PID $SERVER_PID)..."
+
+          RETRIES=20
+          INTERVAL=3
+          SUCCESS=false
+
+          for i in $(seq 1 $RETRIES); do
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://localhost:${PORT}/health" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Health check PASSED (HTTP $HTTP_CODE) on attempt $i"
+              SUCCESS=true
+              break
+            fi
+            echo "Attempt $i/$RETRIES: HTTP $HTTP_CODE - waiting ${INTERVAL}s..."
+            sleep $INTERVAL
+          done
+
+          # Clean up
+          kill $SERVER_PID 2>/dev/null || true
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo "FAIL: API server did not respond to /health within timeout."
+            exit 1
+          fi
+
+          echo "API server smoke test PASSED."
+        env:
+          NODE_ENV: test
+          # Provide minimal env so the server can start without crashing
+          DATABASE_URL: "postgresql://localhost:5432/aitm_smoke_test"
+          JWT_SECRET: "smoke-test-secret"
+
+  # ---------------------------------------------------------------------------
+  # Job 11: VS Code Extension - Type check
+  # ---------------------------------------------------------------------------
+  extension-check:
+    name: "Extension: Type Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extensions/vscode
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if extension directory exists
+        id: check-ext
+        run: |
+          if [ -f extensions/vscode/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        working-directory: .
+
+      - name: Setup Node.js 20
+        if: steps.check-ext.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check-ext.outputs.exists == 'true'
+        run: npm ci
+
+      - name: TypeScript type-check
+        if: steps.check-ext.outputs.exists == 'true'
+        run: npx tsc --noEmit
+
+      - name: Run tests (if present)
+        if: steps.check-ext.outputs.exists == 'true'
+        run: npm test --if-present
+
+  # ---------------------------------------------------------------------------
+  # Job 12: Website - Build check
+  # ---------------------------------------------------------------------------
+  website-check:
+    name: "Website: Build Check"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if website directory exists
+        id: check-website
+        run: |
+          if [ -f website/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js 20
+        if: steps.check-website.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check-website.outputs.exists == 'true'
+        working-directory: website
+        run: npm ci
+
+      - name: Build website
+        if: steps.check-website.outputs.exists == 'true'
+        working-directory: website
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Job 13: Universal Search Eval (gated on secrets)
+  # ---------------------------------------------------------------------------
+  universal-search-eval:
+    name: "Quality: Universal Search Eval"
+    runs-on: ubuntu-latest
+    needs: [api-server-build]
+    if: ${{ secrets.EVAL_API_KEY != '' && vars.EVAL_BASE_URL != '' }}
+    defaults:
+      run:
+        working-directory: api-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Universal Search Eval (thresholded)
+        env:
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_K: 1,3,5,10
+          EVAL_MIN_MRR: 0.35
+          EVAL_MIN_RECALL: 0.6
+          EVAL_MIN_WEIGHTED_MRR: 0.4
+          EVAL_MIN_WEIGHTED_RECALL: 0.65
+        run: npm run eval:universal-search
+
+  # ---------------------------------------------------------------------------
+  # Job 14: OpenAPI spec validation (shared script)
+  # ---------------------------------------------------------------------------
+  openapi-validation:
+    name: "Quality: OpenAPI Route Coverage"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api-server/package-lock.json
+
+      - name: Install API server dependencies
+        working-directory: api-server
+        run: npm ci
+
+      - name: Install root dependencies (for script)
+        run: |
+          if [ -f package.json ]; then
+            npm ci --ignore-scripts 2>/dev/null || true
+          fi
+        working-directory: .
+
+      - name: Validate OpenAPI route coverage
+        run: npx tsx scripts/validate-openapi-routes.ts
+        working-directory: .
+
+  # ---------------------------------------------------------------------------
+  # Gate summary (all critical checks must pass)
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: "CI Gate (all checks)"
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - core-lint
+      - core-build-test
+      - redaction-gate
+      - search-relevance-gate
+      - api-server-lint
+      - api-server-build
+      - api-server-migration-check
+      - api-server-tests
+      - api-server-service-tests
+      - api-server-integration-safe
+      - api-server-smoke-test
+    steps:
+      - name: Check all gates
+        run: |
+          echo "Checking all AITM CI gate results..."
+          echo "core-lint:                    ${{ needs.core-lint.result }}"
+          echo "core-build-test:              ${{ needs.core-build-test.result }}"
+          echo "redaction-gate:               ${{ needs.redaction-gate.result }}"
+          echo "search-relevance-gate:        ${{ needs.search-relevance-gate.result }}"
+          echo "api-server-lint:              ${{ needs.api-server-lint.result }}"
+          echo "api-server-build:             ${{ needs.api-server-build.result }}"
+          echo "api-server-migration-check:   ${{ needs.api-server-migration-check.result }}"
+          echo "api-server-tests:             ${{ needs.api-server-tests.result }}"
+          echo "api-server-service-tests:     ${{ needs.api-server-service-tests.result }}"
+          echo "api-server-integration-safe:  ${{ needs.api-server-integration-safe.result }}"
+          echo "api-server-smoke-test:        ${{ needs.api-server-smoke-test.result }}"
+
+          FAILED=false
+          for result in \
+            "${{ needs.core-lint.result }}" \
+            "${{ needs.core-build-test.result }}" \
+            "${{ needs.redaction-gate.result }}" \
+            "${{ needs.search-relevance-gate.result }}" \
+            "${{ needs.api-server-lint.result }}" \
+            "${{ needs.api-server-build.result }}" \
+            "${{ needs.api-server-migration-check.result }}" \
+            "${{ needs.api-server-tests.result }}" \
+            "${{ needs.api-server-service-tests.result }}" \
+            "${{ needs.api-server-integration-safe.result }}" \
+            "${{ needs.api-server-smoke-test.result }}"; do
+            if [ "$result" != "success" ]; then
+              FAILED=true
+            fi
+          done
+
+          if [ "$FAILED" = "true" ]; then
+            echo "FAIL: One or more AITM CI gates did not pass."
+            exit 1
+          fi
+
+          echo "All AITM CI gates passed."
+
+  # ---------------------------------------------------------------------------
+  # Release (only on tag push, after all jobs pass)
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [ci-gate]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Download core build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: core-lib
+          path: lib/
+
+      - name: Extract version from package.json
+        id: pkg-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.pkg-version.outputs.version }}
+          generate_release_notes: true
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Project Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0,
+      'wght' 400,
+      'GRAD' 0,
+      'opsz' 24
+    }
+    .readme-content h1 {
+      @apply text-2xl font-bold mt-6 mb-4;
+    }
+    .readme-content h2 {
+      @apply text-xl font-bold mt-5 mb-3;
+    }
+    .readme-content h3 {
+      @apply text-lg font-bold mt-4 mb-2;
+    }
+    .readme-content p {
+      @apply text-base text-[#9da6b9] mb-4;
+    }
+    .readme-content ul {
+      @apply list-disc list-inside mb-4 text-[#9da6b9];
+    }
+    .readme-content ol {
+      @apply list-decimal list-inside mb-4 text-[#9da6b9];
+    }
+    .readme-content a {
+      @apply text-primary hover:underline;
+    }
+    .readme-content code:not(pre > code) {
+      @apply bg-[#282e39] text-[#e0e0e0] rounded px-1 py-0.5 text-sm;
+    }
+    .readme-content pre {
+      @apply bg-[#1c212c] p-4 rounded-lg overflow-x-auto mb-4;
+    }
+    .readme-content pre code {
+       @apply text-sm;
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#135bec",
+            "background-light": "#f6f6f8",
+            "background-dark": "#101622",
+          },
+          fontFamily: {
+            "display": ["Space Grotesk", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col overflow-x-hidden group/design-root">
+<header class="sticky top-0 z-10 flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm p-4 pb-2 justify-between border-b border-white/10">
+<div class="flex size-12 shrink-0 items-center justify-start">
+<span class="material-symbols-outlined text-white cursor-pointer">arrow_back</span>
+</div>
+<h2 class="text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center">facebook/react</h2>
+<div class="flex w-12 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 bg-transparent text-white gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined text-white">ios_share</span>
+</button>
+</div>
+</header>
+<main class="flex flex-col">
+<div class="flex p-4 @container">
+<div class="flex w-full flex-col gap-4 @[520px]:flex-row @[520px]:justify-between">
+<div class="flex gap-4 items-center">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-lg min-h-24 w-24" data-alt="React project logo on a dark background" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCTCYG7PTputKI6LLVMQ3Y-2_HCtfwpYOw6Nt4a5imcOpMGV2gOr9S2SeEnA-DVsFhfvdEZIecib9jKM1paBJ9OmyA-U2OmWb4o2_3sv6D7HEZ-7AHqzZbu6ynar9OHgw7Kn_vSZrjcUZKtCq65cOx9LcFoUpUP8VcaQHOmoscxbzjdiRj0bMBC9sICHXMcItU7UsezAMF2SXWFFXcvMZ4Zbx-2ewmAr71T7uq3UNlDKOI0pt12yO1g7miDMSkrXXBxQlCDOOdh3A0");'></div>
+<div class="flex flex-col">
+<p class="text-white text-[22px] font-bold leading-tight tracking-[-0.015em]">React</p>
+<p class="text-[#9da6b9] text-base font-normal leading-normal">A library for building user interfaces</p>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-3 px-4 pb-4 flex-wrap">
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-[#282e39] px-4">
+<p class="text-white text-sm font-medium leading-normal">#react</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-[#282e39] px-4">
+<p class="text-white text-sm font-medium leading-normal">#javascript</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-[#282e39] px-4">
+<p class="text-white text-sm font-medium leading-normal">#ui-library</p>
+</div>
+</div>
+<div class="flex flex-wrap gap-4 p-4">
+<div class="flex min-w-[158px] flex-1 flex-col gap-2 rounded-xl p-6 border border-[#3b4354]">
+<p class="text-white/70 text-base font-medium leading-normal">Stars</p>
+<p class="text-white tracking-light text-2xl font-bold leading-tight">219k</p>
+</div>
+<div class="flex min-w-[158px] flex-1 flex-col gap-2 rounded-xl p-6 border border-[#3b4354]">
+<p class="text-white/70 text-base font-medium leading-normal">Forks</p>
+<p class="text-white tracking-light text-2xl font-bold leading-tight">44.8k</p>
+</div>
+<div class="flex min-w-[158px] flex-1 flex-col gap-2 rounded-xl p-6 border border-[#3b4354]">
+<p class="text-white/70 text-base font-medium leading-normal">Issues</p>
+<p class="text-white tracking-light text-2xl font-bold leading-tight">1,135</p>
+</div>
+</div>
+<div class="flex justify-stretch">
+<div class="flex flex-1 gap-3 flex-wrap px-4 py-3 justify-start">
+<button class="flex flex-1 min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal tracking-[0.015em] gap-2">
+<span class="material-symbols-outlined text-base">star</span>
+<span class="truncate">Star</span>
+</button>
+<button class="flex flex-1 min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#282e39] text-white text-sm font-bold leading-normal tracking-[0.015em] gap-2">
+<span class="material-symbols-outlined text-base">fork_right</span>
+<span class="truncate">Fork</span>
+</button>
+</div>
+</div>
+<div class="flex w-full flex-col px-4 pt-6">
+<div class="flex w-full border-b border-[#3b4354]">
+<button class="flex-1 whitespace-nowrap border-b-2 border-primary p-3 font-semibold text-white">README</button>
+<button class="flex-1 whitespace-nowrap border-b-2 border-transparent p-3 font-medium text-[#9da6b9] hover:border-white/50 hover:text-white">Highlights</button>
+<button class="flex-1 whitespace-nowrap border-b-2 border-transparent p-3 font-medium text-[#9da6b9] hover:border-white/50 hover:text-white">Contributors</button>
+</div>
+<div class="pt-6 readme-content">
+<h1>React: A JavaScript library for building user interfaces</h1>
+<p>React makes it painless to create interactive UIs. Design simple views for each state in your application, and React will efficiently update and render just the right components when your data changes.</p>
+<h2>Declarative</h2>
+<p>Declarative views make your code more predictable and easier to debug. Build encapsulated components that manage their own state, then compose them to make complex UIs.</p>
+<h2>Component-Based</h2>
+<p>Since component logic is written in JavaScript instead of templates, you can easily pass rich data through your app and keep state out of the DOM.</p>
+<pre><code>import React from 'react';
+class Hello extends React.Component {
+  render() {
+    return &lt;div&gt;Hello {this.props.toWhat}&lt;/div&gt;;
+  }
+}
+export default Hello;</code></pre>
+<h2>Learn Once, Write Anywhere</h2>
+<p>We don't make assumptions about the rest of your technology stack, so you can develop new features in React without rewriting existing code. React can also render on the server using Node and power mobile apps using React Native.</p>
+</div>
+</div>
+<div class="h-20"></div>
+</main>
+</div>
+
+</body></html>

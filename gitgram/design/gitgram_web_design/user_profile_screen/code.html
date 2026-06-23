@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CodeFolio Profile</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings:
+                'FILL' 0,
+                'wght' 400,
+                'GRAD' 0,
+                'opsz' 24
+        }
+    </style>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#4A90E2",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#1C1C1E",
+                        "surface-dark": "#2A2A2C",
+                        "text-light": "#F5F5F7",
+                        "text-muted": "#8A8A8E",
+                        "accent-green": "#34C759",
+                    },
+                    fontFamily: {
+                        "display": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "0.75rem",
+                        "xl": "1rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-text-light">
+<div class="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+<!-- TopNavBar -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-white/10 px-6 sm:px-10 py-4 sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-3 text-text-light">
+<div class="size-6 text-primary">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M24 4C25.7818 14.2173 33.7827 22.2182 44 24C33.7827 25.7818 25.7818 33.7827 24 44C22.2182 33.7827 14.2173 25.7818 4 24C14.2173 22.2182 22.2182 14.2173 24 4Z" fill="currentColor"></path>
+</svg>
+</div>
+<h2 class="text-xl font-bold leading-tight tracking-[-0.015em]">CodeFolio</h2>
+</div>
+</div>
+<div class="hidden md:flex flex-1 justify-center max-w-2xl">
+<label class="flex flex-col min-w-40 !h-10 w-full max-w-lg">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-text-muted flex border-none bg-surface-dark items-center justify-center pl-4 rounded-l-lg border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-text-light focus:outline-0 focus:ring-2 focus:ring-primary/50 border-none bg-surface-dark focus:border-none h-full placeholder:text-text-muted px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal" placeholder="Search for projects or developers..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-4 items-center">
+<div class="hidden sm:flex items-center gap-6">
+<a class="text-text-light hover:text-primary text-sm font-medium leading-normal" href="#">Explore</a>
+<a class="text-text-light hover:text-primary text-sm font-medium leading-normal" href="#">Feed</a>
+<a class="text-text-light hover:text-primary text-sm font-medium leading-normal" href="#">Messages</a>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary hover:bg-primary/90 text-white text-sm font-bold leading-normal tracking-[0.015em] transition-colors">
+<span class="truncate">Share Project</span>
+</button>
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 bg-surface-dark text-text-light hover:bg-white/10 gap-2 text-sm font-bold leading-normal tracking-[0.015em] min-w-0 px-2.5 transition-colors">
+<span class="material-symbols-outlined text-text-muted">notifications</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border-2 border-surface-dark" data-alt="User profile avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBl7yFpUzzlR0Q7gDQlqkvIEdWd_6knxAUWdqsYeMQHQQf7kfMXUtvCTN2gioLLq7qt5tzdqf6CWOWi6DHBMpleBdw1Jrg9gII6kRI4kN4JCBbTZcxC2OvEnawhCIo4w7JcUvvgob95xubJvqhClN8O53w83lo2lBzbiQf8t6zDOzA3VCzGq3MCB78LYslUYVUHZm-_foCp5Q4-5rM_o1OoUiCd4M1Oesr924joTk_2AX6uHgoRzQjSdui_a8NnocNRc4jgOSxjuZc");'></div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<!-- ProfileHeader -->
+<div class="w-full max-w-6xl mx-auto">
+<div class="flex flex-col gap-6 @container">
+<div class="flex w-full flex-col gap-6 @[520px]:flex-row @[520px]:justify-between @[520px]:items-center">
+<div class="flex gap-6 items-center">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full min-h-28 h-28 w-28 sm:min-h-32 sm:h-32 sm:w-32 flex-shrink-0" data-alt="Profile picture of Alex Duran" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBezIwt4xQgo9ZuotdSgYsU7OiBxsq8l5SLYBEKGu3_5LvJewg-wKwROfaEAJ5nXLCTIfk7-N-PeUW0_M-AdP21k1d5INytUhX2q_tFIBW6FOUNBsb2UcMkRZ7U5JJtL4nY5QRi-83B9g0cvYJMs2ZBUWJEBBNvyJBzrZZRYV3sY3YZg3yDG81rDTxpRWvzi8waWZVZJV8pFM4Ndjg75s7TSmsNpK8n0nOcnZ6Xu_yk0xLC8jecVJC4-8E2hooeFPPBxY_hwm5AH6g");'></div>
+<div class="flex flex-col justify-center gap-1">
+<h1 class="text-text-light text-2xl sm:text-3xl font-bold leading-tight tracking-[-0.015em]">Alex Duran</h1>
+<p class="text-text-muted text-base font-normal leading-normal">@alexduran</p>
+<p class="text-text-light text-base font-normal leading-normal max-w-md pt-2">
+                                    Senior Frontend Developer at TechCorp. Passionate about open-source and building beautiful, functional user interfaces.
+                                </p>
+<a class="flex items-center gap-1.5 text-text-muted hover:text-primary pt-1 text-sm transition-colors" href="#">
+<span class="material-symbols-outlined !text-base">link</span>
+<span>github.com/alexduran</span>
+</a>
+</div>
+</div>
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-5 bg-surface-dark text-text-light text-sm font-bold leading-normal tracking-[0.015em] w-full max-w-[480px] @[480px]:w-auto hover:bg-white/10 transition-colors">
+<span class="truncate">Follow</span>
+</button>
+</div>
+</div>
+</div>
+<!-- ProfileStats -->
+<div class="w-full max-w-6xl mx-auto mt-8">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-dark p-4 items-start hover:border-primary/50 transition-colors cursor-pointer">
+<p class="text-text-light tracking-light text-3xl font-bold leading-tight">24</p>
+<p class="text-text-muted text-sm font-normal leading-normal">Projects</p>
+</div>
+<div class="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-dark p-4 items-start hover:border-primary/50 transition-colors cursor-pointer">
+<p class="text-text-light tracking-light text-3xl font-bold leading-tight">132</p>
+<p class="text-text-muted text-sm font-normal leading-normal">Stars</p>
+</div>
+<div class="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-dark p-4 items-start hover:border-primary/50 transition-colors cursor-pointer">
+<p class="text-text-light tracking-light text-3xl font-bold leading-tight">1.2k</p>
+<p class="text-text-muted text-sm font-normal leading-normal">Followers</p>
+</div>
+<div class="flex flex-col gap-1 rounded-lg border border-white/10 bg-surface-dark p-4 items-start hover:border-primary/50 transition-colors cursor-pointer">
+<p class="text-text-light tracking-light text-3xl font-bold leading-tight">150</p>
+<p class="text-text-muted text-sm font-normal leading-normal">Following</p>
+</div>
+</div>
+</div>
+<!-- Main Profile Layout -->
+<div class="w-full max-w-6xl mx-auto mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Left Column: Projects -->
+<div class="lg:col-span-2">
+<!-- Tabs -->
+<div class="pb-3">
+<div class="flex border-b border-white/10 gap-8">
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-primary text-text-light pb-[13px] pt-4 transition-colors" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Shared Projects</p>
+</a>
+<a class="flex flex-col items-center justify-center border-b-[3px] border-b-transparent text-text-muted hover:text-text-light pb-[13px] pt-4 transition-colors" href="#">
+<p class="text-sm font-bold leading-normal tracking-[0.015em]">Starred Projects</p>
+</a>
+</div>
+</div>
+<!-- SearchBar -->
+<div class="py-4">
+<label class="flex flex-col min-w-40 h-12 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full">
+<div class="text-text-muted flex border-none bg-surface-dark items-center justify-center pl-4 rounded-l-lg border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-text-light focus:outline-0 focus:ring-2 focus:ring-primary/50 border-none bg-surface-dark focus:border-none h-full placeholder:text-text-muted px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal" placeholder="Filter projects by name or technology..." value=""/>
+</div>
+</label>
+</div>
+<!-- Project Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+<!-- Project Card 1 -->
+<div class="flex flex-col gap-4 rounded-lg border border-white/10 bg-surface-dark p-5 group transition-all hover:border-primary/50 hover:-translate-y-1">
+<div class="flex flex-col gap-2">
+<h3 class="text-text-light text-lg font-bold leading-tight">Quantum UI Kit</h3>
+<p class="text-text-muted text-sm font-normal leading-normal">A futuristic component library for React, built with Tailwind CSS and Framer Motion.</p>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">React</span>
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">TailwindCSS</span>
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">Framer Motion</span>
+</div>
+<div class="flex items-center gap-6 text-text-muted mt-2">
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">star</span>
+<span class="text-sm font-medium">1.2k</span>
+</div>
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">chat_bubble</span>
+<span class="text-sm font-medium">88</span>
+</div>
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">fork_right</span>
+<span class="text-sm font-medium">215</span>
+</div>
+</div>
+</div>
+<!-- Project Card 2 -->
+<div class="flex flex-col gap-4 rounded-lg border border-white/10 bg-surface-dark p-5 group transition-all hover:border-primary/50 hover:-translate-y-1">
+<div class="flex flex-col gap-2">
+<h3 class="text-text-light text-lg font-bold leading-tight">NodeJS API Boilerplate</h3>
+<p class="text-text-muted text-sm font-normal leading-normal">A scalable and secure boilerplate for building RESTful APIs with Node.js, Express, and MongoDB.</p>
+</div>
+<div class="flex flex-wrap gap-2">
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">Node.js</span>
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">Express</span>
+<span class="text-xs font-semibold text-primary bg-primary/20 px-2 py-1 rounded-full">MongoDB</span>
+</div>
+<div class="flex items-center gap-6 text-text-muted mt-2">
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">star</span>
+<span class="text-sm font-medium">970</span>
+</div>
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">chat_bubble</span>
+<span class="text-sm font-medium">45</span>
+</div>
+<div class="flex items-center gap-1.5 cursor-pointer hover:text-text-light">
+<span class="material-symbols-outlined !text-lg">fork_right</span>
+<span class="text-sm font-medium">150</span>
+</div>
+</div>
+</div>
+<!-- Project Card 3 (Empty State Example) -->
+<div class="md:col-span-2 flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-white/10 bg-surface-dark/50 p-10 mt-6 min-h-[200px]">
+<span class="material-symbols-outlined text-5xl text-text-muted">space_dashboard</span>
+<h4 class="text-text-light font-bold text-lg">No More Projects</h4>
+<p class="text-text-muted text-center max-w-xs">Looks like you've reached the end. Why not share a new project?</p>
+<button class="flex mt-2 min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-5 bg-primary/90 text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-primary transition-colors">
+<span class="truncate">Share a Project</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Right Column: Sidebar -->
+<aside class="lg:col-span-1 space-y-8">
+<div class="bg-surface-dark border border-white/10 rounded-lg p-5">
+<h3 class="text-lg font-bold text-text-light mb-4">Pinned Projects</h3>
+<ul class="space-y-4">
+<li class="flex items-start gap-4 group">
+<div class="mt-1">
+<span class="material-symbols-outlined text-base text-text-muted group-hover:text-primary">push_pin</span>
+</div>
+<div>
+<a class="font-bold text-text-light group-hover:text-primary transition-colors" href="#">Quantum UI Kit</a>
+<p class="text-sm text-text-muted">A futuristic component library for React.</p>
+</div>
+</li>
+<li class="flex items-start gap-4 group">
+<div class="mt-1">
+<span class="material-symbols-outlined text-base text-text-muted group-hover:text-primary">push_pin</span>
+</div>
+<div>
+<a class="font-bold text-text-light group-hover:text-primary transition-colors" href="#">Portfolio Website v3</a>
+<p class="text-sm text-text-muted">Personal portfolio built with Next.js and Sanity.</p>
+</div>
+</li>
+<li class="flex items-start gap-4 group">
+<div class="mt-1">
+<span class="material-symbols-outlined text-base text-text-muted group-hover:text-primary">push_pin</span>
+</div>
+<div>
+<a class="font-bold text-text-light group-hover:text-primary transition-colors" href="#">dotfiles</a>
+<p class="text-sm text-text-muted">My personal development environment setup.</p>
+</div>
+</li>
+</ul>
+</div>
+<div class="bg-surface-dark border border-white/10 rounded-lg p-5">
+<h3 class="text-lg font-bold text-text-light mb-4">Top Contributions</h3>
+<ul class="space-y-4">
+<li class="flex items-start gap-4 group">
+<div class="mt-1">
+<span class="material-symbols-outlined text-base text-accent-green">check_circle</span>
+</div>
+<div>
+<a class="font-bold text-text-light group-hover:text-primary transition-colors" href="#">tailwindcss/tailwindcss</a>
+<p class="text-sm text-text-muted">Merged 3 pull requests</p>
+</div>
+</li>
+<li class="flex items-start gap-4 group">
+<div class="mt-1">
+<span class="material-symbols-outlined text-base text-accent-green">check_circle</span>
+</div>
+<div>
+<a class="font-bold text-text-light group-hover:text-primary transition-colors" href="#">vercel/next.js</a>
+<p class="text-sm text-text-muted">Merged 1 pull request</p>
+</div>
+</li>
+</ul>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</body></html>

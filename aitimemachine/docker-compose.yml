@@ -1,0 +1,83 @@
+# AITM local/production-like stack.
+#
+#   docker compose up --build
+#
+# Services:
+#   aitm-api  — the API server + bundled first-party engines (api-server/Dockerfile).
+#   postgres  — pgvector-enabled PostgreSQL (embeddings for saved_contexts search).
+#   redis     — rate limiting / caching backend.
+#
+# Build context is the aitimemachine root so the engine source is available to
+# the multi-stage build. Configure secrets via a sibling .env file.
+
+services:
+  aitm-api:
+    build:
+      context: .
+      dockerfile: api-server/Dockerfile
+    image: aitm-api:latest
+    restart: unless-stopped
+    ports:
+      - "${AITM_API_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aitm}:${POSTGRES_PASSWORD:-aitm_dev}@postgres:5432/${POSTGRES_DB:-aitm}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      # First-party engine config (no *_URL service seams).
+      CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:3001/health/providers',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aitm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aitm_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-aitm}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - aitm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aitm} -d ${POSTGRES_DB:-aitm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - aitm-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  aitm-postgres-data:
+  aitm-redis-data:

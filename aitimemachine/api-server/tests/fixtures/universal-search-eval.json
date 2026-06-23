@@ -1,0 +1,57 @@
+{
+  "description": "Golden queries for universal search evaluation. Fill in expected targets for your dataset.",
+  "cases": [
+    {
+      "name": "Code: search core entrypoint",
+      "query": "TimeMachine initialize",
+      "sources": ["code"],
+      "search_mode": "hybrid",
+      "expected": [
+        {
+          "source": "code",
+          "file_path_contains": "src/index.ts",
+          "weight": 1.5
+        }
+      ]
+    },
+    {
+      "name": "KB: search persisted docs",
+      "query": "knowledge base files",
+      "sources": ["knowledge_base"],
+      "search_mode": "hybrid",
+      "expected": [
+        {
+          "source": "knowledge_base",
+          "file_path_contains": "docs",
+          "weight": 1.2
+        }
+      ]
+    },
+    {
+      "name": "Artifacts: export stats",
+      "query": "export job",
+      "sources": ["artifact"],
+      "search_mode": "hybrid",
+      "expected": [
+        {
+          "source": "artifact",
+          "title_contains": "export",
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Messages: chat history",
+      "query": "universal search",
+      "sources": ["message"],
+      "search_mode": "unified",
+      "expected": [
+        {
+          "source": "message",
+          "snippet_contains": "universal search",
+          "weight": 0.8
+        }
+      ]
+    }
+  ]
+}

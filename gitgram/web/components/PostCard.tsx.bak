@@ -1,0 +1,199 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import Image from 'next/image'
+import { useRouter } from 'next/navigation'
+import { postService } from '@/services/postService'
+
+interface PostCardProps {
+  post: {
+    id: string
+    content?: string
+    mediaUrl?: string
+    mediaType?: string
+    codeSnippet?: string
+    language?: string
+    tags?: string[]
+    starsCount?: number
+    forksCount?: number
+    issuesCount?: number
+    githubUrl?: string
+    user: {
+      id: string
+      username: string
+      avatar?: string
+    }
+    likesCount: number
+    commentsCount: number
+    isLiked?: boolean
+    createdAt: string
+  }
+  showFullContent?: boolean
+}
+
+export default function PostCard({ post, showFullContent = false }: PostCardProps) {
+  const router = useRouter()
+  const [isLiked, setIsLiked] = useState(post.isLiked || false)
+  const [likesCount, setLikesCount] = useState(post.likesCount)
+  const [loading, setLoading] = useState(false)
+
+  const handleLike = async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      const response = await postService.likePost(post.id)
+      setIsLiked(response.liked)
+      setLikesCount(prev => response.liked ? prev + 1 : prev - 1)
+    } catch (error) {
+      console.error('Like error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+    if (diffInHours < 1) return 'Just now'
+    if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`
+    const diffInDays = Math.floor(diffInHours / 24)
+    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`
+  }
+
+  return (
+    <article className="flex flex-col bg-surface rounded-xl overflow-hidden border border-border">
+      {/* Header Section */}
+      <div className="p-6">
+        <div className="flex items-center gap-4 mb-4">
+          <Link href={`/profile/${post.user.id}`}>
+            {post.user.avatar ? (
+              <Image
+                src={post.user.avatar}
+                alt={post.user.username}
+                width={40}
+                height={40}
+                className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10"
+              />
+            ) : (
+              <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 bg-primary flex items-center justify-center text-white font-bold">
+                {post.user.username[0]?.toUpperCase() || 'U'}
+              </div>
+            )}
+          </Link>
+          <div className="flex-grow">
+            <p className="text-foreground text-base font-bold leading-tight">{post.user.username}</p>
+            <p className="text-foreground-secondary text-sm font-normal leading-normal">{formatTimeAgo(post.createdAt)}</p>
+          </div>
+        </div>
+
+        {/* Project Title */}
+        <p className="text-foreground text-xl font-bold leading-tight tracking-[-0.015em] mb-2">
+          {post.content || 'Project Title'}
+        </p>
+
+        {/* Description */}
+        {post.content && post.content.length > 50 && (
+          <p className="text-foreground-secondary text-base font-normal leading-normal mb-4">
+            {post.content.substring(0, 100)}...
+          </p>
+        )}
+
+        {/* Tags */}
+        {post.tags && post.tags.length > 0 && (
+          <div className="flex gap-2 flex-wrap mb-4">
+            {post.tags.slice(0, 3).map((tag, index) => (
+              <div key={index} className="flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-surface-secondary px-3">
+                <p className="text-foreground text-xs font-medium leading-normal">{tag}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Media */}
+      {post.mediaType === 'image' && post.mediaUrl && (
+        <div className="w-full bg-center bg-no-repeat aspect-video bg-cover cursor-pointer" onClick={() => router.push(`/post/${post.id}`)}>
+          <Image
+            src={post.mediaUrl}
+            alt="Post media"
+            width={800}
+            height={450}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+
+      {/* Stats and Actions Section */}
+      <div className="p-6">
+        {/* Stats */}
+        <div className="flex flex-wrap gap-4 mb-4">
+          <div className="flex flex-1 basis-[fit-content] flex-col gap-1 items-start">
+            <p className="text-foreground tracking-light text-xl font-bold leading-tight">{post.starsCount || post.likesCount || 0}</p>
+            <div className="flex items-center gap-1">
+              <p className="text-foreground-secondary text-sm font-normal leading-normal">Stars</p>
+            </div>
+          </div>
+          <div className="flex flex-1 basis-[fit-content] flex-col gap-1 items-start">
+            <p className="text-foreground tracking-light text-xl font-bold leading-tight">{post.forksCount || 0}</p>
+            <div className="flex items-center gap-1">
+              <p className="text-foreground-secondary text-sm font-normal leading-normal">Forks</p>
+            </div>
+          </div>
+          <div className="flex flex-1 basis-[fit-content] flex-col gap-1 items-start">
+            <p className="text-foreground tracking-light text-xl font-bold leading-tight">{post.issuesCount || 0}</p>
+            <div className="flex items-center gap-1">
+              <p className="text-foreground-secondary text-sm font-normal leading-normal">Open Issues</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="border-t border-border py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 text-foreground-secondary">
+            <button
+              onClick={handleLike}
+              disabled={loading}
+              className={`flex items-center gap-2 hover:text-foreground transition-colors ${isLiked ? 'text-foreground' : ''}`}
+            >
+              <span className="material-symbols-outlined">star</span>
+              Like
+            </button>
+            <Link href={`/post/${post.id}`} className="flex items-center gap-2 hover:text-foreground transition-colors">
+              <span className="material-symbols-outlined">chat_bubble</span>
+              Comment
+            </Link>
+            <Link href={`/post/${post.id}/share`} className="flex items-center gap-2 hover:text-foreground transition-colors">
+              <span className="material-symbols-outlined">share</span>
+              Share
+            </Link>
+          </div>
+          {post.githubUrl && (
+            <a
+              href={post.githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-9 px-4 bg-surface-secondary hover:bg-border text-foreground text-sm font-medium leading-normal transition-colors"
+            >
+              <span className="truncate">View on GitHub</span>
+            </a>
+          )}
+        </div>
+
+        {/* Comments Preview */}
+        {post.commentsCount > 0 && (
+          <div className="pt-2">
+            <p className="text-foreground-secondary text-sm font-normal leading-normal">
+              <strong className="text-foreground">dev_guru:</strong> This looks amazing! Can't wait to try it out.
+            </p>
+            <Link href={`/post/${post.id}`} className="text-foreground-secondary/70 text-sm hover:text-foreground-secondary">
+              View all {post.commentsCount} comments
+            </Link>
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+

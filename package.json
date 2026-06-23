@@ -25,14 +25,12 @@
     "test:gitgram-backend": "cd gitgram/backend && npm test",
     "test:gitgram-web": "cd gitgram/web && npm test",
     "test:aitm": "cd aitimemachine/api-server && npm test",
-
     "dev:gitgram": "concurrently \"npm run dev:gitgram-backend\" \"npm run dev:gitgram-web\"",
     "dev:gitgram-backend": "cd gitgram/backend && npm run dev",
     "dev:gitgram-web": "cd gitgram/web && npm run dev",
     "dev:gh-social": "cd gitgram/gh-social && npm run dev",
     "dev:t3": "cd gitgram/t3-base && npm run dev",
     "dev:proximity": "cd gitgram/mobile/proximity && npx expo start",
-
     "dev:aitm": "concurrently \"npm run dev:aitm-api\" \"npm run dev:aitm-mcp\" \"npm run dev:gitnexus\"",
     "dev:aitm-api": "cd aitimemachine/api-server && npm run dev",
     "dev:aitm-api:clean": "npm --prefix aitimemachine/api-server run dev:clean",
@@ -44,24 +42,20 @@
     "dev:pal-mcp": "cd aitimemachine/pal-mcp-server && ./run-server.sh",
     "dev:repo2txt": "cd aitimemachine/tools/repo2txt && npm run dev",
     "dev:repo-to-text": "cd aitimemachine/tools/repo-to-text && python -m repo_to_text",
-
     "build:beads": "cd aitimemachine/beads && go build -o bd ./cmd/bd/ && echo 'beads bd binary built at aitimemachine/beads/bd'",
     "build:all": "npm run build:gitgram-backend && npm run build:gitgram-web && npm run build:aitm && npm run build:gitnexus",
     "build:gitgram-backend": "cd gitgram/backend && npm run build",
     "build:gitgram-web": "cd gitgram/web && npm run build",
     "build:aitm": "cd aitimemachine/api-server && npm run build",
     "build:gitnexus": "cd aitimemachine/gitnexus && npm run build",
-
     "lint:all": "npm run lint:gitgram-backend && npm run lint:aitm",
     "lint:gitgram-backend": "cd gitgram/backend && npm run lint",
     "lint:aitm": "cd aitimemachine/api-server && npx tsc --noEmit",
-
     "typecheck:all": "npm run typecheck:gitgram && npm run typecheck:aitm",
     "typecheck:gitgram": "npm run typecheck:gitgram-backend && npm run typecheck:gitgram-web",
     "typecheck:gitgram-backend": "cd gitgram/backend && npx tsc --noEmit",
     "typecheck:gitgram-web": "cd gitgram/web && npx tsc --noEmit",
     "typecheck:aitm": "cd aitimemachine && npx tsc --noEmit && cd api-server && npx tsc --noEmit",
-
     "smoke:local-launch": "bash scripts/smoke-local-launch.sh",
     "deploy:launch:staging": "bash scripts/deploy-launch.sh staging",
     "deploy:launch:production": "bash scripts/deploy-launch.sh production",
@@ -76,5 +70,8 @@
     "verify:public-launch": "bash scripts/verify-public-launch.sh",
     "verify:secrets:staging": "bash scripts/validate-prod-secrets.sh staging full",
     "verify:secrets:production": "bash scripts/validate-prod-secrets.sh production full"
+  },
+  "overrides": {
+    "@types/uuid": "9.0.8"
   }
 }

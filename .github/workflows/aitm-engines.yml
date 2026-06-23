@@ -1,0 +1,227 @@
+# =============================================================================
+# AITM Engines - Build first-party engines and run AITM test suites.
+# Builds the vendored engines (beads/Go, git/C, pal/Python, TS libs) via
+# scripts/build-engines.sh, verifies the produced artifacts, then runs the
+# AITM core + api-server + mcp test suites and typechecks.
+# Triggers only on changes under aitimemachine/**.
+# =============================================================================
+name: AITM Engines
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "aitimemachine/**"
+      - ".github/workflows/aitm-engines.yml"
+  pull_request:
+    paths:
+      - "aitimemachine/**"
+      - ".github/workflows/aitm-engines.yml"
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build every vendored engine and verify the produced binaries / venv.
+  # ---------------------------------------------------------------------------
+  build-engines:
+    name: "Build: AITM Engines"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: aitimemachine/beads/go.sum
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system build deps (git C source + ICU)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libicu-dev build-essential gettext zlib1g-dev libssl-dev libcurl4-openssl-dev
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-aitm-${{ hashFiles('aitimemachine/beads/go.sum') }}
+          restore-keys: go-aitm-
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-aitm-engines-${{ hashFiles('aitimemachine/**/package-lock.json') }}
+          restore-keys: npm-aitm-engines-
+
+      - name: Build engines
+        run: bash aitimemachine/scripts/build-engines.sh
+
+      - name: Verify engine artifacts
+        run: |
+          set -euo pipefail
+          BIN="aitimemachine/bin"
+          ENGINES="aitimemachine/engines"
+
+          echo "== verify bd =="
+          test -x "$BIN/bd" || { echo "::error::aitimemachine/bin/bd missing or not executable"; exit 1; }
+          "$BIN/bd" --version
+
+          echo "== verify git =="
+          test -x "$BIN/git" || { echo "::error::aitimemachine/bin/git missing or not executable"; exit 1; }
+          "$BIN/git" --version
+
+          echo "== verify pal venv =="
+          test -x "$ENGINES/pal/bin/python" || { echo "::error::engines/pal venv missing"; exit 1; }
+          "$ENGINES/pal/bin/python" --version
+
+          echo "All engine artifacts present."
+
+      - name: Upload engine binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aitm-engines
+          path: |
+            aitimemachine/bin/bd
+            aitimemachine/bin/git
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Run AITM core + api-server + mcp test suites. Depends on a clean engine build.
+  # ---------------------------------------------------------------------------
+  test:
+    name: "Test: AITM Suites"
+    needs: build-engines
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-aitm-test-${{ hashFiles('aitimemachine/**/package-lock.json') }}
+          restore-keys: npm-aitm-test-
+
+      - name: Install AITM core dependencies
+        working-directory: aitimemachine
+        run: npm install --no-audit --no-fund
+
+      - name: Run AITM core tests (vitest)
+        working-directory: aitimemachine
+        run: npm test -- --coverage
+
+      - name: Install api-server dependencies
+        working-directory: aitimemachine/api-server
+        run: npm install --no-audit --no-fund
+
+      - name: Run api-server tests (vitest)
+        working-directory: aitimemachine/api-server
+        run: npm test -- --coverage
+
+      - name: Install mcp dependencies
+        working-directory: aitimemachine/mcp
+        run: npm install --no-audit --no-fund
+
+      - name: Run mcp tests (vitest)
+        working-directory: aitimemachine/mcp
+        run: npx vitest run --coverage --passWithNoTests
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aitm-coverage
+          path: |
+            aitimemachine/coverage/**
+            aitimemachine/api-server/coverage/**
+            aitimemachine/mcp/coverage/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # TypeScript type checking for api-server + mcp.
+  # The known @types/uuid (v9) stub mismatch against uuid v10/v11 is tolerated.
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: "Typecheck: api-server + mcp"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-aitm-typecheck-${{ hashFiles('aitimemachine/**/package-lock.json') }}
+          restore-keys: npm-aitm-typecheck-
+
+      - name: Install api-server dependencies
+        working-directory: aitimemachine/api-server
+        run: npm install --no-audit --no-fund
+
+      - name: Install mcp dependencies
+        working-directory: aitimemachine/mcp
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck api-server
+        working-directory: aitimemachine/api-server
+        run: |
+          # Allow the known @types/uuid stub warning; fail on any other error.
+          npx tsc --noEmit 2>&1 | tee tsc.log
+          if grep -vE "@types/uuid|node_modules/uuid" tsc.log | grep -qE "error TS"; then
+            echo "::error::Unexpected TypeScript errors in api-server"
+            exit 1
+          fi
+
+      - name: Typecheck mcp
+        working-directory: aitimemachine/mcp
+        run: |
+          npx tsc --noEmit 2>&1 | tee tsc.log
+          if grep -vE "@types/uuid|node_modules/uuid" tsc.log | grep -qE "error TS"; then
+            echo "::error::Unexpected TypeScript errors in mcp"
+            exit 1
+          fi

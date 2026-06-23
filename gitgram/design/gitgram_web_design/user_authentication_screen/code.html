@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CodeHub - Sign Up</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#1337ec",
+              "background-light": "#f6f6f8",
+              "background-dark": "#101322",
+            },
+            fontFamily: {
+              "display": ["Space Grotesk", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-white">
+<div class="relative flex min-h-screen w-full flex-col items-center justify-center overflow-x-hidden p-4 md:p-8">
+<div class="flex w-full max-w-6xl flex-col items-center justify-center gap-10 lg:flex-row lg:gap-16">
+<div class="flex w-full max-w-md flex-col items-start gap-6 text-center lg:w-1/2 lg:text-left">
+<div class="flex flex-col gap-2 w-full">
+<h1 class="text-4xl font-bold leading-tight tracking-tight text-zinc-900 dark:text-white md:text-5xl">Where Code Becomes Community</h1>
+<h2 class="text-base font-normal text-zinc-600 dark:text-zinc-400 md:text-lg">Showcase your projects, discover new tools, and connect with developers from around the world.</h2>
+</div>
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover rounded-xl" data-alt="Abstract visualization of code connections and community network." style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBfR4BmpB51Xe6yTJPecThNqPQurbFMnQ3XeK0tiTyQ1bAc3GVxicPr_4rZeoUrQ8Q-gDZrvBloL21joT5g7wqD6ZAaeVbYv6UGckL_wb5kNQxewdoEO3ziX0s4eGsuW0kBppWjwLwhI7ZlKzdwMLYaJCrtS-qjyoh8b7EhC9JnFXPZdrlYSqY8ejMhW1cF6FrDTITZPOwDAVDfTc_3AC5nxil_neIikIvzfi40tLNUAjl5dV3xTYS-U1yiSxoXW8G01IBB4mg_oYg");'></div>
+</div>
+<div class="w-full max-w-md rounded-xl border border-zinc-200/10 bg-zinc-950/20 dark:bg-zinc-800/10 p-6 md:p-8">
+<div class="flex flex-col gap-6">
+<button class="flex w-full min-w-[84px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-12 px-5 bg-zinc-900 text-white text-base font-bold leading-normal tracking-[0.015em] hover:bg-zinc-800 transition-colors">
+<svg class="h-6 w-6" fill="currentColor" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 0.5C5.37 0.5 0 5.87 0 12.5C0 17.93 3.59 22.53 8.53 24C9.13 24.1 9.32 23.73 9.32 23.41C9.32 23.12 9.31 22.13 9.31 21.08C5.97 21.84 5.23 19.58 5.23 19.58C4.69 18.23 3.86 17.85 3.86 17.85C2.79 17.11 3.94 17.13 3.94 17.13C5.12 17.21 5.79 18.28 5.79 18.28C6.84 20.08 8.57 19.58 9.21 19.29C9.31 18.53 9.61 18.02 9.93 17.73C7.23 17.43 4.42 16.36 4.42 11.63C4.42 10.27 4.93 9.17 5.73 8.35C5.61 8.05 5.23 6.95 5.85 5.23C5.85 5.23 6.84 4.91 9.27 6.55C10.22 6.29 11.23 6.16 12.24 6.15C13.25 6.16 14.26 6.29 15.21 6.55C17.64 4.91 18.63 5.23 18.63 5.23C19.27 6.95 18.89 8.05 18.76 8.35C19.57 9.17 20.08 10.27 20.08 11.63C20.08 16.37 17.26 17.43 14.56 17.73C14.96 18.09 15.31 18.81 15.31 19.95C15.31 21.57 15.29 22.87 15.29 23.23C15.29 23.55 15.48 23.93 16.09 23.82C21.01 22.33 24.48 17.73 24.48 12.5C24.48 5.87 19.11 0.5 12.5 0.5H12Z"></path></svg>
+<span class="truncate">Continue with GitHub</span>
+</button>
+<div class="flex items-center gap-4">
+<hr class="w-full border-zinc-200/10 dark:border-zinc-700/50"/>
+<p class="text-zinc-500 dark:text-zinc-400 text-sm font-normal leading-normal text-center">OR</p>
+<hr class="w-full border-zinc-200/10 dark:border-zinc-700/50"/>
+</div>
+<div class="flex flex-col gap-4">
+<label class="flex flex-col flex-1">
+<p class="text-zinc-900 dark:text-white text-base font-medium leading-normal pb-2">Email</p>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-zinc-900 dark:text-white focus:outline-0 focus:ring-0 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900/50 focus:border-primary h-12 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 px-4 text-base font-normal leading-normal" placeholder="you@example.com" value=""/>
+</label>
+<label class="flex flex-col flex-1">
+<p class="text-zinc-900 dark:text-white text-base font-medium leading-normal pb-2">Password</p>
+<div class="flex w-full flex-1 items-stretch rounded-lg">
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-zinc-900 dark:text-white focus:outline-0 focus:ring-0 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900/50 focus:border-primary h-12 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 px-4 rounded-r-none border-r-0 pr-2 text-base font-normal leading-normal" placeholder="Enter your password" type="password" value=""/>
+<div class="text-zinc-400 dark:text-zinc-500 flex border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900/50 items-center justify-center px-3 rounded-r-lg border-l-0">
+<span class="material-symbols-outlined" style="font-size: 20px;">visibility</span>
+</div>
+</div>
+</label>
+</div>
+<div class="flex flex-col gap-4">
+<button class="flex min-w-[84px] w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-5 bg-primary text-white text-base font-bold leading-normal tracking-[0.015em] hover:bg-primary/90 transition-colors">
+<span class="truncate">Create Account</span>
+</button>
+<p class="text-center text-sm text-zinc-600 dark:text-zinc-400">Already have an account? <a class="font-medium text-primary hover:underline" href="#">Log In</a></p>
+</div>
+<div class="mt-2 text-center text-xs text-zinc-500 dark:text-zinc-500">
+<p>By continuing, you agree to our <a class="underline hover:text-zinc-300" href="#">Terms of Service</a> and <a class="underline hover:text-zinc-300" href="#">Privacy Policy</a>.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body></html>
