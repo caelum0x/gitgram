@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { PostType } from '@prisma/client';
 import prisma from '../utils/prisma';
 import FeedService from '../services/feedService';
 import { AuthRequest } from '../middleware/auth';
@@ -109,7 +110,13 @@ export const createPost = asyncHandler(async (req: AuthRequest, res: Response) =
     throw Errors.badRequest('Content, checkpoint metadata, or media is required');
   }
 
-  const effectiveType = checkpointId ? 'CHANGE_STORY' : type;
+  // Normalize the requested post type to the PostType enum (clients may send
+  // lower/mixed case, e.g. "text"); fall back to POST for unknown values.
+  const requestedType = typeof type === 'string' ? type.toUpperCase() : 'POST';
+  const normalizedType: PostType = (Object.values(PostType) as string[]).includes(requestedType)
+    ? (requestedType as PostType)
+    : PostType.POST;
+  const effectiveType: PostType = checkpointId ? PostType.CHANGE_STORY : normalizedType;
 
   // Author self-labeling / content warnings (voluntary sensitivity tags).
   const normalizedSelfLabels = normalizeSelfLabels(selfLabels);
