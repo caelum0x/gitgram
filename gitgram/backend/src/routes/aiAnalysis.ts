@@ -1,8 +1,22 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth';
 import logger from '../utils/logger';
+import { isAiAnalysisEnabled, featureUnavailablePayload } from '../config/featureAvailability';
 
 const router = Router();
+
+/**
+ * Guard that returns 503 when the GitNexus-backed AI analysis feature is not
+ * provisioned in this deployment, instead of attempting (and timing out) on a
+ * default localhost connection.
+ */
+function requireAiAnalysisEnabled(_req: Request, res: Response, next: NextFunction): void {
+  if (!isAiAnalysisEnabled()) {
+    res.status(503).json(featureUnavailablePayload('AI code analysis (GitNexus)'));
+    return;
+  }
+  next();
+}
 
 const GITNEXUS_URL = process.env.GITNEXUS_URL || 'http://localhost:3001';
 
@@ -115,7 +129,7 @@ async function sendJsonRpc(
  *       500:
  *         description: GitNexus analysis failed
  */
-router.post('/analyze', authenticate, async (req: Request, res: Response): Promise<void> => {
+router.post('/analyze', authenticate, requireAiAnalysisEnabled, async (req: Request, res: Response): Promise<void> => {
   const { repoUrl } = req.body as { repoUrl?: string };
 
   if (!repoUrl || typeof repoUrl !== 'string') {
@@ -162,13 +176,20 @@ router.post('/analyze', authenticate, async (req: Request, res: Response): Promi
  *         description: GitNexus is unreachable
  */
 router.get('/status', async (_req: Request, res: Response): Promise<void> => {
+  const enabled = isAiAnalysisEnabled();
+
+  if (!enabled) {
+    res.json({ enabled: false, reachable: false, url: GITNEXUS_URL });
+    return;
+  }
+
   try {
     const response = await fetchWithTimeout(GITNEXUS_URL, { method: 'GET' }, 5000);
-    res.json({ reachable: true, status: response.status, url: GITNEXUS_URL });
+    res.json({ enabled: true, reachable: true, status: response.status, url: GITNEXUS_URL });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.warn('GitNexus health check failed', { url: GITNEXUS_URL, error: message });
-    res.status(502).json({ reachable: false, url: GITNEXUS_URL, error: message });
+    res.status(502).json({ enabled: true, reachable: false, url: GITNEXUS_URL, error: message });
   }
 });
 

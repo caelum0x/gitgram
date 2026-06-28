@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { postService } from '@/services/postService'
-import PostCard from '@/components/PostCard'
+import PostCard, { type Post } from '@/components/PostCard'
 import StoriesRing from '@/components/StoriesRing'
 import { useToast } from '@/components/ui/toast'
 import PullToRefresh from '@/components/PullToRefresh'
@@ -174,6 +174,50 @@ function QuickActionButton({ label, icon, onClick }: QuickActionButtonProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Feed post normalization — maps the API payload into the shared `Post` shape
+// consumed by PostCard, tolerating field-name variations from the backend.
+// ---------------------------------------------------------------------------
+
+function toNumber(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizePost(raw: unknown): Post {
+  const r = (raw ?? {}) as Record<string, unknown>
+  const authorRaw = (r.author ?? r.user ?? {}) as Record<string, unknown>
+  const count = (r._count ?? {}) as Record<string, unknown>
+
+  return {
+    id: String(r.id ?? ''),
+    content: String(r.content ?? ''),
+    author: {
+      username: String(authorRaw.username ?? ''),
+      displayName: String(authorRaw.displayName ?? authorRaw.name ?? authorRaw.username ?? ''),
+      avatarUrl: (authorRaw.avatarUrl as string) ?? (authorRaw.avatar as string) ?? undefined,
+    },
+    likes: toNumber(r.likes ?? r.likesCount ?? count.likes),
+    comments: toNumber(r.comments ?? r.commentsCount ?? count.comments),
+    reposts: toNumber(r.reposts ?? r.sharesCount ?? count.shares),
+    createdAt: String(r.createdAt ?? new Date().toISOString()),
+    tags: Array.isArray(r.tags) ? (r.tags as unknown[]).map(String) : undefined,
+    repoOwner: (r.repoOwner as string) ?? undefined,
+    repoName: (r.repoName as string) ?? undefined,
+    isLiked: Boolean(r.isLiked),
+  }
+}
+
+interface FeedApiResponse {
+  posts?: unknown[]
+  nextCursor?: string | null
+}
+
+function extractPosts(data: FeedApiResponse | unknown[]): unknown[] {
+  if (Array.isArray(data)) return data
+  return data.posts ?? []
+}
+
+// ---------------------------------------------------------------------------
 // FeedPage
 // ---------------------------------------------------------------------------
 
@@ -181,14 +225,14 @@ export default function FeedPage() {
   const router = useRouter()
   const { isAuthenticated, isInitialized, user } = useAuthStore()
   const { showToast } = useToast()
-  const [posts, setPosts] = useState<any[]>([])
+  const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
-  const avatarUrl: string | null = (user as any)?.avatarUrl ?? (user as any)?.avatar ?? null
+  const avatarUrl: string | null = user?.avatar ?? null
 
   const handleNavigateToCreate = (mode?: 'photo' | 'code' | 'repo') => {
     const params = mode ? `?mode=${mode}` : ''
@@ -207,7 +251,7 @@ export default function FeedPage() {
   useEffect(() => {
     if (loading) return
     if (!isAuthenticated || !user || posts.length > 0) return
-    const interests = (user as any).interests as string[] | undefined
+    const interests = user.interests
     if (!interests?.length) {
       const redirected = sessionStorage.getItem('gitgram_onboarding_redirected')
       if (!redirected) {
@@ -235,11 +279,11 @@ export default function FeedPage() {
   const loadFeed = async () => {
     setLoading(true)
     try {
-      const data = await postService.getFeed()
-      const postList = data.posts ?? data
-      setPosts(postList)
-      setCursor(data.nextCursor ?? null)
-      setHasMore(!!data.nextCursor)
+      const data = (await postService.getFeed()) as FeedApiResponse | unknown[]
+      const nextCursor = Array.isArray(data) ? null : data.nextCursor ?? null
+      setPosts(extractPosts(data).map(normalizePost))
+      setCursor(nextCursor)
+      setHasMore(!!nextCursor)
     } catch (error: unknown) {
       showToast(getErrorMessage(error), 'error')
     } finally {
@@ -251,11 +295,12 @@ export default function FeedPage() {
     if (!cursor || loadingMore) return
     setLoadingMore(true)
     try {
-      const data = await postService.getFeedCursor(cursor)
-      const newPosts = data.posts ?? data
+      const data = (await postService.getFeedCursor(cursor)) as FeedApiResponse | unknown[]
+      const nextCursor = Array.isArray(data) ? null : data.nextCursor ?? null
+      const newPosts = extractPosts(data).map(normalizePost)
       setPosts(prev => [...prev, ...newPosts])
-      setCursor(data.nextCursor ?? null)
-      setHasMore(!!data.nextCursor)
+      setCursor(nextCursor)
+      setHasMore(!!nextCursor)
     } catch (error: unknown) {
       showToast(getErrorMessage(error), 'error')
     } finally {
@@ -267,7 +312,7 @@ export default function FeedPage() {
     try {
       await postService.likePost(postId)
       setPosts(prev =>
-        prev.map(p => p.id === postId ? { ...p, isLiked: true, likes: p.likes + 1 } : p)
+        prev.map(p => (p.id === postId ? { ...p, isLiked: true, likes: p.likes + 1 } : p)),
       )
     } catch {
       showToast('Failed to like post', 'error')

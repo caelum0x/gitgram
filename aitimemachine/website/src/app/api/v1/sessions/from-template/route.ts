@@ -15,8 +15,17 @@ interface CreatedProject {
 /**
  * POST /api/v1/sessions/from-template
  * Validates the requested template against the catalogue, then creates a
- * real, user-owned project scaffolded from it. Returns the new project id as
- * `sessionId` (the website models an AITM "session" as a project timeline).
+ * real, user-owned project record seeded with the template's metadata.
+ *
+ * File scaffolding and the initial checkpoint are performed by the AITM CLI on
+ * the user's machine (the web app has no access to the user's filesystem), so
+ * the response returns:
+ *   - `projectId`     the created project's id
+ *   - `nextPath`      a meaningful destination (the project's timeline, which
+ *                     renders a proper "create your first checkpoint" empty
+ *                     state instead of the replay view's hard error)
+ *   - `scaffoldCommand` the exact CLI command that scaffolds the template and
+ *                     records the first checkpoint into this project
  */
 export async function POST(req: Request) {
   const { userId } = await auth();
@@ -60,5 +69,16 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ sessionId: result.data.project.id }, { status: 201 });
+  const projectId = result.data.project.id;
+
+  return NextResponse.json(
+    {
+      projectId,
+      // Backwards-compatible alias for callers that read `sessionId`.
+      sessionId: projectId,
+      nextPath: `/dashboard/timeline?project=${projectId}`,
+      scaffoldCommand: `aitm template ${template.id} --project ${projectId}`,
+    },
+    { status: 201 },
+  );
 }

@@ -17,6 +17,8 @@
     "test": "jest --watchman=false",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:e2e": "jest --config jest.e2e.config.js --watchman=false --runInBand --forceExit",
+    "test:e2e:docker": "bash scripts/run-e2e.sh",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\""

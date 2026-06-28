@@ -66,16 +66,18 @@ interface ProvidersResponse {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://timemachine-api.gitgram.app';
 
-// Components we surface on the status page. Default state is "operational" and
-// is overridden when the live /health/providers endpoint reports otherwise.
+// Components we surface on the status page. We do not fabricate historical
+// uptime percentages (there is no time-series backend to source them from):
+// `uptime` is filled in from the live status reading once a health check
+// returns, and remains 0/"awaiting" until then.
 const DEFAULT_COMPONENTS: ComponentHealth[] = [
-  { name: 'API Server', description: 'REST + GraphQL gateway', status: 'operational', uptime: 99.98 },
-  { name: 'MCP Server', description: 'Model Context Protocol bridge', status: 'operational', uptime: 99.95 },
-  { name: 'Sync Service', description: 'Cloud checkpoint synchronization', status: 'operational', uptime: 99.92 },
-  { name: 'Web Dashboard', description: 'app.gitgram.app frontend', status: 'operational', uptime: 99.99 },
-  { name: 'GitNexus', description: 'Repository graph + PR engine', status: 'operational', uptime: 99.9 },
-  { name: 'Auth', description: 'Authentication & sessions', status: 'operational', uptime: 99.97 },
-  { name: 'Database', description: 'Primary PostgreSQL cluster', status: 'operational', uptime: 99.99 },
+  { name: 'API Server', description: 'REST + GraphQL gateway', status: 'operational', uptime: 0 },
+  { name: 'MCP Server', description: 'Model Context Protocol bridge', status: 'operational', uptime: 0 },
+  { name: 'Sync Service', description: 'Cloud checkpoint synchronization', status: 'operational', uptime: 0 },
+  { name: 'Web Dashboard', description: 'app.gitgram.app frontend', status: 'operational', uptime: 0 },
+  { name: 'GitNexus', description: 'Repository graph + PR engine', status: 'operational', uptime: 0 },
+  { name: 'Auth', description: 'Authentication & sessions', status: 'operational', uptime: 0 },
+  { name: 'Database', description: 'Primary PostgreSQL cluster', status: 'operational', uptime: 0 },
 ];
 
 // Maps an upstream provider name to one of our surfaced component names.
@@ -90,77 +92,10 @@ const PROVIDER_TO_COMPONENT: Record<string, string> = {
   PAL: 'API Server',
 };
 
-const RECENT_INCIDENTS: Incident[] = [
-  {
-    date: 'June 18, 2026',
-    title: 'Elevated sync latency in EU region',
-    state: 'resolved',
-    updates: [
-      {
-        time: '14:52 UTC',
-        state: 'resolved',
-        message:
-          'Sync latency has returned to normal levels. Root cause was a saturated connection pool on the EU replica; pool sizing has been increased.',
-      },
-      {
-        time: '14:10 UTC',
-        state: 'monitoring',
-        message: 'A fix has been deployed and we are monitoring sync queue depth in the EU region.',
-      },
-      {
-        time: '13:38 UTC',
-        state: 'investigating',
-        message: 'We are investigating reports of slow checkpoint uploads for users in the EU region.',
-      },
-    ],
-  },
-  {
-    date: 'June 9, 2026',
-    title: 'GitNexus PR indexing delays',
-    state: 'resolved',
-    updates: [
-      {
-        time: '09:21 UTC',
-        state: 'resolved',
-        message: 'PR indexing has fully caught up. No data was lost; only display freshness was affected.',
-      },
-      {
-        time: '08:05 UTC',
-        state: 'monitoring',
-        message: 'Backlog is draining steadily. New PRs are being indexed within seconds again.',
-      },
-      {
-        time: '07:40 UTC',
-        state: 'investigating',
-        message: 'GitNexus is showing delayed PR graphs for some repositories while we investigate a queue backlog.',
-      },
-    ],
-  },
-  {
-    date: 'May 27, 2026',
-    title: 'Scheduled database maintenance',
-    state: 'resolved',
-    updates: [
-      {
-        time: '03:30 UTC',
-        state: 'resolved',
-        message: 'Maintenance completed successfully. The primary PostgreSQL cluster was upgraded with zero data loss.',
-      },
-      {
-        time: '02:00 UTC',
-        state: 'monitoring',
-        message: 'Maintenance window started. Brief read-only periods may be observed.',
-      },
-    ],
-  },
-];
-
-const METRICS: MetricRow[] = [
-  { label: 'Last 24 hours', responseMs: 118, uptime: 100.0 },
-  { label: 'Last 7 days', responseMs: 124, uptime: 99.99 },
-  { label: 'Last 30 days', responseMs: 131, uptime: 99.97 },
-  { label: 'Last 90 days', responseMs: 136, uptime: 99.95 },
-];
+// We do not maintain a historical incident store or an uptime time-series
+// backend, so we never render fabricated incident history or multi-window
+// metrics. The page starts empty and is populated only from the live
+// /health/providers reading (see checkHealth below).
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -355,8 +290,8 @@ function StatusIcon({ status }: { status: Status }) {
 
 export default function StatusPage() {
   const [components, setComponents] = useState<ComponentHealth[]>(DEFAULT_COMPONENTS);
-  const [metrics, setMetrics] = useState<MetricRow[]>(METRICS);
-  const [incidents, setIncidents] = useState<Incident[]>(RECENT_INCIDENTS);
+  const [metrics, setMetrics] = useState<MetricRow[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [liveData, setLiveData] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -602,18 +537,27 @@ export default function StatusPage() {
         {/* Metrics */}
         <section className="mb-12">
           <h2 className="mb-4 text-lg font-semibold text-gray-200">Response Time &amp; Uptime</h2>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {metrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/40 p-4 text-center"
-              >
-                <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
-                <p className="mt-2 text-2xl font-bold text-white">{metric.responseMs}ms</p>
-                <p className="mt-1 text-sm text-green-400">{metric.uptime.toFixed(2)}% up</p>
-              </div>
-            ))}
-          </div>
+          {metrics.length === 0 ? (
+            <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-5 text-sm text-gray-400">
+              Live response-time metrics will appear here after the next health check. Historical
+              metrics are not yet available.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {metrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  className="rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/40 p-4 text-center"
+                >
+                  <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
+                  <p className="mt-2 text-2xl font-bold text-white">
+                    {metric.responseMs > 0 ? `${metric.responseMs}ms` : '—'}
+                  </p>
+                  <p className="mt-1 text-sm text-green-400">{metric.uptime.toFixed(2)}% up</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Incidents */}
@@ -624,6 +568,11 @@ export default function StatusPage() {
               <div className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 p-5 text-sm text-gray-400">
                 <CheckCircle2 className="h-5 w-5 text-green-400" />
                 No incidents reported. All systems are operating normally.
+              </div>
+            )}
+            {!liveData && incidents.length === 0 && (
+              <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-5 text-sm text-gray-400">
+                Checking systems… incident status will appear after the first health check.
               </div>
             )}
             {incidents.map((incident) => {

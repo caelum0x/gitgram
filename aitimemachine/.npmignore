@@ -19,7 +19,14 @@ jest.config.*
 # Project files
 api-server/
 website/
-mcp/
+# Ship only the compiled MCP server (mcp/dist), which `aitm mcp` spawns.
+# Exclude its sources, dev config, and dependencies.
+mcp/src/
+mcp/node_modules/
+mcp/scripts/
+mcp/tsconfig.json
+mcp/vitest.config.ts
+mcp/package-lock.json
 kilocode/
 gemini-cli/
 docs/

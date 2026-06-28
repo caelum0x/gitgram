@@ -4,12 +4,12 @@ export const scheduledPostsService = {
   getScheduledPosts: async (status?: 'pending' | 'published' | 'failed') => {
     const params: any = {};
     if (status) params.status = status;
-    const { data } = await api.get('/v1/scheduled-posts', { params });
+    const { data } = await api.get('/scheduled-posts', { params });
     return data;
   },
 
   getScheduledPost: async (id: string) => {
-    const { data } = await api.get(`/v1/scheduled-posts/${id}`);
+    const { data } = await api.get(`/scheduled-posts/${id}`);
     return data;
   },
 
@@ -21,7 +21,7 @@ export const scheduledPostsService = {
     scheduledAt?: string;
     scheduledFor?: string;
   }) => {
-    const { data } = await api.post('/v1/scheduled-posts', postData);
+    const { data } = await api.post('/scheduled-posts', postData);
     return data;
   },
 
@@ -32,22 +32,22 @@ export const scheduledPostsService = {
     scheduledAt?: string;
     scheduledFor?: string;
   }) => {
-    const { data } = await api.put(`/v1/scheduled-posts/${id}`, postData);
+    const { data } = await api.put(`/scheduled-posts/${id}`, postData);
     return data;
   },
 
   deleteScheduledPost: async (id: string) => {
-    const { data } = await api.delete(`/v1/scheduled-posts/${id}`);
+    const { data } = await api.delete(`/scheduled-posts/${id}`);
     return data;
   },
 
   retryScheduledPost: async (id: string) => {
-    const { data } = await api.post(`/v1/scheduled-posts/${id}/retry`);
+    const { data } = await api.post(`/scheduled-posts/${id}/retry`);
     return data;
   },
 
   getFailedPosts: async () => {
-    const { data } = await api.get('/v1/scheduled-posts/failed');
+    const { data } = await api.get('/scheduled-posts/failed');
     return data;
   },
 };

@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { Colors } from '../../constants/Colors';
 import { storeService, StoreItem } from '../../services/storeService';
 import { Image } from 'expo-image';
+import { logger } from '../../utils/logger';
 
 export default function StoreScreen() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function StoreScreen() {
       const response = await storeService.getItems();
       setProducts(response.items || response.products || []);
     } catch (error) {
-      console.error('Load products error:', error);
+      logger.error('Load products error:', error);
     }
   };
 

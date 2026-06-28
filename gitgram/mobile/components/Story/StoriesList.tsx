@@ -35,7 +35,7 @@ export default function StoriesList() {
 
   const loadStories = async () => {
     try {
-      const response = await api.get('/v1/stories');
+      const response = await api.get('/stories');
       setStoryGroups(response.data.stories || []);
     } catch (error) {
       console.error('Load stories error:', error);

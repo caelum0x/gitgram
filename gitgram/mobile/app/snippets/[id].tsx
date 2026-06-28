@@ -16,6 +16,9 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import { snippetService, CodeSnippet } from '../../services/snippetService';
 import { logger } from '../../utils/logger';
+import CodeBlock from '../../components/proximity/CodeBlock';
+import { useToast } from '../../components/proximity/Toast';
+import { ErrorBoundary } from '../../components/proximity/ErrorBoundary';
 
 const LANGUAGE_COLORS: Record<string, string> = {
   javascript: '#f7df1e',
@@ -45,6 +48,7 @@ function unwrapSnippet(data: unknown): CodeSnippet | null {
 export default function SnippetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const toast = useToast();
   const [snippet, setSnippet] = useState<CodeSnippet | null>(null);
   const [loading, setLoading] = useState(true);
   const [liking, setLiking] = useState(false);
@@ -74,12 +78,12 @@ export default function SnippetDetailScreen() {
     if (!snippet) return;
     try {
       await Clipboard.setStringAsync(snippet.code);
-      Alert.alert('Copied', 'Code copied to clipboard!');
+      toast.show('Code copied to clipboard', 'success');
     } catch (error) {
       logger.error('Copy snippet error:', error);
-      Alert.alert('Error', 'Failed to copy code');
+      toast.show('Failed to copy code', 'error');
     }
-  }, [snippet]);
+  }, [snippet, toast]);
 
   const handleShare = useCallback(async () => {
     if (!snippet) return;
@@ -161,8 +165,16 @@ export default function SnippetDetailScreen() {
           <Text style={styles.description}>{snippet.description}</Text>
         )}
 
-        <View style={styles.codeBlock}>
-          <Text style={styles.codeText}>{snippet.code}</Text>
+        <View style={styles.codeBlockWrap}>
+          <ErrorBoundary
+            onError={(err) => logger.error('CodeBlock render error:', err)}
+          >
+            <CodeBlock
+              code={snippet.code}
+              language={snippet.language}
+              maxHeight={400}
+            />
+          </ErrorBoundary>
         </View>
 
         <View style={styles.actions}>
@@ -245,17 +257,8 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 16,
   },
-  codeBlock: {
-    backgroundColor: '#1e1e1e',
-    borderRadius: 12,
-    padding: 16,
+  codeBlockWrap: {
     marginBottom: 16,
-  },
-  codeText: {
-    fontFamily: 'monospace',
-    fontSize: 13,
-    color: '#d4d4d4',
-    lineHeight: 20,
   },
   actions: {
     flexDirection: 'row',

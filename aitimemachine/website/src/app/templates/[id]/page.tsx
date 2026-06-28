@@ -1,13 +1,11 @@
 'use client';
 
 import { use, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
   ArrowRight,
-  Star,
-  GitFork,
   Clock,
   Loader2,
   CheckCircle2,
@@ -19,178 +17,33 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  findTemplate,
+  type Template,
+  type TemplateFileNode,
+  type TemplateDifficulty,
+} from '@/lib/templates';
 
 // ---- Types ------------------------------------------------------------------
 
-type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced';
-
-interface FileNode {
-  name: string;
-  type: 'folder' | 'file';
-  children?: FileNode[];
+interface FromTemplateResponse {
+  projectId: string;
+  sessionId: string;
+  nextPath: string;
+  scaffoldCommand: string;
 }
-
-interface TemplateDetail {
-  id: string;
-  name: string;
-  description: string;
-  longDescription: string;
-  stack: string[];
-  estimatedTime: string;
-  difficulty: Difficulty;
-  stars: number;
-  forks: number;
-  official: boolean;
-  fileTree: FileNode[];
-  prerequisites: string[];
-  steps: string[];
-}
-
-// ---- Data -------------------------------------------------------------------
-
-const DEFAULT_DETAIL = (id: string): TemplateDetail => ({
-  id,
-  name: id
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' '),
-  description: 'A pre-configured AITM workflow template.',
-  longDescription:
-    'This template scaffolds a production-ready project with sensible defaults, linting, formatting, and full AITM checkpoint support so you can travel back to any step of the build.',
-  stack: ['TypeScript'],
-  estimatedTime: '10 min',
-  difficulty: 'Intermediate',
-  stars: 1_200,
-  forks: 180,
-  official: false,
-  fileTree: [
-    {
-      name: 'src',
-      type: 'folder',
-      children: [
-        { name: 'index.ts', type: 'file' },
-        { name: 'config.ts', type: 'file' },
-      ],
-    },
-    { name: 'package.json', type: 'file' },
-    { name: 'README.md', type: 'file' },
-  ],
-  prerequisites: ['Node.js 20+', 'AITM CLI installed', 'A code editor'],
-  steps: [
-    'Scaffold the project structure',
-    'Install dependencies',
-    'Configure environment variables',
-    'Run the development server',
-    'Create your first AITM checkpoint',
-  ],
-});
-
-const DETAILS: Record<string, Partial<TemplateDetail>> = {
-  'nextjs-app': {
-    description: 'Production-ready Next.js 14 app router with auth, database, and deployment config.',
-    longDescription:
-      'A batteries-included Next.js 14 starter using the App Router. Ships with NextAuth authentication, a Prisma-backed database layer, typed routes, and a Vercel deployment pipeline. Every scaffolding step is captured as an AITM checkpoint so you can rewind to any point.',
-    stack: ['Next.js', 'TypeScript', 'Prisma', 'NextAuth'],
-    estimatedTime: '10 min',
-    difficulty: 'Intermediate',
-    stars: 5_120,
-    forks: 743,
-    official: true,
-    fileTree: [
-      {
-        name: 'app',
-        type: 'folder',
-        children: [
-          { name: 'layout.tsx', type: 'file' },
-          { name: 'page.tsx', type: 'file' },
-          {
-            name: 'api',
-            type: 'folder',
-            children: [{ name: 'auth/[...nextauth]/route.ts', type: 'file' }],
-          },
-        ],
-      },
-      {
-        name: 'prisma',
-        type: 'folder',
-        children: [{ name: 'schema.prisma', type: 'file' }],
-      },
-      { name: 'next.config.js', type: 'file' },
-      { name: 'package.json', type: 'file' },
-    ],
-    prerequisites: ['Node.js 20+', 'A PostgreSQL database', 'AITM CLI installed'],
-    steps: [
-      'Clone the App Router structure',
-      'Install dependencies with your package manager',
-      'Set DATABASE_URL and NEXTAUTH_SECRET',
-      'Run prisma migrate to create tables',
-      'Start the dev server and sign in',
-      'Checkpoint the working baseline',
-    ],
-  },
-  'llm-app': {
-    description: 'Full-stack LLM application with streaming, chat history, and tool-use via the Claude API.',
-    longDescription:
-      'Build a streaming chat application powered by the Claude API and the Vercel AI SDK. Includes persistent chat history in Redis, tool-use scaffolding, and an accessible chat UI. AITM checkpoints let you compare model behavior across iterations.',
-    stack: ['Next.js', 'Claude API', 'Vercel AI SDK', 'Redis'],
-    estimatedTime: '15 min',
-    difficulty: 'Intermediate',
-    stars: 6_740,
-    forks: 1_120,
-    official: true,
-    fileTree: [
-      {
-        name: 'app',
-        type: 'folder',
-        children: [
-          { name: 'chat/page.tsx', type: 'file' },
-          { name: 'api/chat/route.ts', type: 'file' },
-        ],
-      },
-      {
-        name: 'lib',
-        type: 'folder',
-        children: [
-          { name: 'anthropic.ts', type: 'file' },
-          { name: 'redis.ts', type: 'file' },
-        ],
-      },
-      { name: '.env.example', type: 'file' },
-      { name: 'package.json', type: 'file' },
-    ],
-    prerequisites: ['Node.js 20+', 'An Anthropic API key', 'A Redis instance', 'AITM CLI installed'],
-    steps: [
-      'Scaffold the streaming chat structure',
-      'Install the Vercel AI SDK and dependencies',
-      'Add your ANTHROPIC_API_KEY and REDIS_URL',
-      'Wire up the chat route and history store',
-      'Run the app and send your first message',
-      'Checkpoint before tuning prompts',
-    ],
-  },
-};
 
 // ---- Helpers ----------------------------------------------------------------
 
-const DIFFICULTY_COLOR: Record<Difficulty, string> = {
+const DIFFICULTY_COLOR: Record<TemplateDifficulty, string> = {
   Beginner: 'bg-green-500/20 text-green-400 border-green-800',
   Intermediate: 'bg-yellow-500/20 text-yellow-400 border-yellow-800',
   Advanced: 'bg-red-500/20 text-red-400 border-red-800',
 };
 
-function formatCount(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
-
-function getTemplate(id: string): TemplateDetail {
-  const base = DEFAULT_DETAIL(id);
-  const override = DETAILS[id];
-  return override ? { ...base, ...override } : base;
-}
-
 // ---- File tree --------------------------------------------------------------
 
-function FileTree({ nodes, depth = 0 }: { nodes: FileNode[]; depth?: number }) {
+function FileTree({ nodes, depth = 0 }: { nodes: TemplateFileNode[]; depth?: number }) {
   return (
     <ul className="space-y-1">
       {nodes.map((node) => (
@@ -217,17 +70,14 @@ function FileTree({ nodes, depth = 0 }: { nodes: FileNode[]; depth?: number }) {
   );
 }
 
-// ---- Page -------------------------------------------------------------------
+// ---- Use-template action ----------------------------------------------------
 
-export default function TemplateDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+function useTemplateAction(template: Template) {
   const router = useRouter();
-  const template = getTemplate(id);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleUseTemplate = async () => {
+  const run = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -240,15 +90,32 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Server error ${res.status}`);
       }
-      const { sessionId } = (await res.json()) as { sessionId: string };
-      // Land on the new project's replay timeline (there is no bare
-      // /sessions/[id] route — replay is the project's session view).
-      router.push(`/sessions/${sessionId}/replay`);
+      const data = (await res.json()) as FromTemplateResponse;
+      router.push(data.nextPath ?? `/dashboard/timeline?project=${data.projectId}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
       setLoading(false);
     }
   };
+
+  return { loading, error, setError, run };
+}
+
+// ---- Page -------------------------------------------------------------------
+
+export default function TemplateDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const template = findTemplate(id);
+
+  if (!template) {
+    notFound();
+  }
+
+  return <TemplateDetail template={template} />;
+}
+
+function TemplateDetail({ template }: { template: Template }) {
+  const { loading, error, setError, run } = useTemplateAction(template);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -273,21 +140,18 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
                   Official
                 </Badge>
               )}
+              {template.community && (
+                <Badge className="bg-purple-500/20 text-purple-400 border-purple-800 border">
+                  Community
+                </Badge>
+              )}
             </div>
             <p className="text-lg text-gray-400 max-w-2xl">{template.description}</p>
 
             <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-gray-500">
               <span className="flex items-center gap-1.5">
                 <Clock className="w-4 h-4" />
-                {template.estimatedTime}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Star className="w-4 h-4" />
-                {formatCount(template.stars)}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <GitFork className="w-4 h-4" />
-                {formatCount(template.forks)}
+                {template.estimatedTime} setup
               </span>
               <span
                 className={`text-xs font-medium px-2 py-0.5 rounded-full border ${DIFFICULTY_COLOR[template.difficulty]}`}
@@ -309,7 +173,7 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
           </div>
 
           <div className="shrink-0">
-            <Button size="lg" onClick={handleUseTemplate} disabled={loading} className="w-full md:w-auto">
+            <Button size="lg" onClick={run} disabled={loading} className="w-full md:w-auto">
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -398,7 +262,7 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
             <p className="text-gray-400 mb-6 max-w-md mx-auto">
               Spin up a fully checkpointed session from this template in seconds.
             </p>
-            <Button size="lg" onClick={handleUseTemplate} disabled={loading}>
+            <Button size="lg" onClick={run} disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

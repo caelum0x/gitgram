@@ -2,7 +2,7 @@ import api from './api';
 
 export const backupService = {
   exportData: async (format: 'json' | 'csv') => {
-    const response = await api.post('/v1/compliance/export-data', { format });
+    const response = await api.post('/compliance/export-data', { format });
     return response.data;
   },
 
@@ -14,7 +14,7 @@ export const backupService = {
       name: 'data.json',
     } as any);
 
-    const response = await api.post('/v1/compliance/import-data', formData, {
+    const response = await api.post('/compliance/import-data', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

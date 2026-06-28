@@ -25,7 +25,7 @@ export default function ReportAdPage() {
 
     setSubmitting(true)
     try {
-      await api.post(`/v1/ads/${adId}/report`, { reason })
+      await api.post(`/v1/advertisements/${adId}/report`, { reason })
       router.back()
     } catch (error) {
       console.error('Report ad error:', error)

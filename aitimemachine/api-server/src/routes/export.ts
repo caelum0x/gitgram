@@ -13,6 +13,9 @@ import {
   generateActivityReport,
   exportToGitHistory,
 } from "../services/exportService.js";
+import { getArtifactByJobId } from "../services/knowledgeBase.js";
+import { downloadS3ObjectText } from "../services/s3.js";
+import { logger } from "../lib/monitoring.js";
 
 const router = Router();
 
@@ -55,7 +58,9 @@ function generateJobId(): string {
   return `exp_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-// DB persistence helpers
+// DB persistence helpers. The jobs table is the source of truth for status;
+// these write-throughs surface failures via the logger rather than swallowing
+// them silently, so a DB that has diverged from memory is observable.
 async function persistJobToDB(job: ExportJobResponse & { ownerId: string }): Promise<void> {
   try {
     await db.insert(schema.jobs).values({
@@ -74,7 +79,13 @@ async function persistJobToDB(job: ExportJobResponse & { ownerId: string }): Pro
       createdAt: new Date(job.createdAt),
       updatedAt: new Date(),
     });
-  } catch { /* DB persistence is best-effort */ }
+  } catch (err) {
+    logger.error(
+      "Failed to persist export job to DB",
+      err instanceof Error ? err : undefined,
+      { jobId: job.id }
+    );
+  }
 }
 
 async function updateJobInDB(
@@ -89,7 +100,13 @@ async function updateJobInDB(
     if (updates.error) dbUpdates.error = updates.error;
     if (updates.completedAt) dbUpdates.completedAt = updates.completedAt;
     await db.update(schema.jobs).set(dbUpdates).where(eq(schema.jobs.id, jobId));
-  } catch { /* DB update is best-effort */ }
+  } catch (err) {
+    logger.error(
+      "Failed to update export job in DB",
+      err instanceof Error ? err : undefined,
+      { jobId }
+    );
+  }
 }
 
 async function getJobFromDB(jobId: string): Promise<(ExportJobResponse & { ownerId: string }) | null> {
@@ -803,6 +820,43 @@ router.get("/download/:id", apiKeyAuth, async (req: AuthenticatedRequest, res: R
           : "Export not yet completed",
       },
     });
+  }
+
+  // Durable artifact fallback: the in-memory job.data buffer is lost on restart
+  // and is not shared across instances. The export pipeline persists the
+  // generated payload to the knowledge-base artifact store (DB) or S3, so when
+  // the in-memory buffer is absent we serve the artifact as the source of truth.
+  if (!job.data) {
+    const artifact = await getArtifactByJobId(jobId, req.user!.userId);
+
+    if (artifact?.storage === "s3" && artifact.s3) {
+      // Try to stream the object back inline; fall back to returning the
+      // pointer if the object is too large or unavailable.
+      const text = await downloadS3ObjectText({
+        bucket: artifact.s3.bucket,
+        key: artifact.s3.key,
+        maxBytes: 25 * 1024 * 1024,
+      }).catch(() => null);
+      if (text !== null) {
+        job = { ...job, data: text };
+      } else {
+        return res.json({
+          download: "s3",
+          s3_url: artifact.s3.url,
+          s3_bucket: artifact.s3.bucket,
+          s3_key: artifact.s3.key,
+        });
+      }
+    } else if (artifact?.content) {
+      job = { ...job, data: artifact.content };
+    } else if (job.s3) {
+      return res.json({
+        download: "s3",
+        s3_url: job.s3.url,
+        s3_bucket: job.s3.bucket,
+        s3_key: job.s3.key,
+      });
+    }
   }
 
   if (!job.data && job.s3) {

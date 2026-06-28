@@ -11,6 +11,7 @@ import {
   Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { Colors } from '../../constants/Colors';
 import Header from '../../components/navigation/Header';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -78,7 +79,7 @@ export default function SnippetsScreen() {
         params.q = searchQuery;
       }
 
-      const { data } = await api.get('/v1/snippets', { params });
+      const { data } = await api.get('/snippets', { params });
       setSnippets(data.snippets || data || []);
     } catch (error) {
       logger.error('Load snippets error:', error);
@@ -109,9 +110,13 @@ export default function SnippetsScreen() {
   };
 
   const handleCopy = async (code: string) => {
-    // Note: In React Native, you'd typically use a clipboard library
-    // For now, we'll show an alert
-    Alert.alert('Copied', 'Code copied to clipboard!');
+    try {
+      await Clipboard.setStringAsync(code);
+      Alert.alert('Copied', 'Code copied to clipboard!');
+    } catch (error) {
+      logger.error('Copy snippet error:', error);
+      Alert.alert('Error', 'Failed to copy code to clipboard');
+    }
   };
 
   const handleDelete = (snippetId: string) => {
@@ -122,7 +127,7 @@ export default function SnippetsScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await api.delete(`/v1/snippets/${snippetId}`);
+            await api.delete(`/snippets/${snippetId}`);
             setSnippets(snippets.filter((s) => s.id !== snippetId));
           } catch (error) {
             logger.error('Delete snippet error:', error);

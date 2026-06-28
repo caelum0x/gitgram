@@ -15,6 +15,7 @@ import { userService } from '../../services/userService';
 import { postService } from '../../services/postService';
 import repositoryService from '../../services/repositoryService';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { logger } from '../../utils/logger';
 
 interface User {
   id: string;
@@ -92,7 +93,7 @@ export default function ExploreScreen() {
         }))
       );
     } catch (error) {
-      console.error('Load trending projects error:', error);
+      logger.error('Load trending projects error:', error);
       setTrendingProjects([]);
     } finally {
       setLoading(false);
@@ -105,7 +106,7 @@ export default function ExploreScreen() {
       const response = await userService.searchUsers('');
       setSuggestedUsers(response.users?.slice(0, 10) || []);
     } catch (error) {
-      console.error('Load suggested users error:', error);
+      logger.error('Load suggested users error:', error);
     } finally {
       setLoading(false);
     }
@@ -142,7 +143,7 @@ export default function ExploreScreen() {
         posts: postsResponse.posts || [],
       });
     } catch (error) {
-      console.error('Search error:', error);
+      logger.error('Search error:', error);
     } finally {
       setLoading(false);
     }

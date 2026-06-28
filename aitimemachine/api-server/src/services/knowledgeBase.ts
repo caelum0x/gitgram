@@ -192,6 +192,62 @@ export async function persistKnowledgeArtifact(options: {
   return { stored: true };
 }
 
+/**
+ * Retrieve the durable content + metadata of a previously-persisted export
+ * artifact, scoped to its owner. Returns the raw serialized payload so the
+ * export download endpoint can serve completed exports after a restart or from
+ * any horizontally-scaled instance (the artifact is the durable source of
+ * truth, replacing the volatile in-memory job.data buffer).
+ */
+export async function getArtifactByJobId(
+  jobId: string,
+  userId: string
+): Promise<
+  | {
+      id: string;
+      format: string;
+      storage: "db" | "s3";
+      content: string | null;
+      s3: { bucket: string; key: string; url?: string } | null;
+      stats: Record<string, unknown> | null;
+    }
+  | null
+> {
+  const [row] = await db
+    .select()
+    .from(schema.knowledgeBaseArtifacts)
+    .where(
+      and(
+        eq(schema.knowledgeBaseArtifacts.jobId, jobId),
+        eq(schema.knowledgeBaseArtifacts.userId, userId)
+      )
+    )
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  const rawContent = row.content as Record<string, unknown> | null;
+  let content: string | null = null;
+  if (rawContent && typeof rawContent.raw === "string") {
+    content = rawContent.raw;
+  } else if (rawContent) {
+    content = JSON.stringify(rawContent);
+  }
+
+  const s3 = row.s3 as { bucket: string; key: string; url?: string } | null;
+
+  return {
+    id: row.id,
+    format: row.format,
+    storage: (row.storage as "db" | "s3") || "db",
+    content,
+    s3: s3 || null,
+    stats: (row.stats as Record<string, unknown> | null) || null,
+  };
+}
+
 // ============================================================================
 // Query / List / Search
 // ============================================================================

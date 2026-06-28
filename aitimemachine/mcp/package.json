@@ -11,11 +11,15 @@
   },
   "mcpName": "com.gitgram/mcp-server",
   "scripts": {
-    "build": "tsc && chmod +x dist/index.js dist/client.js",
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc && chmod +x dist/index.js dist/client.js",
     "prepack": "npm run build",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
     "client": "node dist/client.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "dev:with-gitnexus": "GITNEXUS_URL=http://localhost:3001 AITM_GITNEXUS_ENABLED=1 node --loader ts-node/esm src/index.ts"
   },
@@ -62,8 +66,12 @@
     "gitnexus-shared": "file:../gitnexus-shared"
   },
   "devDependencies": {
+    "@babel/parser": "^7.25.0",
     "@types/express": "^5.0.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "@types/supertest": "^6.0.0",
+    "supertest": "^7.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.0"
   }
 }

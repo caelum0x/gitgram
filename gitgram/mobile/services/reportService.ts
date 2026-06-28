@@ -64,13 +64,13 @@ export const REPORT_REASON_DESCRIPTIONS: Record<ReportReason, string> = {
 export const reportService = {
   // Submit a new report
   createReport: async (data: CreateReportData): Promise<ReportResponse> => {
-    const response = await api.post('/v1/reports', data);
+    const response = await api.post('/reports', data);
     return response.data;
   },
 
   // Get user's submitted reports
   getMyReports: async (page: number = 1, limit: number = 20): Promise<MyReportsResponse> => {
-    const response = await api.get('/v1/reports/my-reports', {
+    const response = await api.get('/reports/my-reports', {
       params: { page, limit },
     });
     return response.data;
@@ -78,7 +78,7 @@ export const reportService = {
 
   // Get a specific report by ID
   getReport: async (reportId: string): Promise<Report> => {
-    const response = await api.get(`/v1/reports/my-reports/${reportId}`);
+    const response = await api.get(`/reports/my-reports/${reportId}`);
     return response.data;
   },
 
@@ -138,7 +138,7 @@ export const reportService = {
     description: string;
     email?: string;
   }) => {
-    const response = await api.post('/v1/feedback', {
+    const response = await api.post('/feedback', {
       category: 'report',
       subject: data.category,
       message: data.description,

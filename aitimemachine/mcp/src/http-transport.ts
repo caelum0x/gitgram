@@ -482,6 +482,21 @@ export async function startHttpTransport(
     });
   });
 
+  // Defensive agent-card alias: some A2A clients fetch the card from the
+  // JSON-RPC endpoint itself instead of the well-known path. Serving the card
+  // on GET /a2a keeps both discovery styles working; JSON-RPC traffic still
+  // arrives via POST /a2a below.
+  app.get('/a2a', async (req: Request, res: Response) => {
+    await withEndpointContext(req, res, 'agent-card', async () => {
+      logRequestEvent('start');
+      res.json(buildAgentCard());
+      logRequestEvent('complete', {
+        status: 'ok',
+        durationMs: getRequestDurationMs(),
+      });
+    });
+  });
+
   app.post('/a2a', createA2ABodyParser(), async (req: Request, res: Response) => {
     await withEndpointContext(req, res, 'a2a', async () => {
       logRequestEvent('start', { bodyMethod: req.body?.method || null });

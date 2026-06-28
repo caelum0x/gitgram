@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
-import { InMemoryTaskStore, type TaskStore } from "@a2a-js/sdk/server";
-import type { Task } from "@a2a-js/sdk";
+import { and, asc, eq, gt } from "drizzle-orm";
+import { db, schema } from "../db/index.js";
 
 // ============================================================
 // Schemas
@@ -65,8 +65,8 @@ export interface AgentInfo {
   readonly endpoint: string | undefined;
   readonly apiKey: string;
   readonly registeredAt: string;
-  status: AgentStatus;
-  lastSeen: string;
+  readonly status: AgentStatus;
+  readonly lastSeen: string;
 }
 
 export interface A2AMessage {
@@ -105,47 +105,168 @@ export interface PublicAgentInfo {
 }
 
 // ============================================================
-// AgentRegistry — typed in-memory registry
+// AgentRegistry — durable, Postgres-backed agent directory
 // ============================================================
 
 /**
- * Typed in-memory agent registry.
- *
- * The A2A spec defines a TaskStore (used here to back messaging) but no
- * notion of a long-lived agent directory, so we keep our own typed registry.
- * If a persistent `a2a_agents` table is later added to the DB schema this
- * class can be swapped for a DB-backed implementation behind the same
- * interface without touching the routes.
+ * Agent directory abstraction. The A2A spec defines a TaskStore for messaging
+ * but no long-lived agent directory, so we keep our own registry. The default
+ * implementation is Postgres-backed ({@link DbAgentRegistry}) so registered
+ * agents and their API keys survive restarts and are shared across instances.
  */
 export interface AgentRegistry {
-  has(agentId: string): boolean;
-  get(agentId: string): AgentInfo | undefined;
-  set(agentId: string, info: AgentInfo): void;
-  delete(agentId: string): boolean;
-  values(): IterableIterator<AgentInfo>;
+  has(agentId: string): Promise<boolean>;
+  get(agentId: string): Promise<AgentInfo | undefined>;
+  insert(info: AgentInfo): Promise<void>;
+  delete(agentId: string): Promise<boolean>;
+  list(): Promise<AgentInfo[]>;
+  findByApiKey(apiKey: string): Promise<AgentInfo | undefined>;
+  touch(agentId: string, lastSeen: string): Promise<void>;
 }
 
-class InMemoryAgentRegistry implements AgentRegistry {
-  private readonly agents: Map<string, AgentInfo> = new Map();
+type AgentRow = typeof schema.a2aAgents.$inferSelect;
 
-  has(agentId: string): boolean {
-    return this.agents.has(agentId);
+function rowToAgentInfo(row: AgentRow): AgentInfo {
+  return {
+    id: row.id,
+    name: row.name,
+    capabilities: row.capabilities ?? [],
+    endpoint: row.endpoint ?? undefined,
+    apiKey: row.apiKey,
+    registeredAt: row.registeredAt.toISOString(),
+    status: (row.status as AgentStatus) ?? "active",
+    lastSeen: row.lastSeen.toISOString(),
+  };
+}
+
+class DbAgentRegistry implements AgentRegistry {
+  async has(agentId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: schema.a2aAgents.id })
+      .from(schema.a2aAgents)
+      .where(eq(schema.a2aAgents.id, agentId))
+      .limit(1);
+    return row !== undefined;
   }
 
-  get(agentId: string): AgentInfo | undefined {
-    return this.agents.get(agentId);
+  async get(agentId: string): Promise<AgentInfo | undefined> {
+    const [row] = await db
+      .select()
+      .from(schema.a2aAgents)
+      .where(eq(schema.a2aAgents.id, agentId))
+      .limit(1);
+    return row ? rowToAgentInfo(row) : undefined;
   }
 
-  set(agentId: string, info: AgentInfo): void {
-    this.agents.set(agentId, info);
+  async insert(info: AgentInfo): Promise<void> {
+    await db.insert(schema.a2aAgents).values({
+      id: info.id,
+      name: info.name,
+      capabilities: [...info.capabilities],
+      endpoint: info.endpoint ?? null,
+      apiKey: info.apiKey,
+      status: info.status,
+      registeredAt: new Date(info.registeredAt),
+      lastSeen: new Date(info.lastSeen),
+    });
   }
 
-  delete(agentId: string): boolean {
-    return this.agents.delete(agentId);
+  async delete(agentId: string): Promise<boolean> {
+    const deleted = await db
+      .delete(schema.a2aAgents)
+      .where(eq(schema.a2aAgents.id, agentId))
+      .returning({ id: schema.a2aAgents.id });
+    return deleted.length > 0;
   }
 
-  values(): IterableIterator<AgentInfo> {
-    return this.agents.values();
+  async list(): Promise<AgentInfo[]> {
+    const rows = await db.select().from(schema.a2aAgents);
+    return rows.map(rowToAgentInfo);
+  }
+
+  async findByApiKey(apiKey: string): Promise<AgentInfo | undefined> {
+    const [row] = await db
+      .select()
+      .from(schema.a2aAgents)
+      .where(eq(schema.a2aAgents.apiKey, apiKey))
+      .limit(1);
+    return row ? rowToAgentInfo(row) : undefined;
+  }
+
+  async touch(agentId: string, lastSeen: string): Promise<void> {
+    await db
+      .update(schema.a2aAgents)
+      .set({ lastSeen: new Date(lastSeen), status: "active" })
+      .where(eq(schema.a2aAgents.id, agentId));
+  }
+}
+
+// ============================================================
+// MessageStore — durable, Postgres-backed message inbox
+// ============================================================
+
+/**
+ * Per-recipient durable message inbox. Replaces the previous in-memory
+ * TaskStore-backed queue so queued/broadcast messages survive restarts and are
+ * delivered consistently across horizontally-scaled instances.
+ */
+export interface MessageStore {
+  append(message: A2AMessage): Promise<void>;
+  loadForRecipient(
+    agentId: string,
+    sinceIso: string | undefined,
+    limit: number
+  ): Promise<A2AMessage[]>;
+}
+
+type MessageRow = typeof schema.a2aMessages.$inferSelect;
+
+function rowToMessage(row: MessageRow): A2AMessage {
+  return {
+    messageId: row.id,
+    fromAgentId: row.fromAgentId,
+    toAgentId: row.toAgentId,
+    messageType: row.messageType as MessageType,
+    payload: (row.payload as Record<string, unknown>) ?? {},
+    sessionId: row.sessionId ?? undefined,
+    timestamp: row.createdAt.toISOString(),
+  };
+}
+
+class DbMessageStore implements MessageStore {
+  async append(message: A2AMessage): Promise<void> {
+    await db.insert(schema.a2aMessages).values({
+      id: message.messageId,
+      fromAgentId: message.fromAgentId,
+      toAgentId: message.toAgentId,
+      messageType: message.messageType,
+      payload: message.payload as Record<string, unknown>,
+      sessionId: message.sessionId ?? null,
+      createdAt: new Date(message.timestamp),
+    });
+  }
+
+  async loadForRecipient(
+    agentId: string,
+    sinceIso: string | undefined,
+    limit: number
+  ): Promise<A2AMessage[]> {
+    const conditions = [eq(schema.a2aMessages.toAgentId, agentId)];
+    if (sinceIso !== undefined) {
+      const since = new Date(sinceIso);
+      if (!Number.isNaN(since.getTime())) {
+        conditions.push(gt(schema.a2aMessages.createdAt, since));
+      }
+    }
+
+    const rows = await db
+      .select()
+      .from(schema.a2aMessages)
+      .where(and(...conditions))
+      .orderBy(asc(schema.a2aMessages.createdAt))
+      .limit(limit);
+
+    return rows.map(rowToMessage);
   }
 }
 
@@ -156,25 +277,22 @@ class InMemoryAgentRegistry implements AgentRegistry {
 /**
  * Agent-to-Agent communication service.
  *
- * The agent directory lives in a typed {@link AgentRegistry}; per-recipient
- * message delivery is backed by the @a2a-js/sdk {@link TaskStore}. Each
- * delivered A2A message is stored as an A2A `Task` whose `contextId` is the
- * recipient agent id, so the SDK's durable store owns the queue semantics.
+ * Both the agent directory and the per-recipient message inbox are backed by
+ * Postgres, so registered agents, their API keys, and all queued/broadcast
+ * messages are durable and shared across instances.
  *
  * Agents authenticate via Bearer API keys returned at registration time.
  */
 export class A2AService {
   private readonly registry: AgentRegistry;
-  private readonly taskStore: TaskStore;
-  /** Recipient agentId -> ordered list of stored task ids (delivery order). */
-  private readonly inbox: Map<string, string[]> = new Map();
+  private readonly messages: MessageStore;
 
   constructor(
-    registry: AgentRegistry = new InMemoryAgentRegistry(),
-    taskStore: TaskStore = new InMemoryTaskStore()
+    registry: AgentRegistry = new DbAgentRegistry(),
+    messages: MessageStore = new DbMessageStore()
   ) {
     this.registry = registry;
-    this.taskStore = taskStore;
+    this.messages = messages;
   }
 
   // ----------------------------------------------------------
@@ -185,8 +303,10 @@ export class A2AService {
    * Register a new agent.
    * Returns the agent's stable ID and a generated API key.
    */
-  registerAgent(input: z.infer<typeof registerAgentSchema>): RegisterAgentResult {
-    if (this.registry.has(input.agentId)) {
+  async registerAgent(
+    input: z.infer<typeof registerAgentSchema>
+  ): Promise<RegisterAgentResult> {
+    if (await this.registry.has(input.agentId)) {
       throw new Error(`Agent '${input.agentId}' is already registered`);
     }
 
@@ -204,30 +324,24 @@ export class A2AService {
       lastSeen: now,
     };
 
-    this.registry.set(input.agentId, info);
-    this.inbox.set(input.agentId, []);
+    await this.registry.insert(info);
 
     return { agentId: input.agentId, apiKey };
   }
 
   /**
-   * Unregister an agent and discard its message queue.
-   * Returns true if the agent existed and was removed.
+   * Unregister an agent. Returns true if the agent existed and was removed.
    */
-  unregisterAgent(agentId: string): boolean {
-    if (!this.registry.has(agentId)) {
-      return false;
-    }
-    this.registry.delete(agentId);
-    this.inbox.delete(agentId);
-    return true;
+  async unregisterAgent(agentId: string): Promise<boolean> {
+    return this.registry.delete(agentId);
   }
 
   /**
    * Return public metadata for all registered agents.
    */
-  getAgents(): PublicAgentInfo[] {
-    return Array.from(this.registry.values()).map((a) => ({
+  async getAgents(): Promise<PublicAgentInfo[]> {
+    const agents = await this.registry.list();
+    return agents.map((a) => ({
       id: a.id,
       name: a.name,
       capabilities: a.capabilities,
@@ -240,18 +354,17 @@ export class A2AService {
    * Validate an API key against the registry.
    * Returns the owning agentId or null if not found.
    */
-  resolveApiKey(apiKey: string): string | null {
-    for (const agent of this.registry.values()) {
-      if (agent.apiKey === apiKey) {
-        this.touchAgent(agent.id);
-        return agent.id;
-      }
+  async resolveApiKey(apiKey: string): Promise<string | null> {
+    const agent = await this.registry.findByApiKey(apiKey);
+    if (!agent) {
+      return null;
     }
-    return null;
+    await this.touchAgent(agent.id);
+    return agent.id;
   }
 
   // ----------------------------------------------------------
-  // Messaging (backed by the SDK TaskStore)
+  // Messaging
   // ----------------------------------------------------------
 
   /**
@@ -261,12 +374,12 @@ export class A2AService {
   async sendMessage(
     input: z.infer<typeof sendMessageSchema>
   ): Promise<SendMessageResult> {
-    const sender = this.registry.get(input.fromAgentId);
+    const sender = await this.registry.get(input.fromAgentId);
     if (!sender) {
       throw new Error(`Sender agent '${input.fromAgentId}' is not registered`);
     }
 
-    const recipient = this.registry.get(input.toAgentId);
+    const recipient = await this.registry.get(input.toAgentId);
     if (!recipient) {
       throw new Error(`Recipient agent '${input.toAgentId}' is not registered`);
     }
@@ -281,8 +394,8 @@ export class A2AService {
       timestamp: new Date().toISOString(),
     };
 
-    await this.persistMessage(message);
-    this.touchAgent(input.fromAgentId);
+    await this.messages.append(message);
+    await this.touchAgent(input.fromAgentId);
 
     const status: SendMessageResult["status"] =
       recipient.status === "active" ? "delivered" : "queued";
@@ -303,28 +416,12 @@ export class A2AService {
     since: string | undefined,
     limit: number
   ): Promise<A2AMessage[]> {
-    if (!this.registry.has(agentId)) {
+    if (!(await this.registry.has(agentId))) {
       throw new Error(`Agent '${agentId}' is not registered`);
     }
 
-    this.touchAgent(agentId);
-
-    const taskIds = this.inbox.get(agentId) ?? [];
-    const sinceMs = since !== undefined ? Date.parse(since) : 0;
-
-    const messages: A2AMessage[] = [];
-    for (const taskId of taskIds) {
-      const task = await this.taskStore.load(taskId);
-      if (task === undefined) {
-        continue;
-      }
-      const message = this.taskToMessage(task);
-      if (message !== null && Date.parse(message.timestamp) > sinceMs) {
-        messages.push(message);
-      }
-    }
-
-    return messages.slice(-limit);
+    await this.touchAgent(agentId);
+    return this.messages.loadForRecipient(agentId, since, limit);
   }
 
   /**
@@ -333,7 +430,7 @@ export class A2AService {
   async broadcastToCapability(
     input: z.infer<typeof broadcastSchema>
   ): Promise<BroadcastResult> {
-    const recipients = this.findAgentsByCapability(input.capability);
+    const recipients = await this.findAgentsByCapability(input.capability);
     const broadcastId = uuidv4();
     const now = new Date().toISOString();
 
@@ -347,7 +444,7 @@ export class A2AService {
         sessionId: undefined,
         timestamp: now,
       };
-      await this.persistMessage(message);
+      await this.messages.append(message);
     }
 
     return {
@@ -365,9 +462,10 @@ export class A2AService {
    * Return all agents that declare a given capability.
    * Matching is case-insensitive.
    */
-  findAgentsByCapability(capability: string): AgentInfo[] {
+  async findAgentsByCapability(capability: string): Promise<AgentInfo[]> {
     const needle = capability.toLowerCase();
-    return Array.from(this.registry.values()).filter((a) =>
+    const agents = await this.registry.list();
+    return agents.filter((a) =>
       a.capabilities.some((c) => c.toLowerCase() === needle)
     );
   }
@@ -376,98 +474,8 @@ export class A2AService {
   // Private helpers
   // ----------------------------------------------------------
 
-  /**
-   * Persist an A2A message as an A2A Task in the SDK TaskStore and record
-   * it in the recipient's ordered inbox.
-   */
-  private async persistMessage(message: A2AMessage): Promise<void> {
-    const task: Task = {
-      kind: "task",
-      id: message.messageId,
-      contextId: message.toAgentId,
-      status: {
-        state: "submitted",
-        timestamp: message.timestamp,
-      },
-      history: [
-        {
-          kind: "message",
-          role: "user",
-          messageId: message.messageId,
-          contextId: message.toAgentId,
-          parts: [
-            {
-              kind: "data",
-              data: this.toEnvelope(message),
-            },
-          ],
-        },
-      ],
-      metadata: this.toEnvelope(message),
-    };
-
-    await this.taskStore.save(task);
-
-    const queue = this.inbox.get(message.toAgentId) ?? [];
-    queue.push(task.id);
-    this.inbox.set(message.toAgentId, queue);
-  }
-
-  /**
-   * Build a plain JSON envelope for the message, used both as Task metadata
-   * and as the message Part data so it round-trips through the TaskStore.
-   */
-  private toEnvelope(message: A2AMessage): Record<string, unknown> {
-    return {
-      messageId: message.messageId,
-      fromAgentId: message.fromAgentId,
-      toAgentId: message.toAgentId,
-      messageType: message.messageType,
-      payload: message.payload,
-      sessionId: message.sessionId ?? null,
-      timestamp: message.timestamp,
-    };
-  }
-
-  /**
-   * Reconstruct an A2AMessage from a stored Task envelope.
-   * Returns null if the task does not carry a valid envelope.
-   */
-  private taskToMessage(task: Task): A2AMessage | null {
-    const envelope = task.metadata;
-    if (envelope === undefined || typeof envelope !== "object") {
-      return null;
-    }
-    const e = envelope as Record<string, unknown>;
-    if (
-      typeof e.messageId !== "string" ||
-      typeof e.fromAgentId !== "string" ||
-      typeof e.toAgentId !== "string" ||
-      typeof e.messageType !== "string" ||
-      typeof e.timestamp !== "string" ||
-      typeof e.payload !== "object" ||
-      e.payload === null
-    ) {
-      return null;
-    }
-
-    return {
-      messageId: e.messageId,
-      fromAgentId: e.fromAgentId,
-      toAgentId: e.toAgentId,
-      messageType: e.messageType as MessageType,
-      payload: e.payload as Record<string, unknown>,
-      sessionId: typeof e.sessionId === "string" ? e.sessionId : undefined,
-      timestamp: e.timestamp,
-    };
-  }
-
-  private touchAgent(agentId: string): void {
-    const agent = this.registry.get(agentId);
-    if (agent !== undefined) {
-      agent.lastSeen = new Date().toISOString();
-      agent.status = "active";
-    }
+  private async touchAgent(agentId: string): Promise<void> {
+    await this.registry.touch(agentId, new Date().toISOString());
   }
 }
 

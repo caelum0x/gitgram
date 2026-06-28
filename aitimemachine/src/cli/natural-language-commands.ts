@@ -10,81 +10,60 @@
  *   aitm when <query...>     Find when something happened (natural language)
  *   aitm what-changed        Show what changed between two checkpoints
  *   aitm back-to <query...>  Restore to a state using natural language
- *                            (alias: back)
  *   aitm fix                 Restore to the last known good state
  *   aitm diagnose            Analyze checkpoint history for the suspected break
  *                            point and last-known-good state (alias: bisect-nl)
  *
- * These commands operate on the global checkpoint store written by the
- * `checkpoint` command (~/.aitimemachine/db.sqlite via SqliteRepo + CasStore),
- * matching the storage model the natural-language parser was built against.
+ * These commands operate on the SAME project-local checkpoint store written by
+ * `aitm checkpoint`, `aitm init`, watch/daemon auto-checkpoints, and the shipped
+ * MCP server — all of which go through TimeMachineEngine (`.aitimemachine/`).
+ * The engine is adapted to the parser's read interface via
+ * EngineCheckpointReader so a single store backs every checkpoint command.
  */
 
 import { Command } from 'commander';
 import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
-import * as readline from 'readline';
-import { C, timeAgo } from './cli-helpers.js';
-import type { SqliteRepo } from '../store/sqlite_repo.js';
-import type { CasStore } from '../core/cas.js';
-import type { Project, CheckpointRow } from '../store/repo.js';
+import { C, timeAgo, confirm } from './cli-helpers.js';
+import type { TimeMachineEngine } from '../core/engine.js';
+import type { CheckpointReader } from './natural-language.js';
+import type { CheckpointRow } from '../store/repo.js';
+import { EngineCheckpointReader } from './engine-checkpoint-reader.js';
 
 // ─── Store resolution ─────────────────────────────────────────────────────────
-// The natural-language parser reads from the SQLite checkpoint store. This
-// mirrors the path convention used by the checkpoint command.
-
-const DATA_DIR = path.join(os.homedir(), '.aitimemachine');
-const DB_PATH = path.join(DATA_DIR, 'db.sqlite');
-const BLOBS_DIR = path.join(DATA_DIR, 'blobs');
+// Natural-language commands read from the project-local engine store. A project
+// is "initialized" once it has at least one checkpoint (created by
+// `aitm checkpoint`, `aitm init`, watch mode, or the MCP server).
 
 interface ResolvedStore {
-  repo: SqliteRepo;
-  project: Project;
+  engine: TimeMachineEngine;
+  reader: CheckpointReader;
+  projectId: string;
+  projectRoot: string;
 }
 
-/** Open the content-addressable blob store used alongside the SQLite repo. */
-async function openCas(): Promise<CasStore> {
-  const { CasStore } = await import('../core/cas.js');
-  return new CasStore(BLOBS_DIR);
-}
-
-/** Prompt the user for a yes/no confirmation on stdin. */
-async function confirmPrompt(message: string): Promise<boolean> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await new Promise<string>((resolve) => {
-      rl.question(`${message} [y/N] `, (a) => resolve(a.trim().toLowerCase()));
-    });
-    return answer === 'y' || answer === 'yes';
-  } finally {
-    rl.close();
-  }
+/** Stable per-project identifier derived from the project root path. */
+function projectIdFor(root: string): string {
+  return path.basename(root) || root;
 }
 
 /**
- * Open the global checkpoint store and resolve the project rooted at `cwd`.
- * Returns null (and prints an actionable message) when the store is missing
- * or the current directory is not an initialized project.
+ * Open the project-local engine store for the current directory. Returns null
+ * (and prints an actionable message) when the project has no checkpoints yet.
  */
 async function resolveStore(cwd: string): Promise<ResolvedStore | null> {
-  if (!fs.existsSync(DB_PATH)) {
-    console.error(`${C.red}[!]${C.reset} No checkpoint store found at ${DB_PATH}`);
+  const { TimeMachineEngine } = await import('../core/engine.js');
+  const engine = new TimeMachineEngine(cwd);
+
+  if (engine.listTimePoints().length === 0) {
+    console.error(`${C.red}[!]${C.reset} No checkpoints found for ${cwd}`);
     console.error(`${C.dim}    Create one with: aitm checkpoint "Initial state"${C.reset}`);
+    console.error(`${C.dim}    Or initialize the project with: aitm init${C.reset}`);
     return null;
   }
 
-  const { SqliteRepo } = await import('../store/sqlite_repo.js');
-  const repo = new SqliteRepo(DB_PATH);
-
-  const project = repo.listProjects().find((p) => p.rootPath === cwd);
-  if (!project) {
-    console.error(`${C.red}[!]${C.reset} No initialized project for ${cwd}`);
-    console.error(`${C.dim}    Initialize with: aitm init${C.reset}`);
-    return null;
-  }
-
-  return { repo, project };
+  const projectId = projectIdFor(cwd);
+  const reader = new EngineCheckpointReader(engine, projectId);
+  return { engine, reader, projectId, projectRoot: cwd };
 }
 
 // ─── ask ──────────────────────────────────────────────────────────────────────
@@ -116,7 +95,7 @@ async function runAsk(queryParts: string[], options: AskOptions): Promise<void> 
   const { parseAdvancedQuery, findCheckpointForAdvancedQuery } = await import('./natural-language.js');
   const parsed = parseAdvancedQuery(query);
   const limit = parseLimit(options.limit, 10);
-  const matches = findCheckpointForAdvancedQuery(resolved.repo, resolved.project.projectId, parsed, limit);
+  const matches = findCheckpointForAdvancedQuery(resolved.reader, resolved.projectId, parsed, limit);
 
   if (options.json) {
     console.log(
@@ -179,7 +158,7 @@ async function runDiagnose(options: DiagnoseOptions): Promise<void> {
 
   const { analyzeErrorHistory } = await import('./natural-language.js');
   const lookback = parseLimit(options.lookback, 120);
-  const result = analyzeErrorHistory(resolved.repo, resolved.project.projectId, lookback);
+  const result = analyzeErrorHistory(resolved.reader, resolved.projectId, lookback);
 
   if (options.json) {
     console.log(
@@ -281,7 +260,7 @@ async function runWhen(queryParts: string[], options: WhenOptions): Promise<void
   const { parseTimeQuery, findCheckpointsForQuery } = await import('./natural-language.js');
   const parsed = parseTimeQuery(query);
   const limit = parseLimit(options.limit, 5);
-  const results = findCheckpointsForQuery(resolved.repo, resolved.project.projectId, parsed, limit);
+  const results = findCheckpointsForQuery(resolved.reader, resolved.projectId, parsed, limit);
 
   if (options.json) {
     console.log(JSON.stringify({ query, type: parsed.type, results }, null, 2));
@@ -311,35 +290,43 @@ interface WhatChangedOptions {
   json?: boolean;
 }
 
-interface ManifestShape {
-  files: { path: string; hash: string; size: number }[];
-}
-
-async function resolveFromCheckpoint(
+/**
+ * Resolve the (from, to) checkpoint pair to diff. Defaults to the two most
+ * recent checkpoints. Supports --from <id|last-green>, --to <id>, --since <time>.
+ */
+async function resolveDiffPair(
   resolved: ResolvedStore,
   options: WhatChangedOptions,
-): Promise<{ from?: CheckpointRow | null; to?: CheckpointRow | null }> {
-  const { repo, project } = resolved;
+): Promise<{ from: CheckpointRow | null; to: CheckpointRow | null }> {
+  const { reader, projectId } = resolved;
+  const recent = reader.listCheckpointsNewestFirst(projectId, 2);
+
+  let from: CheckpointRow | null = null;
+  let to: CheckpointRow | null = null;
 
   if (options.from === 'last-green') {
     const { findLastGreenCheckpoint } = await import('./natural-language.js');
-    const green = findLastGreenCheckpoint(repo, project.projectId);
-    if (!green) return { from: null };
-    return { from: repo.getCheckpoint(project.projectId, green.checkpointId) };
-  }
-  if (options.from) {
-    return { from: repo.getCheckpoint(project.projectId, options.from) };
-  }
-  if (options.since) {
+    const green = findLastGreenCheckpoint(reader, projectId);
+    from = green ? reader.getCheckpoint(projectId, green.checkpointId) : null;
+  } else if (options.from) {
+    from = reader.getCheckpoint(projectId, options.from);
+  } else if (options.since) {
     const { parseTimeQuery, findCheckpointsForQuery } = await import('./natural-language.js');
-    const results = findCheckpointsForQuery(repo, project.projectId, parseTimeQuery(options.since), 1);
-    if (results.length === 0) return { from: null };
-    return { from: repo.getCheckpoint(project.projectId, results[0].checkpointId) };
+    const results = findCheckpointsForQuery(reader, projectId, parseTimeQuery(options.since), 1);
+    from = results.length > 0 ? reader.getCheckpoint(projectId, results[0].checkpointId) : null;
+  } else {
+    // Default: compare the two most recent checkpoints (older -> newer).
+    from = recent[1] ?? null;
+    to = recent[0] ?? null;
   }
-  // Default: compare the two most recent checkpoints.
-  const recent = repo.listCheckpointsNewestFirst(project.projectId, 2);
-  if (recent.length < 2) return { from: null };
-  return { from: recent[1], to: recent[0] };
+
+  if (!to) {
+    to = options.to
+      ? reader.getCheckpoint(projectId, options.to)
+      : recent[0] ?? null;
+  }
+
+  return { from, to };
 }
 
 async function runWhatChanged(options: WhatChangedOptions): Promise<void> {
@@ -348,50 +335,43 @@ async function runWhatChanged(options: WhatChangedOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const { repo, project } = resolved;
 
-  const { from: fromCheckpoint, to: defaultTo } = await resolveFromCheckpoint(resolved, options);
-  if (!fromCheckpoint) {
+  const { from, to } = await resolveDiffPair(resolved, options);
+  if (!from) {
     console.error(`${C.red}[!]${C.reset} Could not resolve a 'from' checkpoint (need at least 2, or pass --from).`);
     process.exitCode = 1;
     return;
   }
-
-  let toCheckpoint = defaultTo ?? null;
-  if (!toCheckpoint) {
-    toCheckpoint = options.to
-      ? repo.getCheckpoint(project.projectId, options.to)
-      : repo.listCheckpointsNewestFirst(project.projectId, 1)[0] ?? null;
-  }
-  if (!toCheckpoint) {
+  if (!to) {
     console.error(`${C.red}[!]${C.reset} Could not resolve a 'to' checkpoint.`);
     process.exitCode = 1;
     return;
   }
 
-  const cas = await openCas();
-  const { analyzeChanges, explainChanges } = await import('./natural-language.js');
-
-  let fromManifest: ManifestShape;
-  let toManifest: ManifestShape;
+  let diff: { added: string[]; modified: string[]; deleted: string[] };
   try {
-    fromManifest = JSON.parse(cas.getBytes(fromCheckpoint.manifestBlobHash).toString('utf8')) as ManifestShape;
-    toManifest = JSON.parse(cas.getBytes(toCheckpoint.manifestBlobHash).toString('utf8')) as ManifestShape;
+    // Compare against current working tree when `to` is the newest checkpoint
+    // and no explicit `--to` was given would require extra state; instead diff
+    // the two resolved checkpoints deterministically via the engine.
+    diff = resolved.engine.getDiff(from.checkpointId, to.checkpointId);
   } catch (err) {
-    console.error(`${C.red}[!]${C.reset} Failed to load checkpoint manifests: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`${C.red}[!]${C.reset} Failed to diff checkpoints: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
     return;
   }
-
-  const analysis = analyzeChanges(fromManifest, toManifest);
 
   if (options.json) {
     console.log(
       JSON.stringify(
         {
-          from: { checkpointId: fromCheckpoint.checkpointId, name: fromCheckpoint.name, createdAt: fromCheckpoint.createdAt },
-          to: { checkpointId: toCheckpoint.checkpointId, name: toCheckpoint.name, createdAt: toCheckpoint.createdAt },
-          analysis,
+          from: { checkpointId: from.checkpointId, name: from.name, createdAt: from.createdAt },
+          to: { checkpointId: to.checkpointId, name: to.name, createdAt: to.createdAt },
+          analysis: {
+            filesAdded: diff.added,
+            filesRemoved: diff.deleted,
+            filesModified: diff.modified,
+            summary: summarizeDiff(diff),
+          },
         },
         null,
         2,
@@ -401,9 +381,31 @@ async function runWhatChanged(options: WhatChangedOptions): Promise<void> {
   }
 
   console.log(`\n${C.bright}Comparing checkpoints${C.reset}\n`);
-  console.log(`  From: ${fromCheckpoint.name} ${C.dim}(${timeAgo(new Date(fromCheckpoint.createdAt))})${C.reset}`);
-  console.log(`  To:   ${toCheckpoint.name} ${C.dim}(${timeAgo(new Date(toCheckpoint.createdAt))})${C.reset}\n`);
-  console.log(explainChanges(analysis));
+  console.log(`  From: ${from.name} ${C.dim}(${timeAgo(new Date(from.createdAt))})${C.reset}`);
+  console.log(`  To:   ${to.name} ${C.dim}(${timeAgo(new Date(to.createdAt))})${C.reset}\n`);
+  console.log(`${C.bright}Change Summary${C.reset}`);
+  console.log(`  ${summarizeDiff(diff)}\n`);
+  renderFileList(`${C.green}Added`, diff.added);
+  renderFileList(`${C.yellow}Modified`, diff.modified);
+  renderFileList(`${C.red}Removed`, diff.deleted);
+}
+
+function summarizeDiff(diff: { added: string[]; modified: string[]; deleted: string[] }): string {
+  const parts: string[] = [];
+  if (diff.added.length > 0) parts.push(`${diff.added.length} added`);
+  if (diff.modified.length > 0) parts.push(`${diff.modified.length} modified`);
+  if (diff.deleted.length > 0) parts.push(`${diff.deleted.length} removed`);
+  return parts.length > 0 ? parts.join(', ') : 'No changes detected';
+}
+
+function renderFileList(label: string, files: string[]): void {
+  if (files.length === 0) return;
+  console.log(`${label} (${files.length}):${C.reset}`);
+  for (const f of files.slice(0, 10)) {
+    console.log(`  ${f}`);
+  }
+  if (files.length > 10) console.log(`  ${C.dim}... and ${files.length - 10} more${C.reset}`);
+  console.log();
 }
 
 // ─── back-to / fix (restore) ───────────────────────────────────────────────────
@@ -411,89 +413,49 @@ async function runWhatChanged(options: WhatChangedOptions): Promise<void> {
 interface BackToOptions {
   mode: string;
   backup?: boolean;
-  context?: boolean;
   yes?: boolean;
-}
-
-/**
- * Restore the workspace to a resolved checkpoint atomically, optionally writing
- * a context packet for AI continuation. Shared by `back-to` and `fix`.
- */
-async function performRestore(
-  resolved: ResolvedStore,
-  target: CheckpointRow,
-  opts: { mode: 'safe' | 'hard'; backup: boolean; context: boolean },
-): Promise<void> {
-  const { repo, project } = resolved;
-  const cas = await openCas();
-  const { parseManifestJson } = await import('../core/manifest.js');
-  const { restoreWorkspaceAtomic } = await import('../core/restore.js');
-  const { ProjectLock } = await import('../core/lock.js');
-
-  const lock = new ProjectLock(project.rootPath);
-  lock.acquire();
-  try {
-    const manifest = parseManifestJson(cas.getBytes(target.manifestBlobHash).toString('utf8'));
-    const result = restoreWorkspaceAtomic({
-      projectRoot: project.rootPath,
-      cas,
-      manifest,
-      mode: opts.mode,
-      backupCurrent: opts.backup,
-    });
-
-    console.log(`\n${C.green}[OK]${C.reset} Restored ${result.filesWritten} file(s)`);
-    if (result.backupPath) console.log(`  ${C.dim}Backup: ${result.backupPath}${C.reset}`);
-
-    if (opts.context) {
-      const { buildContextPacket } = await import('../context/context-packet.js');
-      const contextPath = path.join(project.rootPath, '.aitm', 'context.md');
-      fs.mkdirSync(path.dirname(contextPath), { recursive: true });
-      const contextContent = await buildContextPacket({
-        repo,
-        cas,
-        projectId: project.projectId,
-        checkpointId: target.checkpointId,
-      });
-      fs.writeFileSync(contextPath, contextContent, 'utf8');
-      console.log(`  ${C.dim}Context: ${contextPath}${C.reset}`);
-    }
-  } finally {
-    lock.release();
-  }
 }
 
 async function resolveBackToTarget(
   resolved: ResolvedStore,
   query: string,
 ): Promise<CheckpointRow | null> {
-  const { repo, project } = resolved;
+  const { reader, projectId } = resolved;
   const { parseBackToQuery, findLastGreenCheckpoint, parseTimeQuery, findCheckpointsForQuery } =
     await import('./natural-language.js');
   const parsed = parseBackToQuery(query);
 
   switch (parsed.type) {
     case 'last-green': {
-      const green = findLastGreenCheckpoint(repo, project.projectId);
-      return green ? repo.getCheckpoint(project.projectId, green.checkpointId) : null;
+      const green = findLastGreenCheckpoint(reader, projectId);
+      return green ? reader.getCheckpoint(projectId, green.checkpointId) : null;
     }
     case 'time-ago': {
       const timeQuery = parseTimeQuery(`${parsed.timeAmount} ${parsed.timeUnit}s ago`);
-      const results = findCheckpointsForQuery(repo, project.projectId, timeQuery, 1);
-      return results.length > 0 ? repo.getCheckpoint(project.projectId, results[0].checkpointId) : null;
+      const results = findCheckpointsForQuery(reader, projectId, timeQuery, 1);
+      return results.length > 0 ? reader.getCheckpoint(projectId, results[0].checkpointId) : null;
     }
     case 'checkpoint-id':
-      return parsed.value ? repo.getCheckpoint(project.projectId, parsed.value) : null;
+      return parsed.value ? reader.getCheckpoint(projectId, parsed.value) : null;
     case 'keyword':
     default: {
-      const keywordResults = findCheckpointsForQuery(repo, project.projectId, parseTimeQuery(parsed.value || query), 5);
+      const keywordResults = findCheckpointsForQuery(reader, projectId, parseTimeQuery(parsed.value || query), 5);
       if (keywordResults.length > 0) {
-        return repo.getCheckpoint(project.projectId, keywordResults[0].checkpointId);
+        return reader.getCheckpoint(projectId, keywordResults[0].checkpointId);
       }
-      const search = repo.searchCheckpoints(project.projectId, parsed.value || query);
+      const search = reader.searchCheckpoints(projectId, parsed.value || query);
       return search.length > 0 ? search[0] : null;
     }
   }
+}
+
+/** Restore the workspace to a resolved checkpoint via the engine. */
+function performRestore(resolved: ResolvedStore, target: CheckpointRow): void {
+  const result = resolved.engine.restore(target.checkpointId);
+  console.log(`\n${C.green}[OK]${C.reset} Restored ${result.filesRestored} file(s)`);
+  if (result.filesDeleted > 0) console.log(`  ${C.dim}Deleted ${result.filesDeleted} file(s)${C.reset}`);
+  if (result.messagesRemoved > 0) console.log(`  ${C.dim}Removed ${result.messagesRemoved} message(s)${C.reset}`);
+  console.log(`  ${C.dim}A backup checkpoint of the prior state was created automatically.${C.reset}`);
 }
 
 async function runBackTo(queryParts: string[], options: BackToOptions): Promise<void> {
@@ -517,27 +479,26 @@ async function runBackTo(queryParts: string[], options: BackToOptions): Promise<
     return;
   }
 
-  const mode = options.mode === 'hard' ? 'hard' : 'safe';
   console.log(`\n${C.bright}Going back to:${C.reset}`);
   console.log(`  ${target.name}`);
-  console.log(`  ${C.dim}${new Date(target.createdAt).toLocaleString()} | mode: ${mode}${C.reset}`);
+  console.log(`  ${C.dim}${new Date(target.createdAt).toLocaleString()}${C.reset}`);
 
-  if (!options.yes && !(await confirmPrompt('\nProceed?'))) {
+  if (!options.yes && !(await confirm('\nProceed?'))) {
     console.log('Aborted.');
     return;
   }
 
-  await performRestore(resolved, target, {
-    mode,
-    backup: options.backup !== false,
-    context: options.context !== false,
-  });
+  try {
+    performRestore(resolved, target);
+  } catch (err) {
+    console.error(`${C.red}[!]${C.reset} Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  }
 }
 
 interface FixOptions {
   test?: string;
   yes?: boolean;
-  context?: boolean;
 }
 
 async function runFix(options: FixOptions): Promise<void> {
@@ -546,12 +507,12 @@ async function runFix(options: FixOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const { repo, project } = resolved;
+  const { reader, projectId } = resolved;
 
   console.log(`\n${C.bright}Auto-fix:${C.reset} finding last known good state...\n`);
 
   const { findLastGreenCheckpoint } = await import('./natural-language.js');
-  const green = findLastGreenCheckpoint(repo, project.projectId);
+  const green = findLastGreenCheckpoint(reader, projectId);
   if (!green) {
     console.error(`${C.red}[!]${C.reset} No 'green' checkpoint found.`);
     console.error(`${C.dim}    Create one named like "Tests green" or "Build passed".${C.reset}`);
@@ -559,7 +520,7 @@ async function runFix(options: FixOptions): Promise<void> {
     return;
   }
 
-  const target = repo.getCheckpoint(project.projectId, green.checkpointId);
+  const target = reader.getCheckpoint(projectId, green.checkpointId);
   if (!target) {
     console.error(`${C.red}[!]${C.reset} Could not load checkpoint ${green.checkpointId}.`);
     process.exitCode = 1;
@@ -569,22 +530,24 @@ async function runFix(options: FixOptions): Promise<void> {
   console.log(`${C.green}Last good state:${C.reset} ${target.name}`);
   console.log(`  ${C.dim}${new Date(target.createdAt).toLocaleString()}${C.reset}`);
 
-  if (!options.yes && !(await confirmPrompt('\nRestore to this state?'))) {
+  if (!options.yes && !(await confirm('\nRestore to this state?'))) {
     console.log('Aborted.');
     return;
   }
 
-  await performRestore(resolved, target, {
-    mode: 'safe',
-    backup: true,
-    context: options.context === true,
-  });
+  try {
+    performRestore(resolved, target);
+  } catch (err) {
+    console.error(`${C.red}[!]${C.reset} Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
 
   if (options.test) {
     console.log(`\n${C.bright}Verifying${C.reset} with: ${options.test}`);
     const { execSync } = await import('child_process');
     try {
-      execSync(options.test, { cwd: project.rootPath, stdio: 'inherit' });
+      execSync(options.test, { cwd: resolved.projectRoot, stdio: 'inherit' });
       console.log(`\n${C.green}[OK]${C.reset} Verification passed.`);
     } catch {
       console.log(`\n${C.yellow}[!]${C.reset} Verification failed - you may need to go back further.`);
@@ -632,7 +595,6 @@ export function registerNaturalLanguageCommands(program: Command): void {
     .argument('<query...>', 'Natural language query or checkpoint ID')
     .option('-m, --mode <mode>', 'Restore mode (safe|hard)', 'safe')
     .option('--no-backup', 'Skip backup of current state')
-    .option('--no-context', 'Skip generating the context file')
     .option('-y, --yes', 'Skip confirmation prompt')
     .action(runBackTo);
 
@@ -640,7 +602,6 @@ export function registerNaturalLanguageCommands(program: Command): void {
     .command('fix')
     .description('Auto-fix: restore to the last known good state (tests passed / build green)')
     .option('-t, --test <command>', "Test command to verify after restore (e.g. 'npm test')")
-    .option('--context', 'Generate a context file for AI continuation')
     .option('-y, --yes', 'Skip confirmation prompt')
     .action(runFix);
 

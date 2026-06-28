@@ -87,6 +87,10 @@ import polarWebhookRoutes from './routes/polarWebhooks';
 import repositoryInsightsRoutes from './routes/repositoryInsights';
 import recommendationRoutes from './routes/recommendations';
 import activityRoutes from './routes/activity';
+import storeRoutes from './routes/store';
+import momentsRoutes from './routes/moments';
+import feedbackRoutes from './routes/feedback';
+import locationRoutes from './routes/location';
 import { trpcMiddleware } from './trpc/adapter';
 import { initializeJobs } from './jobs/scheduler';
 import logger from './utils/logger';
@@ -341,6 +345,18 @@ app.use('/api/v1/post-analytics', postAnalyticsRoutes);
 app.use('/api/v1/recommendations', recommendationRoutes);
 
 app.use('/api/v1/activity', activityRoutes);
+
+// Creator marketplace (store items & purchases)
+app.use('/api/v1/store', storeRoutes);
+
+// Moments (screenshot + selfie posts)
+app.use('/api/v1/moments', momentsRoutes);
+
+// User feedback (bug reports, feature requests)
+app.use('/api/v1/feedback', feedbackRoutes);
+
+// Location / map discovery (nearby projects/posts/users, geocode, trending)
+app.use('/api/v1/location', locationRoutes);
 
 // tRPC API layer (additive — REST routes unchanged, ported from t3-base patterns)
 app.use('/trpc', trpcMiddleware);

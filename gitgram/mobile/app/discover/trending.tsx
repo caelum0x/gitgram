@@ -6,17 +6,53 @@ import {
   FlatList,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import Header from '../../components/navigation/Header';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import EmptyState from '../../components/common/EmptyState';
-import PostCard from '../../components/Post/PostCard';
+import EmptyState from '../../components/proximity/EmptyState';
+import PostCard from '../../components/proximity/PostCard';
 import { postService } from '../../services/postService';
 import { logger } from '../../utils/logger';
 
+interface ProximityPost {
+  id: string;
+  content: string;
+  author: { username: string; avatar?: string };
+  likes: number;
+  commentsCount: number;
+  createdAt: string;
+}
+
+function toProximityPost(raw: Record<string, unknown>): ProximityPost {
+  const asString = (value: unknown): string =>
+    typeof value === 'string' ? value : '';
+  const asNumber = (value: unknown): number =>
+    typeof value === 'number' ? value : 0;
+
+  const authorSource =
+    (raw.author && typeof raw.author === 'object'
+      ? (raw.author as Record<string, unknown>)
+      : raw.user && typeof raw.user === 'object'
+      ? (raw.user as Record<string, unknown>)
+      : {}) as Record<string, unknown>;
+
+  return {
+    id: asString(raw.id),
+    content: asString(raw.content),
+    author: {
+      username: asString(authorSource.username) || 'unknown',
+      avatar:
+        typeof authorSource.avatar === 'string'
+          ? authorSource.avatar
+          : undefined,
+    },
+    likes: asNumber(raw.likes) || asNumber(raw.likesCount),
+    commentsCount: asNumber(raw.commentsCount) || asNumber(raw.comments),
+    createdAt: asString(raw.createdAt) || new Date().toISOString(),
+  };
+}
+
 export default function TrendingScreen() {
-  const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month'>('today');
@@ -94,16 +130,16 @@ export default function TrendingScreen() {
         <FlatList
           data={posts}
           renderItem={({ item }) => (
-            <PostCard post={item} onPress={() => router.push(`/post/${item.id}`)} />
+            <PostCard post={toProximityPost(item as Record<string, unknown>)} />
           )}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
         />
       ) : (
         <EmptyState
-          title="No trending posts"
-          message="Check back later for trending content!"
           icon="🔥"
+          title="No trending posts"
+          subtitle="Check back later for trending content!"
         />
       )}
     </View>

@@ -2,12 +2,12 @@ import api from './api';
 
 export const collectionService = {
   getCollections: async () => {
-    const response = await api.get('/v1/collections');
+    const response = await api.get('/collections');
     return response.data;
   },
 
   getCollection: async (collectionId: string) => {
-    const response = await api.get(`/v1/collections/${collectionId}`);
+    const response = await api.get(`/collections/${collectionId}`);
     return response.data;
   },
 
@@ -16,7 +16,7 @@ export const collectionService = {
     description?: string;
     isPrivate?: boolean;
   }) => {
-    const response = await api.post('/v1/collections', data);
+    const response = await api.post('/collections', data);
     return response.data;
   },
 
@@ -25,24 +25,24 @@ export const collectionService = {
     description?: string;
     isPrivate?: boolean;
   }) => {
-    const response = await api.put(`/v1/collections/${collectionId}`, data);
+    const response = await api.put(`/collections/${collectionId}`, data);
     return response.data;
   },
 
   deleteCollection: async (collectionId: string) => {
-    const response = await api.delete(`/v1/collections/${collectionId}`);
+    const response = await api.delete(`/collections/${collectionId}`);
     return response.data;
   },
 
   addPostToCollection: async (collectionId: string, postId: string) => {
-    const response = await api.post(`/v1/collections/${collectionId}/posts`, {
+    const response = await api.post(`/collections/${collectionId}/posts`, {
       postId,
     });
     return response.data;
   },
 
   removePostFromCollection: async (collectionId: string, postId: string) => {
-    const response = await api.delete(`/v1/collections/${collectionId}/posts/${postId}`);
+    const response = await api.delete(`/collections/${collectionId}/posts/${postId}`);
     return response.data;
   },
 };

@@ -6,17 +6,17 @@ export const momentService = {
     if (userId) {
       params.userId = userId;
     }
-    const response = await api.get('/v1/moments', { params });
+    const response = await api.get('/moments', { params });
     return response.data;
   },
 
   getMoment: async (momentId: string) => {
-    const response = await api.get(`/v1/moments/${momentId}`);
+    const response = await api.get(`/moments/${momentId}`);
     return response.data;
   },
 
   createMoment: async (formData: FormData) => {
-    const response = await api.post('/v1/moments', formData, {
+    const response = await api.post('/moments', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -25,17 +25,17 @@ export const momentService = {
   },
 
   likeMoment: async (momentId: string) => {
-    const response = await api.post(`/v1/moments/${momentId}/like`);
+    const response = await api.post(`/moments/${momentId}/like`);
     return response.data;
   },
 
   deleteMoment: async (momentId: string) => {
-    const response = await api.delete(`/v1/moments/${momentId}`);
+    const response = await api.delete(`/moments/${momentId}`);
     return response.data;
   },
 
   getMomentReactions: async (momentId: string) => {
-    const response = await api.get(`/v1/moments/${momentId}/reactions`);
+    const response = await api.get(`/moments/${momentId}/reactions`);
     return response.data;
   },
 };

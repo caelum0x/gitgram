@@ -143,9 +143,8 @@ Always use CSS variables (`bg-[var(--surface)]`) not raw hex values.
 | `api.ts` | Axios instance, interceptors, token refresh |
 | `authService.ts` | Login, register, logout, 2FA, OAuth |
 | `userService.ts` | Profile CRUD, follow/unfollow |
-| `postService.ts` | Create/read/delete posts, likes |
+| `postService.ts` | Create/read/delete posts, likes, paginated feed (`getFeed`) |
 | `repoService.ts` | Repository data, claim |
-| `feedService.ts` | Paginated feed |
 | `messageService.ts` | DMs and conversations |
 | `notificationService.ts` | Notification list and mark-read |
 | `githubService.ts` | GitHub OAuth + activity |

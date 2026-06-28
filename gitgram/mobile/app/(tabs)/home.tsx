@@ -10,24 +10,89 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import PostCard from '../../components/Post/PostCard';
-import RepoCard from '../../components/Repo/RepoCard';
 import AdCard from '../../components/ads/AdCard';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
+import TrendingRepoCard from '../../components/proximity/TrendingRepoCard';
+import { PostSkeleton } from '../../components/proximity/Skeleton';
+import StoriesRow, { StoryUser } from '../../components/proximity/StoriesRow';
+import QuickActionSheet from '../../components/proximity/QuickActionSheet';
 import { postService } from '../../services/postService';
 import { adService } from '../../services/adService';
 import repositoryService from '../../services/repositoryService';
+import { storyService } from '../../services/storyService';
 import { logger } from '../../utils/logger';
 import { useRouter } from 'expo-router';
+
+interface TrendingRepo {
+  fullName: string;
+  description?: string;
+  language?: string;
+  stars: number;
+  forks: number;
+  htmlUrl: string;
+}
+
+function toStoryUsers(raw: unknown): StoryUser[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry): StoryUser | null => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Record<string, unknown>;
+      const user =
+        item.user && typeof item.user === 'object'
+          ? (item.user as Record<string, unknown>)
+          : item;
+      const id = user.id;
+      const username = user.username;
+      if (typeof id !== 'string' || typeof username !== 'string') return null;
+      return {
+        id,
+        username,
+        displayName:
+          typeof user.displayName === 'string' ? user.displayName : null,
+        avatarUrl:
+          typeof user.avatar === 'string'
+            ? user.avatar
+            : typeof user.avatarUrl === 'string'
+            ? user.avatarUrl
+            : null,
+        hasSeen: item.hasSeen === true || user.hasSeen === true,
+      };
+    })
+    .filter((u): u is StoryUser => u !== null);
+}
+
+function toTrendingRepo(raw: Record<string, unknown>): TrendingRepo {
+  const asString = (value: unknown): string | undefined =>
+    typeof value === 'string' ? value : undefined;
+  const asNumber = (value: unknown): number =>
+    typeof value === 'number' ? value : 0;
+
+  const fullName =
+    asString(raw.fullName) ?? asString(raw.full_name) ?? asString(raw.name) ?? '';
+
+  return {
+    fullName,
+    description: asString(raw.description),
+    language: asString(raw.language),
+    stars: asNumber(raw.stars) || asNumber(raw.stargazers_count),
+    forks: asNumber(raw.forks) || asNumber(raw.forks_count),
+    htmlUrl: asString(raw.htmlUrl) ?? asString(raw.html_url) ?? '',
+  };
+}
 
 export default function HomeScreen() {
   const [posts, setPosts] = useState<any[]>([]);
   const [trendingRepos, setTrendingRepos] = useState<any[]>([]);
+  const [storyUsers, setStoryUsers] = useState<StoryUser[]>([]);
   const [ads, setAds] = useState<Map<number, any>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [createSheetVisible, setCreateSheetVisible] = useState(false);
 
   const loadAds = async (feedPosition: number) => {
     try {
@@ -51,8 +116,19 @@ export default function HomeScreen() {
     }
   };
 
+  const loadStories = async () => {
+    try {
+      const response = await storyService.getStories();
+      const rawList = response?.stories ?? response?.data ?? response;
+      setStoryUsers(toStoryUsers(rawList));
+    } catch (error) {
+      logger.error('Load stories error:', error);
+    }
+  };
+
   const loadPosts = async (pageNum = 1, refresh = false) => {
     try {
+      setFeedError(null);
       const response = await postService.getPosts(pageNum, 10);
       const newPosts = response.posts || [];
 
@@ -80,7 +156,12 @@ export default function HomeScreen() {
       }
       setHasMore(response.pagination.page < response.pagination.pages);
     } catch (error) {
-      // Error handled silently, user can retry
+      logger.error('Load posts error:', error);
+      // Only surface the error when there is nothing to show; pagination
+      // failures on an already-populated feed stay silent and are retryable.
+      if (refresh || posts.length === 0) {
+        setFeedError('Could not load your feed. Pull to refresh or tap retry.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -90,6 +171,7 @@ export default function HomeScreen() {
   useEffect(() => {
     loadPosts();
     loadTrendingRepos();
+    loadStories();
   }, []);
 
   const handleRefresh = () => {
@@ -97,6 +179,7 @@ export default function HomeScreen() {
     setPage(1);
     loadPosts(1, true);
     loadTrendingRepos();
+    loadStories();
   };
 
   const handleLoadMore = () => {
@@ -108,7 +191,21 @@ export default function HomeScreen() {
   };
 
   if (loading && posts.length === 0) {
-    return <LoadingSpinner fullScreen />;
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerIcon}>💻</Text>
+            <Text style={styles.headerTitle}>Gitgram</Text>
+          </View>
+        </View>
+        <View style={styles.skeletonList}>
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // Combine posts, repos, and ads into a single feed array
@@ -138,7 +235,7 @@ export default function HomeScreen() {
       return <AdCard ad={item.data} />;
     }
     if (item.type === 'repo') {
-      return <RepoCard repo={item.data} />;
+      return <TrendingRepoCard repo={toTrendingRepo(item.data as Record<string, unknown>)} />;
     }
     return <PostCard post={item.data} />;
   }, []);
@@ -160,6 +257,13 @@ export default function HomeScreen() {
           <Text style={styles.headerTitle}>Gitgram</Text>
         </View>
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => setCreateSheetVisible(true)}
+            accessibilityLabel="Create"
+          >
+            <Text style={styles.headerButtonIcon}>➕</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerButton}
             onPress={() => router.push('/(tabs)/notifications')}
@@ -195,13 +299,35 @@ export default function HomeScreen() {
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        ListHeaderComponent={
+          storyUsers.length > 0 ? (
+            <StoriesRow
+              users={storyUsers}
+              onAddStory={() => router.push('/story/create')}
+            />
+          ) : null
+        }
         ListEmptyComponent={
           !loading ? (
-            <EmptyState
-              title="No posts yet"
-              message="Start following people to see their posts in your feed"
-              icon="📭"
-            />
+            feedError ? (
+              <EmptyState
+                title="Couldn't load your feed"
+                message={feedError}
+                icon="⚠️"
+                actionLabel="Retry"
+                onAction={() => {
+                  setLoading(true);
+                  setPage(1);
+                  loadPosts(1, true);
+                }}
+              />
+            ) : (
+              <EmptyState
+                title="No posts yet"
+                message="Start following people to see their posts in your feed"
+                icon="📭"
+              />
+            )
           ) : null
         }
         ListFooterComponent={
@@ -209,6 +335,15 @@ export default function HomeScreen() {
             <LoadingSpinner />
           ) : null
         }
+      />
+
+      <QuickActionSheet
+        visible={createSheetVisible}
+        onClose={() => setCreateSheetVisible(false)}
+        onSelect={(route) => {
+          setCreateSheetVisible(false);
+          router.push(route as Parameters<typeof router.push>[0]);
+        }}
       />
     </SafeAreaView>
   );
@@ -263,6 +398,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 80, // Space for bottom tab bar
+  },
+  skeletonList: {
+    paddingTop: 12,
   },
 });
 

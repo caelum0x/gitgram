@@ -10,17 +10,25 @@ import { jsonResponse } from '../lib/tool-responses.js';
 // Client helpers
 // ---------------------------------------------------------------------------
 
+/** Well-known relative path where A2A agents publish their agent card. */
+const WELL_KNOWN_AGENT_CARD_PATH = '.well-known/agent-card.json';
+
 /**
  * Construct an {@link A2AClient} for a target agent base URL.
  *
- * The AITM A2A server serves its agent card at `GET <agentUrl>/a2a` and
- * accepts JSON-RPC at `POST <agentUrl>/a2a`. We fetch the card from that
- * path and build the client from it, so all outbound traffic flows through
- * the SDK's JSON-RPC transport instead of a hand-rolled fetch.
+ * Per the A2A spec, agent cards are published at
+ * `GET <agentUrl>/.well-known/agent-card.json`; the card's `url` field then
+ * advertises the JSON-RPC endpoint (for the AITM A2A server that is
+ * `<agentUrl>/a2a`). The SDK's {@link A2AClient.fromCardUrl} issues a `GET`
+ * to the exact URL it is given to fetch the card, so we must point it at the
+ * well-known path — NOT at `/a2a`, which only accepts `POST` (JSON-RPC) and
+ * would 404 on the card GET. Once built, all task traffic flows through the
+ * SDK's JSON-RPC transport against the endpoint named in the card.
  */
 async function createClient(agentUrl: string): Promise<A2AClient> {
-  const cardUrl = `${agentUrl.replace(/\/$/, '')}/a2a`;
-  return A2AClient.fromCardUrl(cardUrl, { agentCardPath: '' });
+  const base = agentUrl.replace(/\/$/, '');
+  const cardUrl = `${base}/${WELL_KNOWN_AGENT_CARD_PATH}`;
+  return A2AClient.fromCardUrl(cardUrl);
 }
 
 // ---------------------------------------------------------------------------

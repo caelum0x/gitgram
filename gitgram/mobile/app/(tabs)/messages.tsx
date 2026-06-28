@@ -20,6 +20,7 @@ import { userService } from '../../services/userService';
 import { useAuthStore } from '../../store/authStore';
 import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { logger } from '../../utils/logger';
 
 interface ChatParticipant {
   id: string;
@@ -57,7 +58,7 @@ export default function MessagesScreen() {
       const response = await messageService.getConversations();
       setConversations(response.conversations || []);
     } catch (error) {
-      console.error('Load conversations error:', error);
+      logger.error('Load conversations error:', error);
     } finally {
       setLoading(false);
     }
@@ -79,7 +80,7 @@ export default function MessagesScreen() {
       );
       setSearchResults(filteredUsers);
     } catch (error) {
-      console.error('Search users error:', error);
+      logger.error('Search users error:', error);
       setSearchResults([]);
     } finally {
       setSearchLoading(false);
@@ -122,7 +123,7 @@ export default function MessagesScreen() {
     return (
       <TouchableOpacity
         style={styles.item}
-        onPress={() => router.push(`/messages/chat/${item.id}`)}
+        onPress={() => otherUser && router.push(`/chat/${otherUser.id}`)}
       >
         <View style={styles.avatarContainer}>
           {otherUser?.avatar ? (

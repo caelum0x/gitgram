@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../../constants/Colors';
 import { githubService } from '../../../services/githubService';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { logger } from '../../../utils/logger';
 
 export default function FilesScreen() {
     const router = useRouter();
@@ -40,7 +41,7 @@ export default function FilesScreen() {
 
             setContents(sortedData);
         } catch (error) {
-            console.error('Error loading contents:', error);
+            logger.error('Error loading contents:', error);
         } finally {
             setLoading(false);
         }

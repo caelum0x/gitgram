@@ -47,6 +47,104 @@ CORS_ORIGIN=https://app.gitgram.com,https://gitgram.com
 LOG_LEVEL=info
 ```
 
+## Operational Prerequisites (Required for a fully-usable deployment)
+
+Several subsystems degrade to a disabled / no-op / fallback mode when their
+configuration is absent. The app still boots, but the corresponding flows are
+not end-to-end usable until each prerequisite below is provisioned. Configure
+all of these for a production deployment.
+
+### 1. Durable media storage (S3) — required for multi-instance prod
+
+`STORAGE_TYPE` defaults to `local`, which writes uploads to the instance's local
+disk. That is not durable and is not shared across instances behind a load
+balancer. For production set `STORAGE_TYPE=s3` and provide the AWS credentials:
+
+```env
+STORAGE_TYPE=s3
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=gitgram-media
+CDN_URL=https://cdn.gitgram.com   # optional, served-URL prefix for uploads
+```
+
+Enable S3 bucket versioning for media recovery (see Media Backups below).
+
+### 2. Transactional email (Resend) — required for auth flows
+
+Without `RESEND_API_KEY`, email delivery is disabled: verification, password
+reset, and 2FA emails are logged but never sent, so those flows cannot complete
+for real users. Provision a Resend account and set:
+
+```env
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+EMAIL_FROM=noreply@gitgram.com    # must be a verified Resend sender/domain
+```
+
+### 3. Web push (VAPID) — required for browser push notifications
+
+Without `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, web push is disabled (push
+sends are skipped). Generate a key pair with `npx web-push generate-vapid-keys`
+and set:
+
+```env
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:support@gitgram.com
+```
+
+### 4. Payments (Polar.sh) — required for subscriptions
+
+The subscription / checkout and webhook flows require Polar configuration.
+Without `POLAR_ACCESS_TOKEN` the service throws "Polar not configured".
+
+```env
+POLAR_ACCESS_TOKEN=polar_xxx
+POLAR_WEBHOOK_SECRET=whsec_xxx       # verifies POST /api/v1/webhooks/polar (HMAC-SHA256)
+POLAR_PRO_PRODUCT_ID=...
+POLAR_TEAM_PRODUCT_ID=...
+```
+
+Point the Polar dashboard webhook at `https://api.gitgram.com/api/v1/webhooks/polar`.
+This is the single canonical Polar webhook endpoint (mounted with `express.raw`
+before the JSON body parser so HMAC verification sees the unparsed buffer).
+
+### 5. Redis — required for background jobs in production
+
+Redis is optional at runtime: when `REDIS_URL` is absent the app falls back to
+an in-memory cache **and skips background-job initialization**. That means in a
+no-Redis deployment the scheduled/background jobs — trending recompute, media
+cleanup, and scheduled-post publishing (wired via `initializeJobs`) — do not
+run. Provision Redis in production so these jobs run:
+
+```env
+REDIS_URL=redis://:password@redis-host:6379
+```
+
+### 6. ffmpeg — required for real video thumbnails
+
+`videoService` shells out to the system `ffmpeg` / `ffprobe` binaries to extract
+a real frame for video thumbnails and to transcode. When the binaries are
+missing it falls back to a branded gradient placeholder thumbnail. The provided
+`Dockerfile` installs ffmpeg (`apk add --no-cache ffmpeg`) so the real-frame
+path is the norm. If you build a custom image, ensure ffmpeg is on the PATH.
+
+### 7. AI code analysis (GitNexus) — optional external service
+
+The AI-analysis / change-story endpoints depend on an external GitNexus
+JSON-RPC service. They are **feature-flagged off by default** and return a clear
+`503` (not an opaque 500) when the dependency is not configured. To enable them,
+deploy GitNexus and point the backend at it:
+
+```env
+GITNEXUS_URL=http://gitnexus:3001
+AI_ANALYSIS_ENABLED=true   # optional; auto-enabled when GITNEXUS_URL is set
+```
+
+Set `AI_ANALYSIS_ENABLED=false` to force these endpoints off even when a
+GitNexus URL is present.
+
 ## Database Setup
 
 ### 1. Create Production Database

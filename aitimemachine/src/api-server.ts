@@ -21,6 +21,7 @@ import { requireAuth, optionalAuth, rateLimit, AuthService, auditMiddleware, val
 import { loadConsent, saveConsent, assertConsent, ConsentError } from './auth/consent-policy.js';
 import { readRetentionSlaMetrics, readRetentionAlerts } from './core/retention-sla.js';
 import { assessLicenseCompliance } from './compliance/license-policy.js';
+import { createCliEndpointsRouter } from './server/cli-endpoints.js';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -153,6 +154,17 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLI-FACING ENDPOINTS (conflicts, sessions export, agents/beads, memory/contexts)
+// These back the `aitm conflicts | export | agents | memory` command groups so
+// `aitm serve` is the single backend for the entire CLI. They operate on the
+// project-local engine + event store and a persistent SQLite store, and are
+// mounted before the auth gate because `aitm serve` is a local single-user
+// server (the CLI calls them without requiring a key).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.use(createCliEndpointsRouter(engine, eventStore));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INTERNAL API KEY MANAGEMENT (called by website)

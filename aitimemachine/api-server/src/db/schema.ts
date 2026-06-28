@@ -1371,3 +1371,49 @@ export const emailJobs = pgTable(
     createdAtIdx: index("idx_email_jobs_created").on(table.createdAt),
   })
 );
+
+// ============================================
+// A2A (Agent-to-Agent) — durable agent directory + message inbox
+// ============================================
+//
+// Backs the A2AService so registered agents, their API keys, and queued/
+// broadcast messages survive restarts and are shared across horizontally
+// scaled instances (the previous implementation kept these in process memory).
+
+export const a2aAgents = pgTable(
+  "a2a_agents",
+  {
+    id: text("id").primaryKey(), // agentId
+    name: text("name").notNull(),
+    capabilities: text("capabilities").array().notNull().default([]),
+    endpoint: text("endpoint"),
+    apiKey: text("api_key").notNull().unique(),
+    status: text("status").notNull().default("active"), // active | inactive
+    registeredAt: timestamp("registered_at").defaultNow().notNull(),
+    lastSeen: timestamp("last_seen").defaultNow().notNull(),
+  },
+  (table) => ({
+    apiKeyIdx: index("idx_a2a_agents_api_key").on(table.apiKey),
+    statusIdx: index("idx_a2a_agents_status").on(table.status),
+  })
+);
+
+export const a2aMessages = pgTable(
+  "a2a_messages",
+  {
+    id: text("id").primaryKey(), // messageId
+    fromAgentId: text("from_agent_id").notNull(),
+    toAgentId: text("to_agent_id").notNull(),
+    messageType: text("message_type").notNull(),
+    payload: jsonb("payload").notNull(),
+    sessionId: text("session_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    toAgentIdx: index("idx_a2a_messages_to_agent").on(table.toAgentId),
+    toAgentCreatedIdx: index("idx_a2a_messages_to_agent_created").on(
+      table.toAgentId,
+      table.createdAt
+    ),
+  })
+);

@@ -20,7 +20,11 @@ const signAccessToken = (payload: object, expiresIn: SignOptions['expiresIn'] = 
   jwt.sign(payload, config.jwt.secret, { expiresIn });
 
 const signRefreshToken = (payload: object, expiresIn: SignOptions['expiresIn'] = '30d') =>
-  jwt.sign(payload, config.jwt.refreshSecret, { expiresIn });
+  // Include a random jti so two refresh tokens minted within the same second
+  // (e.g. register-then-login, or rapid re-login) never collide on the unique
+  // Session.refreshToken column. Without this, jwt.sign produces identical
+  // tokens for the same payload + iat second, causing a 500 on the second mint.
+  jwt.sign({ ...payload, jti: crypto.randomUUID() }, config.jwt.refreshSecret, { expiresIn });
 
 /** Set access + refresh tokens as httpOnly cookies */
 function setAuthCookies(res: Response, token: string, refreshToken: string) {
@@ -141,7 +145,9 @@ export const authController = {
   }),
 
   logout: asyncHandler(async (req: Request, res: Response) => {
-    const refreshToken = req.body.refreshToken || (req as any).cookies?.refreshToken;
+    // Body may be absent when the client logs out via cookies only — guard
+    // against an undefined req.body (Express 5 leaves it undefined with no body).
+    const refreshToken = req.body?.refreshToken || (req as any).cookies?.refreshToken;
     if (refreshToken) await prisma.session.deleteMany({ where: { refreshToken } });
     clearAuthCookies(res);
     res.json({ message: 'Logged out' });

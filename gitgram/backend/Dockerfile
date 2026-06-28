@@ -24,6 +24,12 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install ffmpeg (provides the ffmpeg + ffprobe binaries) so videoService can
+# extract real video frames for thumbnails and transcode media. Without it,
+# thumbnail generation degrades to the branded placeholder fallback. Installing
+# it here makes the real-frame path the norm in production.
+RUN apk add --no-cache ffmpeg
+
 # Copy package files
 COPY package*.json ./
 

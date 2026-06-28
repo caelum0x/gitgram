@@ -9,6 +9,12 @@ const keyGenerator = (req: Request): string => {
   return userId ? `${ip}-${userId}` : ip;
 };
 
+// Disable rate limiting when DISABLE_RATE_LIMIT=true so deterministic E2E flows
+// (which fire many auth/interaction requests in quick succession) are not
+// throttled. Production and development behavior is unchanged, and the unit
+// tests that assert limiter enforcement leave this unset.
+const skipInTest = (): boolean => process.env.DISABLE_RATE_LIMIT === 'true';
+
 // Rate limit exceeded handler
 const rateLimitHandler = (req: Request, res: Response) => {
   logger.warn(`Rate limit exceeded: ${req.ip} - ${req.method} ${req.path}`);
@@ -29,6 +35,7 @@ export const authLimiter = rateLimit({
   message: 'Too many authentication attempts, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
   handler: rateLimitHandler,
   skipSuccessfulRequests: false,
@@ -44,6 +51,7 @@ export const passwordResetLimiter = rateLimit({
   message: 'Too many password reset attempts, please try again after an hour',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator: (req: Request) => {
     // Key by email + IP to prevent enumeration
     const email = req.body?.email?.toLowerCase() || '';
@@ -69,6 +77,7 @@ export const refreshTokenLimiter = rateLimit({
   message: 'Too many token refresh attempts',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -82,6 +91,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
   handler: rateLimitHandler,
 });
@@ -96,6 +106,7 @@ export const uploadLimiter = rateLimit({
   message: 'Too many uploads, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
   handler: rateLimitHandler,
 });
@@ -110,6 +121,7 @@ export const interactionLimiter = rateLimit({
   message: 'Too many interactions, please slow down',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -123,6 +135,7 @@ export const searchLimiter = rateLimit({
   message: 'Too many search requests',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -136,6 +149,7 @@ export const emailLimiter = rateLimit({
   message: 'Too many email requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -149,6 +163,7 @@ export const adminLimiter = rateLimit({
   message: 'Too many admin requests',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -162,6 +177,7 @@ export const accountDeletionLimiter = rateLimit({
   message: 'Account deletion can only be attempted once per day',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });
 
@@ -175,5 +191,6 @@ export const dataExportLimiter = rateLimit({
   message: 'Data export limit reached, please try again tomorrow',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInTest,
   keyGenerator,
 });

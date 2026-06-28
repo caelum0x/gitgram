@@ -135,10 +135,16 @@ export default function NotificationsScreen() {
         break;
       case 'star':
         {
-          const repoId = getStringValue(notification.data, 'repoId');
+          const repoOwner = getStringValue(notification.data, 'repoOwner');
+          const repoName = getStringValue(notification.data, 'repoName');
+          const repoFullName = getStringValue(notification.data, 'repoFullName');
           const postId = getStringValue(notification.data, 'postId');
-          if (repoId) {
-            router.push(`/repository/${repoId}`);
+          // Repositories are addressed by owner/name (there is no id-based route).
+          if (repoOwner && repoName) {
+            router.push(`/repo/${repoOwner}/${repoName}`);
+          } else if (repoFullName && repoFullName.includes('/')) {
+            const [owner, name] = repoFullName.split('/');
+            router.push(`/repo/${owner}/${name}`);
           } else if (postId) {
             router.push(`/post/${postId}`);
           }

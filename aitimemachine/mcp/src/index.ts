@@ -34,18 +34,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 function resolveLibPath(): string {
-  try {
-    const pkgPath = require.resolve('aitimemachine/package.json');
-    return path.join(path.dirname(pkgPath), 'lib');
-  } catch {
-    const localLib = path.resolve(__dirname, '../../lib');
-    if (fs.existsSync(path.join(localLib, 'core', 'index.js'))) {
-      return localLib;
-    }
-    throw new Error(
-      'Could not find Gitgram TimeMachine core library. Install it with: npm install -g aitimemachine'
-    );
+  // Primary: when published, mcp/dist ships inside the @gitgram/timemachine
+  // package, so the compiled core lib is at <pkgRoot>/lib (../../lib from
+  // mcp/dist/). This works in a plain `npm install @gitgram/timemachine`.
+  const bundledLib = path.resolve(__dirname, '../../lib');
+  if (fs.existsSync(path.join(bundledLib, 'core', 'index.js'))) {
+    return bundledLib;
   }
+
+  // Fallbacks: resolve the core package by name in case the MCP server is
+  // installed standalone. Try the real (scoped) package name first, then the
+  // legacy unscoped name for backwards compatibility.
+  for (const pkgName of ['@gitgram/timemachine', 'aitimemachine']) {
+    try {
+      const pkgPath = require.resolve(`${pkgName}/package.json`);
+      const libPath = path.join(path.dirname(pkgPath), 'lib');
+      if (fs.existsSync(path.join(libPath, 'core', 'index.js'))) {
+        return libPath;
+      }
+    } catch {
+      // try next candidate name
+    }
+  }
+
+  throw new Error(
+    'Could not find Gitgram TimeMachine core library. Install it with: npm install -g @gitgram/timemachine'
+  );
 }
 
 const EXPERIMENTAL_ENABLED = process.env.AITM_EXPERIMENTAL_TOOLS === '1';

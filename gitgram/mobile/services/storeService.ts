@@ -25,12 +25,12 @@ export const storeService = {
     if (searchQuery) {
       params.q = searchQuery;
     }
-    const response = await api.get('/v1/store/items', { params });
+    const response = await api.get('/store/items', { params });
     return response.data;
   },
 
   getItem: async (itemId: string) => {
-    const response = await api.get(`/v1/store/items/${itemId}`);
+    const response = await api.get(`/store/items/${itemId}`);
     return response.data;
   },
 
@@ -44,22 +44,22 @@ export const storeService = {
     const headers = data instanceof FormData 
       ? { 'Content-Type': 'multipart/form-data' }
       : {};
-    const response = await api.post('/v1/store/items', data, { headers });
+    const response = await api.post('/store/items', data, { headers });
     return response.data;
   },
 
   purchaseItem: async (itemId: string) => {
-    const response = await api.post(`/v1/store/items/${itemId}/purchase`);
+    const response = await api.post(`/store/items/${itemId}/purchase`);
     return response.data;
   },
 
   getMyItems: async () => {
-    const response = await api.get('/v1/store/my/items');
+    const response = await api.get('/store/my/items');
     return response.data;
   },
 
   getPurchaseHistory: async () => {
-    const response = await api.get('/v1/store/my/purchases');
+    const response = await api.get('/store/my/purchases');
     return response.data;
   },
 
@@ -70,17 +70,17 @@ export const storeService = {
     category?: string;
     isActive?: boolean;
   }) => {
-    const response = await api.put(`/v1/store/${itemId}`, data);
+    const response = await api.put(`/store/${itemId}`, data);
     return response.data;
   },
 
   deleteItem: async (itemId: string) => {
-    const response = await api.delete(`/v1/store/${itemId}`);
+    const response = await api.delete(`/store/${itemId}`);
     return response.data;
   },
 
   getCategoryCounts: async () => {
-    const response = await api.get('/v1/store/categories');
+    const response = await api.get('/store/categories');
     return response.data;
   },
 };

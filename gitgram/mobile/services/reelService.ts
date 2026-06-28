@@ -27,10 +27,10 @@ function normalizeReel(reel: any) {
 export const reelService = {
   getReels: async (page = 1, limit = 10, userId?: string) => {
     const response = userId
-      ? await api.get(`/v1/reels/user/${userId}`, {
+      ? await api.get(`/reels/user/${userId}`, {
           params: { page, limit },
         })
-      : await api.get('/v1/reels/feed', {
+      : await api.get('/reels/feed', {
           params: { page, limit },
         });
     return {
@@ -42,7 +42,7 @@ export const reelService = {
   },
 
   getReel: async (reelId: string) => {
-    const response = await api.get(`/v1/reels/${reelId}`);
+    const response = await api.get(`/reels/${reelId}`);
     const rawReel = response.data?.reel ?? response.data;
     return {
       ...response.data,
@@ -51,7 +51,7 @@ export const reelService = {
   },
 
   createReel: async (formData: FormData) => {
-    const response = await api.post('/v1/reels', formData, {
+    const response = await api.post('/reels', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -61,12 +61,12 @@ export const reelService = {
 
   likeReel: async (reelId: string) => {
     try {
-      const response = await api.post(`/v1/reels/${reelId}/like`);
+      const response = await api.post(`/reels/${reelId}/like`);
       return response.data;
     } catch (error: any) {
       const message = error?.response?.data?.message || '';
       if (error?.response?.status === 400 && /already liked/i.test(message)) {
-        const response = await api.delete(`/v1/reels/${reelId}/like`);
+        const response = await api.delete(`/reels/${reelId}/like`);
         return response.data;
       }
       throw error;
@@ -74,14 +74,14 @@ export const reelService = {
   },
 
   getReelComments: async (reelId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/reels/${reelId}/comments`, {
+    const response = await api.get(`/reels/${reelId}/comments`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   createReelComment: async (reelId: string, content: string) => {
-    const response = await api.post(`/v1/reels/${reelId}/comments`, {
+    const response = await api.post(`/reels/${reelId}/comments`, {
       content,
     });
     return {
@@ -91,7 +91,7 @@ export const reelService = {
   },
 
   deleteReel: async (reelId: string) => {
-    const response = await api.delete(`/v1/reels/${reelId}`);
+    const response = await api.delete(`/reels/${reelId}`);
     return response.data;
   },
 
@@ -105,7 +105,7 @@ export const reelService = {
       payload.description = data.description ?? data.caption;
     }
 
-    const response = await api.put(`/v1/reels/${reelId}`, payload);
+    const response = await api.put(`/reels/${reelId}`, payload);
     const rawReel = response.data?.reel ?? response.data;
     return {
       ...response.data,
@@ -114,41 +114,41 @@ export const reelService = {
   },
 
   getReelLikes: async (reelId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/reels/${reelId}/likes`, {
+    const response = await api.get(`/reels/${reelId}/likes`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   saveReel: async (reelId: string) => {
-    const response = await api.post(`/v1/reels/${reelId}/save`);
+    const response = await api.post(`/reels/${reelId}/save`);
     return response.data;
   },
 
   unsaveReel: async (reelId: string) => {
-    const response = await api.delete(`/v1/reels/${reelId}/save`);
+    const response = await api.delete(`/reels/${reelId}/save`);
     return response.data;
   },
 
   reportReel: async (reelId: string, reason: string) => {
-    const response = await api.post(`/v1/reels/${reelId}/report`, { reason });
+    const response = await api.post(`/reels/${reelId}/report`, { reason });
     return response.data;
   },
 
   getReelAnalytics: async (reelId: string) => {
-    const response = await api.get(`/v1/reels/${reelId}/analytics`);
+    const response = await api.get(`/reels/${reelId}/analytics`);
     return response.data;
   },
 
   searchReels: async (query: string, page = 1, limit = 20) => {
-    const response = await api.get('/v1/reels/search', {
+    const response = await api.get('/reels/search', {
       params: { q: query, page, limit },
     });
     return response.data;
   },
 
   getReelReactions: async (reelId: string) => {
-    const response = await api.get(`/v1/reels/${reelId}/likes`);
+    const response = await api.get(`/reels/${reelId}/likes`);
     return {
       ...response.data,
       reactions: response.data?.likes ?? [],
@@ -158,7 +158,7 @@ export const reelService = {
   // Music-related methods - using real backend API
   searchMusic: async (query: string, page = 1, limit = 20) => {
     try {
-      const response = await api.get('/v1/music/search', {
+      const response = await api.get('/music/search', {
         params: { q: query, limit, offset: Math.max(0, page - 1) * limit },
       });
       return response.data;
@@ -171,7 +171,7 @@ export const reelService = {
 
   getTrendingMusic: async (limit = 20) => {
     try {
-      const response = await api.get('/v1/music/trending', {
+      const response = await api.get('/music/trending', {
         params: { limit },
       });
       return response.data;
@@ -184,7 +184,7 @@ export const reelService = {
 
   getGenres: async () => {
     try {
-      const response = await api.get('/v1/music/genres');
+      const response = await api.get('/music/genres');
       return response.data;
     } catch (error: any) {
       console.warn('Music genres API unavailable:', error.message);
@@ -193,7 +193,7 @@ export const reelService = {
   },
 
   applyMusicToReel: async (reelId: string, musicId: string, startTime = 0) => {
-    const response = await api.post(`/v1/reels/${reelId}/music`, {
+    const response = await api.post(`/reels/${reelId}/music`, {
       musicId,
       startTime,
     });
@@ -205,7 +205,7 @@ export const reelService = {
   },
 
   removeMusicFromReel: async (reelId: string) => {
-    const response = await api.delete(`/v1/reels/${reelId}/music`);
+    const response = await api.delete(`/reels/${reelId}/music`);
     const rawReel = response.data?.reel ?? response.data;
     return {
       ...response.data,

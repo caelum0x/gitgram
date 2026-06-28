@@ -40,6 +40,7 @@ import workersRoutes from "./routes/workers.js";
 import organizationsRoutes from "./routes/organizations.js";
 import orgMembersRoutes from "./routes/orgMembers.js";
 import a2aRouter from "./routes/a2a.js";
+import { mountA2AVendored } from "./routes/a2aVendored.js";
 import workspaceRouter from "./routes/workspace.js";
 import beadsRouter from "./routes/beads.js";
 import gitgramWebhooksRouter from "./routes/gitgramWebhooks.js";
@@ -215,6 +216,9 @@ app.use("/v1/workers", workersRoutes);
 app.use("/v1/organizations", organizationsRoutes);
 app.use("/v1/organizations/:id/members", orgMembersRoutes);
 app.use("/a2a", a2aRouter);
+// Vendored (first-party) A2A SDK server route — JSON-RPC transport + agent card
+// at /a2a/v2 (and /a2a/v2/.well-known/agent-card.json).
+mountA2AVendored(app);
 app.use("/workspace", workspaceRouter);
 app.use("/beads", beadsRouter);
 app.use("/v1/gitgram-webhooks", gitgramWebhooksRouter);

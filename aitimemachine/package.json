@@ -54,6 +54,9 @@
   },
   "files": [
     "lib/**/*",
+    "mcp/dist/**/*",
+    "mcp/package.json",
+    "mcp/README.md",
     "README.md",
     "LICENSE"
   ],

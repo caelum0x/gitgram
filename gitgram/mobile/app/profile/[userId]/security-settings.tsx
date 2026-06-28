@@ -122,7 +122,7 @@ export default function SecuritySettingsScreen() {
 
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => router.push('/settings/password')}
+          onPress={() => router.push('/profile/settings/password')}
         >
           <Icon name="lock" size={24} color={Colors.text} />
           <Text style={styles.actionLabel}>Change Password</Text>
@@ -131,7 +131,7 @@ export default function SecuritySettingsScreen() {
 
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => router.push('/settings/active-sessions')}
+          onPress={() => router.push('/account/security/sessions')}
         >
           <Icon name="devices" size={24} color={Colors.text} />
           <Text style={styles.actionLabel}>Active Sessions</Text>

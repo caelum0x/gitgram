@@ -7,6 +7,8 @@ import {
   updateSnippetValidator,
   getSnippetsValidator,
   snippetIdValidator,
+  addSnippetCommentValidator,
+  snippetSocialListValidator,
 } from '../validators/snippetValidator';
 
 const router = Router();
@@ -21,5 +23,10 @@ router.delete('/:id', authenticate, validate(snippetIdValidator), snippetControl
 
 // Interactions
 router.post('/:id/like', authenticate, validate(snippetIdValidator), snippetController.likeSnippet);
+router.get('/:id/likers', optionalAuth, validate(snippetSocialListValidator), snippetController.getSnippetLikers);
+
+// Comments (social parity with posts)
+router.post('/:id/comments', authenticate, validate(addSnippetCommentValidator), snippetController.addSnippetComment);
+router.get('/:id/comments', optionalAuth, validate(snippetSocialListValidator), snippetController.getSnippetComments);
 
 export default router;

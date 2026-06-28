@@ -49,6 +49,11 @@ export function ipRateLimit(tier: IPRateLimitTier) {
   const config = IP_RATE_LIMITS[tier];
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Disabled when DISABLE_RATE_LIMIT=true (E2E) for deterministic flows.
+    if (process.env.DISABLE_RATE_LIMIT === 'true') {
+      next();
+      return;
+    }
     const ip = getClientIP(req);
     const key = `${tier}:${ip}`;
     const { count } = await ipStore.hit(key, config.windowMs);
@@ -91,6 +96,11 @@ export function userRateLimit(action: UserRateLimitAction) {
   const config = USER_RATE_LIMITS[action];
 
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    // Disabled when DISABLE_RATE_LIMIT=true (E2E) for deterministic flows.
+    if (process.env.DISABLE_RATE_LIMIT === 'true') {
+      next();
+      return;
+    }
     const userId = req.userId;
     if (!userId) {
       // Not authenticated -- skip user rate limiting

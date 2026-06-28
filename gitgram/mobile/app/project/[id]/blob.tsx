@@ -12,6 +12,7 @@ import { Colors } from '../../../constants/Colors';
 import { githubService } from '../../../services/githubService';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Buffer } from 'buffer';
+import { logger } from '../../../utils/logger';
 
 export default function BlobScreen() {
     const router = useRouter();
@@ -41,7 +42,7 @@ export default function BlobScreen() {
                 setContent('Unable to display file content');
             }
         } catch (error) {
-            console.error('Error loading blob:', error);
+            logger.error('Error loading blob:', error);
             setContent('Error loading file content');
         } finally {
             setLoading(false);

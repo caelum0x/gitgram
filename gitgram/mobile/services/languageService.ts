@@ -44,7 +44,7 @@ export const languageService = {
    * Fetch the full directory of languages with repo/snippet counts.
    */
   getLanguages: async (): Promise<Language[]> => {
-    const response = await api.get<Language[] | LanguagesResponse>('/v1/languages');
+    const response = await api.get<Language[] | LanguagesResponse>('/languages');
     const data = response.data;
     if (Array.isArray(data)) {
       return data;
@@ -57,7 +57,7 @@ export const languageService = {
    */
   getTrendingLanguages: async (): Promise<TrendingLanguage[]> => {
     const response = await api.get<TrendingLanguage[] | TrendingLanguagesResponse>(
-      '/v1/languages/trending'
+      '/languages/trending'
     );
     const data = response.data;
     if (Array.isArray(data)) {

@@ -149,3 +149,44 @@ export const snippetIdValidator: ValidationChain[] = [
     .isString()
     .withMessage('Snippet ID must be a string'),
 ];
+
+/**
+ * Add snippet comment validator
+ */
+export const addSnippetCommentValidator: ValidationChain[] = [
+  param('id')
+    .notEmpty()
+    .withMessage('Snippet ID is required')
+    .isString(),
+  body('content')
+    .notEmpty()
+    .withMessage('Comment content is required')
+    .isString()
+    .isLength({ min: 1, max: 5000 })
+    .withMessage('Comment must be between 1 and 5,000 characters')
+    .trim(),
+  body('parentId')
+    .optional({ nullable: true })
+    .isString()
+    .withMessage('Parent ID must be a string'),
+];
+
+/**
+ * Paginated snippet social listing validator (comments, likers)
+ */
+export const snippetSocialListValidator: ValidationChain[] = [
+  param('id')
+    .notEmpty()
+    .withMessage('Snippet ID is required')
+    .isString(),
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Page must be a positive integer')
+    .toInt(),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 50 })
+    .withMessage('Limit must be between 1 and 50')
+    .toInt(),
+];

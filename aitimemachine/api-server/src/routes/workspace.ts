@@ -1,68 +1,102 @@
-import { Router, Request, Response } from "express";
-import { execFile, exec } from "child_process";
+import { Router, Response } from "express";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
-import fs from "fs";
-import { apiKeyAuth } from "../middleware/auth.js";
+import fs from "fs/promises";
+import { apiKeyAuth, AuthenticatedRequest } from "../middleware/auth.js";
+import {
+  resolveSandboxRoot,
+  walkFiles,
+  searchContents,
+} from "./workspaceSandbox.js";
 
 const execFileAsync = promisify(execFile);
-const execAsync = promisify(exec);
 
 const router = Router();
 
-// Every workspace endpoint reads the server filesystem (file listings, file
-// contents, git status) and some shell out to the OS, so the entire router
-// requires an authenticated user — matching the sibling /beads router.
+// Every workspace endpoint reads a per-user (optionally per-project) sandbox
+// directory, so the entire router requires an authenticated user. Each user
+// only ever sees files under their own sandbox root — never the shared server
+// filesystem.
 router.use(apiKeyAuth);
 
-const WORKSPACE = process.env.WORKSPACE_PATH || process.cwd();
+const DEFAULT_SEARCH_EXTENSIONS = ["ts", "tsx", "js", "jsx", "py", "go", "rs"];
 
-function safeWorkspacePath(rel: string): string | null {
-  const resolved = path.resolve(WORKSPACE, rel);
-  if (!resolved.startsWith(path.resolve(WORKSPACE))) return null;
-  return resolved;
+/**
+ * Resolve the caller's sandbox root for the current request. Sends an error
+ * response and returns null if the user is missing or the project id is unsafe.
+ */
+async function getSandbox(
+  req: AuthenticatedRequest,
+  res: Response,
+  projectId?: string
+): Promise<string | null> {
+  const userId = req.user?.userId;
+  if (!userId) {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+    return null;
+  }
+  const root = await resolveSandboxRoot(userId, projectId);
+  if (!root) {
+    res.status(400).json({ success: false, error: "Invalid project identifier" });
+    return null;
+  }
+  return root;
 }
 
-// GET /workspace/files — list files recursively (max 10000)
-router.get("/files", async (_req: Request, res: Response) => {
+function readProjectId(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+// GET /workspace/files — list files in the caller's sandbox (max 10000)
+router.get("/files", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { stdout } = await execAsync(
-      `find "${WORKSPACE}" -type f ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" ! -path "*/.next/*" | head -10000`,
-      { cwd: WORKSPACE }
-    );
-    const files = stdout.trim().split("\n").filter(Boolean).map(f => f.replace(WORKSPACE + "/", ""));
-    res.json({ success: true, data: { files, count: files.length } });
+    const root = await getSandbox(req, res, readProjectId(req.query.projectId));
+    if (!root) return;
+
+    const { files, truncated } = await walkFiles(root);
+    res.json({ success: true, data: { files, count: files.length, truncated } });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: err instanceof Error ? err.message : "Failed to list files" });
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to list files",
+    });
   }
 });
 
 // GET /workspace/summary — file count, language breakdown, largest files
-router.get("/summary", async (_req: Request, res: Response) => {
+router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { stdout: filesOut } = await execAsync(
-      `find "${WORKSPACE}" -type f ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" ! -path "*/.next/*"`,
-      { cwd: WORKSPACE }
-    );
-    const files = filesOut.trim().split("\n").filter(Boolean);
+    const root = await getSandbox(req, res, readProjectId(req.query.projectId));
+    if (!root) return;
+
+    const { files, truncated } = await walkFiles(root);
 
     const languages: Record<string, number> = {};
-    for (const f of files) {
-      const ext = path.extname(f).slice(1).toLowerCase();
+    let totalLines = 0;
+    const sizes: Array<{ file: string; size: number }> = [];
+
+    for (const rel of files) {
+      const ext = path.extname(rel).slice(1).toLowerCase();
       if (ext) languages[ext] = (languages[ext] ?? 0) + 1;
+
+      const abs = path.join(root, rel);
+      try {
+        const stat = await fs.stat(abs);
+        sizes.push({ file: rel, size: stat.size });
+        if (stat.size <= 2 * 1024 * 1024) {
+          const content = await fs.readFile(abs, "utf8");
+          totalLines += content.length === 0 ? 0 : content.split("\n").length;
+        }
+      } catch {
+        // Skip unreadable files.
+      }
     }
 
-    const { stdout: linesOut } = await execAsync(
-      `find "${WORKSPACE}" -type f ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" ! -path "*/.next/*" -exec wc -l {} + 2>/dev/null | tail -1`,
-      { cwd: WORKSPACE }
-    ).catch(() => ({ stdout: "0" }));
-    const totalLines = parseInt(linesOut.trim().split(/\s+/)[0] ?? "0", 10);
-
-    const { stdout: largeOut } = await execAsync(
-      `find "${WORKSPACE}" -type f ! -path "*/node_modules/*" ! -path "*/.git/*" -exec du -k {} + | sort -rn | head -10`,
-      { cwd: WORKSPACE }
-    ).catch(() => ({ stdout: "" }));
-    const largestFiles = largeOut.trim().split("\n").filter(Boolean).map(l => l.split("\t")[1]?.replace(WORKSPACE + "/", "") ?? "");
+    const largestFiles = sizes
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 10)
+      .map((s) => s.file);
 
     res.json({
       success: true,
@@ -71,63 +105,105 @@ router.get("/summary", async (_req: Request, res: Response) => {
         languages,
         totalLines,
         largestFiles,
-        workspacePath: WORKSPACE,
+        truncated,
       },
     });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: err instanceof Error ? err.message : "Failed to summarize workspace" });
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to summarize workspace",
+    });
   }
 });
 
-// POST /workspace/search — search file contents
-router.post("/search", async (req: Request, res: Response) => {
-  const { query, filePattern } = req.body as { query?: string; filePattern?: string };
+// POST /workspace/search — search file contents within the caller's sandbox
+router.post("/search", async (req: AuthenticatedRequest, res: Response) => {
+  const { query, filePattern, projectId } = req.body as {
+    query?: string;
+    filePattern?: string;
+    projectId?: string;
+  };
+
   if (!query || typeof query !== "string" || query.length < 1) {
     return res.status(400).json({ success: false, error: "query is required" });
   }
-
-  const pattern = filePattern && /^[a-zA-Z0-9.*_\-/]+$/.test(filePattern) ? filePattern : "*.{ts,tsx,js,jsx,py,go,rs}";
-  const safeQuery = query.replace(/['"\\`$]/g, "");
+  if (query.length > 512) {
+    return res.status(400).json({ success: false, error: "query is too long" });
+  }
 
   try {
-    const { stdout } = await execAsync(
-      `grep -r --include="${pattern}" -n -l "${safeQuery}" "${WORKSPACE}" 2>/dev/null | head -50`,
-      { cwd: WORKSPACE }
-    ).catch(() => ({ stdout: "" }));
+    const root = await getSandbox(req, res, readProjectId(projectId));
+    if (!root) return;
 
-    const files = stdout.trim().split("\n").filter(Boolean).map(f => f.replace(WORKSPACE + "/", ""));
-    res.json({ success: true, data: { query, files, count: files.length } });
+    // filePattern is accepted as a comma/brace list of extensions (e.g.
+    // "ts,tsx" or "*.{ts,py}"); we extract bare extensions and match in-process.
+    const extensions =
+      typeof filePattern === "string" && filePattern.trim().length > 0
+        ? Array.from(filePattern.matchAll(/[A-Za-z0-9]+/g)).map((m) => m[0])
+        : DEFAULT_SEARCH_EXTENSIONS;
+
+    const { files, count, truncated } = await searchContents(root, query, extensions);
+    res.json({ success: true, data: { query, files, count, truncated } });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: err instanceof Error ? err.message : "Search failed" });
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Search failed",
+    });
   }
 });
 
-// GET /workspace/git-status — git status --porcelain
-router.get("/git-status", async (_req: Request, res: Response) => {
+// GET /workspace/git-status — git status --porcelain within the sandbox
+router.get("/git-status", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { stdout } = await execAsync("git status --porcelain", { cwd: WORKSPACE });
+    const root = await getSandbox(req, res, readProjectId(req.query.projectId));
+    if (!root) return;
+
+    const { stdout } = await execFileAsync(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: root }
+    ).catch(() => ({ stdout: "" }));
+
     const lines = stdout.trim().split("\n").filter(Boolean);
-    const changes = lines.map(l => ({
+    const changes = lines.map((l) => ({
       status: l.slice(0, 2).trim(),
       file: l.slice(3),
     }));
     res.json({ success: true, data: { changes, count: changes.length } });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: err instanceof Error ? err.message : "git status failed" });
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "git status failed",
+    });
   }
 });
 
-// GET /workspace/recent-changes — git log --oneline -20
-router.get("/recent-changes", async (_req: Request, res: Response) => {
+// GET /workspace/recent-changes — git log --oneline -20 within the sandbox
+router.get("/recent-changes", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { stdout } = await execAsync("git log --oneline -20 --no-color", { cwd: WORKSPACE });
-    const commits = stdout.trim().split("\n").filter(Boolean).map(l => {
-      const spaceIdx = l.indexOf(" ");
-      return { hash: l.slice(0, spaceIdx), message: l.slice(spaceIdx + 1) };
-    });
+    const root = await getSandbox(req, res, readProjectId(req.query.projectId));
+    if (!root) return;
+
+    const { stdout } = await execFileAsync(
+      "git",
+      ["log", "--oneline", "-20", "--no-color"],
+      { cwd: root }
+    ).catch(() => ({ stdout: "" }));
+
+    const commits = stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        const spaceIdx = l.indexOf(" ");
+        return { hash: l.slice(0, spaceIdx), message: l.slice(spaceIdx + 1) };
+      });
     res.json({ success: true, data: { commits } });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: err instanceof Error ? err.message : "git log failed" });
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "git log failed",
+    });
   }
 });
 

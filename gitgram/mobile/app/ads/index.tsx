@@ -1,31 +1,84 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, FlatList, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useCallback } from 'react';
+import { StyleSheet, ScrollView, View, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { ThemedView } from '../../components/ui/ThemedView';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { Button } from '../../components/ui/Button';
 import { Colors } from '../../constants/Colors';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
+import EmptyState from '../../components/common/EmptyState';
+import { adCampaignService } from '../../services/adCampaignService';
+import { logger } from '../../utils/logger';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+
+interface Campaign {
+  id: string;
+  name: string;
+  status: string;
+  impressions?: number;
+  clicks?: number;
+  spend?: number;
+}
+
+interface CampaignStats {
+  totalImpressions: number;
+  totalClicks: number;
+  totalSpend: number;
+}
 
 export default function AdsManagerScreen() {
   const router = useRouter();
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    totalImpressions: 20000,
-    totalClicks: 570,
-    totalSpend: 165.50
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [stats, setStats] = useState<CampaignStats>({
+    totalImpressions: 0,
+    totalClicks: 0,
+    totalSpend: 0,
   });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Mock data
-    setCampaigns([
-      { id: 1, name: 'Summer Sale', status: 'active', impressions: 15000, clicks: 450, spend: 120.50 },
-      { id: 2, name: 'New Feature Launch', status: 'paused', impressions: 5000, clicks: 120, spend: 45.00 },
-    ]);
+  const loadCampaigns = useCallback(async () => {
+    setError(null);
+    try {
+      const response = await adCampaignService.getCampaigns();
+      const list: Campaign[] = response.campaigns || response.data || [];
+      setCampaigns(list);
+      setStats(
+        list.reduce<CampaignStats>(
+          (acc, c) => ({
+            totalImpressions: acc.totalImpressions + (c.impressions || 0),
+            totalClicks: acc.totalClicks + (c.clicks || 0),
+            totalSpend: acc.totalSpend + (c.spend || 0),
+          }),
+          { totalImpressions: 0, totalClicks: 0, totalSpend: 0 }
+        )
+      );
+    } catch (err) {
+      logger.error('Load campaigns error:', err);
+      setError('Could not load campaigns. Pull to refresh to try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const renderCampaign = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.campaignCard}>
+  useFocusEffect(
+    useCallback(() => {
+      loadCampaigns();
+    }, [loadCampaigns])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadCampaigns();
+  }, [loadCampaigns]);
+
+  const renderCampaign = ({ item }: { item: Campaign }) => (
+    <TouchableOpacity
+      style={styles.campaignCard}
+      onPress={() => router.push(`/ads/campaigns/${item.id}`)}
+    >
       <View style={styles.campaignHeader}>
         <ThemedText type="defaultSemiBold">{item.name}</ThemedText>
         <View style={[
@@ -44,15 +97,15 @@ export default function AdsManagerScreen() {
       <View style={styles.campaignStats}>
         <View style={styles.statItem}>
           <ThemedText type="caption">Impressions</ThemedText>
-          <ThemedText type="defaultSemiBold">{item.impressions.toLocaleString()}</ThemedText>
+          <ThemedText type="defaultSemiBold">{(item.impressions || 0).toLocaleString()}</ThemedText>
         </View>
         <View style={styles.statItem}>
           <ThemedText type="caption">Clicks</ThemedText>
-          <ThemedText type="defaultSemiBold">{item.clicks.toLocaleString()}</ThemedText>
+          <ThemedText type="defaultSemiBold">{(item.clicks || 0).toLocaleString()}</ThemedText>
         </View>
         <View style={styles.statItem}>
           <ThemedText type="caption">Spend</ThemedText>
-          <ThemedText type="defaultSemiBold">${item.spend.toFixed(2)}</ThemedText>
+          <ThemedText type="defaultSemiBold">${(item.spend || 0).toFixed(2)}</ThemedText>
         </View>
       </View>
     </TouchableOpacity>
@@ -65,10 +118,18 @@ export default function AdsManagerScreen() {
           <Icon name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <ThemedText type="title">Ads Manager</ThemedText>
-        <Button title="Create" size="sm" onPress={() => {}} />
+        <Button
+          title="Create"
+          size="sm"
+          onPress={() => router.push('/ads/campaigns/create')}
+        />
       </View>
 
-      <ScrollView>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.text} />
+        }
+      >
         {/* Overview Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
@@ -89,12 +150,32 @@ export default function AdsManagerScreen() {
 
         <View style={styles.section}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>Campaigns</ThemedText>
-          <FlatList
-            data={campaigns}
-            renderItem={renderCampaign}
-            keyExtractor={item => item.id.toString()}
-            scrollEnabled={false}
-          />
+          {loading ? (
+            <LoadingSpinner />
+          ) : error ? (
+            <EmptyState
+              icon="⚠️"
+              title="Something went wrong"
+              message={error}
+              actionLabel="Retry"
+              onAction={loadCampaigns}
+            />
+          ) : campaigns.length === 0 ? (
+            <EmptyState
+              icon="📣"
+              title="No campaigns yet"
+              message="Create your first ad campaign to start reaching developers."
+              actionLabel="Create Campaign"
+              onAction={() => router.push('/ads/campaigns/create')}
+            />
+          ) : (
+            <FlatList
+              data={campaigns}
+              renderItem={renderCampaign}
+              keyExtractor={item => item.id.toString()}
+              scrollEnabled={false}
+            />
+          )}
         </View>
       </ScrollView>
     </ThemedView>

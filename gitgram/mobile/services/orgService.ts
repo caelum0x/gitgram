@@ -99,7 +99,7 @@ function toPaginated<T>(
 export const orgService = {
   /** Resolve an organization by its slug. */
   getOrg: async (slug: string): Promise<Organization | null> => {
-    const response = await api.get<OrgEnvelope>(`/v1/orgs/${encodeURIComponent(slug)}`);
+    const response = await api.get<OrgEnvelope>(`/orgs/${encodeURIComponent(slug)}`);
     return response.data.data ?? null;
   },
 
@@ -113,7 +113,7 @@ export const orgService = {
     limit = DEFAULT_LIMIT,
   ): Promise<PaginatedResult<OrgRepository>> => {
     const response = await api.get<PaginatedEnvelope<OrgRepository>>(
-      `/v1/orgs/${encodeURIComponent(orgId)}/repositories`,
+      `/orgs/${encodeURIComponent(orgId)}/repositories`,
       { params: { page, limit } },
     );
     return toPaginated(response.data, page, limit);
@@ -129,7 +129,7 @@ export const orgService = {
     limit = DEFAULT_LIMIT,
   ): Promise<PaginatedResult<OrgMember>> => {
     const response = await api.get<PaginatedEnvelope<OrgMember>>(
-      `/v1/orgs/${encodeURIComponent(orgId)}/members`,
+      `/orgs/${encodeURIComponent(orgId)}/members`,
       { params: { page, limit } },
     );
     return toPaginated(response.data, page, limit);

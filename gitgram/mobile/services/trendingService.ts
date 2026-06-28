@@ -49,7 +49,7 @@ export const trendingService = {
     page = 1,
     limit = 20
   ): Promise<{ posts: TrendingPost[]; hasMore: boolean }> => {
-    const response = await api.get('/v1/posts/trending', {
+    const response = await api.get('/posts/trending', {
       params: { timeframe, page, limit },
     });
     // Normalize response - backend may return array directly or { posts: [...] }
@@ -67,7 +67,7 @@ export const trendingService = {
   getTrendingHashtags: async (
     limit = 50
   ): Promise<TrendingHashtag[]> => {
-    const response = await api.get('/v1/tags/trending', {
+    const response = await api.get('/tags/trending', {
       params: { limit },
     });
     return response.data;
@@ -80,7 +80,7 @@ export const trendingService = {
   getTrendingUsers: async (
     limit = 20
   ): Promise<{ users: TrendingUser[] }> => {
-    const response = await api.get('/v1/popular/users', {
+    const response = await api.get('/popular/users', {
       params: { limit },
     });
     return response.data;
@@ -94,7 +94,7 @@ export const trendingService = {
     limit = 20,
     offset = 0
   ): Promise<{ posts: TrendingPost[]; hasMore: boolean }> => {
-    const response = await api.get('/v1/popular/posts', {
+    const response = await api.get('/popular/posts', {
       params: { limit, offset },
     });
     return response.data;
@@ -107,7 +107,7 @@ export const trendingService = {
   getPopularHashtags: async (
     limit = 10
   ): Promise<{ hashtags: TrendingHashtag[] }> => {
-    const response = await api.get('/v1/popular/hashtags', {
+    const response = await api.get('/popular/hashtags', {
       params: { limit },
     });
     return response.data;

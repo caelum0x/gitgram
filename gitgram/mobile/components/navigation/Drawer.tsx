@@ -24,9 +24,9 @@ export default function Drawer() {
     { icon: 'explore', label: 'Explore', route: '/(tabs)/explore' },
     { icon: 'notifications', label: 'Notifications', route: '/(tabs)/notifications' },
     { icon: 'message', label: 'Messages', route: '/(tabs)/messages' },
-    { icon: 'bookmark', label: 'Saved', route: '/(tabs)/profile?tab=saved' },
-    { icon: 'settings', label: 'Settings', route: '/settings' },
-    { icon: 'help', label: 'Help', route: '/help' },
+    { icon: 'bookmark', label: 'Saved', route: '/saved/posts' },
+    { icon: 'settings', label: 'Settings', route: '/profile/settings' },
+    { icon: 'help', label: 'Help', route: '/profile/settings/help' },
     { divider: true },
     { icon: 'logout', label: 'Logout', onPress: handleLogout },
   ];

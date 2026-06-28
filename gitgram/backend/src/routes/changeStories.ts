@@ -69,8 +69,9 @@ router.post(
         return res.status(200).json({ message: 'No auto-story repository linked to this project' });
       }
       return res.status(201).json({ message: 'Change story draft created', draftId: result.draftId });
-    } catch (error: any) {
-      logger.error('Auto-generate change story failed:', error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Auto-generate change story failed:', message);
       return res.status(500).json({ message: 'Failed to auto-generate change story' });
     }
   }
@@ -89,14 +90,15 @@ router.post(
       const { draftId } = req.body;
       const post = await changeStoryService.publishDraft(draftId, req.userId!);
       return res.status(200).json({ message: 'Change story published', post });
-    } catch (error: any) {
-      if (error.message === 'Draft not found') {
-        return res.status(404).json({ message: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === 'Draft not found') {
+        return res.status(404).json({ message });
       }
-      if (error.message === 'Not authorized to publish this draft') {
-        return res.status(403).json({ message: error.message });
+      if (message === 'Not authorized to publish this draft') {
+        return res.status(403).json({ message });
       }
-      logger.error('Publish change story failed:', error.message);
+      logger.error('Publish change story failed:', message);
       return res.status(500).json({ message: 'Failed to publish change story' });
     }
   }

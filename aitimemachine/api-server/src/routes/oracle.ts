@@ -525,28 +525,93 @@ router.delete(
 );
 
 /**
- * POST /v1/deep-research
- * Multi-step deep research (alias for Oracle)
+ * POST /v1/oracle/deep-research
+ * Multi-step deep research (alias for Oracle).
+ *
+ * Previously a no-op stub that returned a fabricated job_id without persisting a
+ * researchJobs row or running the agent, so the advertised GET /v1/oracle/:id
+ * poll always 404'd. It now enqueues a real job (mirroring POST /v1/oracle) so
+ * the poll resolves to genuine status/results.
  */
 router.post(
   "/deep-research",
   requirePlan("pro"),
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const { query, sources = [], depth = 3 } = req.body;
+    const { query, project_id, sources = [], depth = 3, include_web_search = true } = req.body;
 
     if (!query) {
       throw Errors.missingParameter("query");
     }
 
-    const jobId = `dr_${crypto.randomBytes(8).toString("hex")}`;
+    const sessionId = `oracle_${crypto.randomBytes(8).toString("hex")}`;
+
+    const [job] = await db
+      .insert(schema.researchJobs)
+      .values({
+        id: sessionId,
+        userId: req.user!.userId,
+        projectId: project_id,
+        query,
+        status: "running",
+        priority: 1,
+        progress: 0,
+        metadata: {
+          sources,
+          max_depth: depth,
+          include_web_search,
+          via: "deep-research",
+        },
+      })
+      .returning();
+
+    setImmediate(async () => {
+      try {
+        const result = await runResearchAgent(query, {
+          maxDepth: depth,
+          includeWebSearch: include_web_search,
+          sources,
+          onProgress: async (_step, progress) => {
+            try {
+              await db
+                .update(schema.researchJobs)
+                .set({
+                  status: progress >= 100 ? "completed" : "processing",
+                  progress,
+                })
+                .where(eq(schema.researchJobs.id, sessionId));
+            } catch { /* ignore progress update failures */ }
+          },
+        });
+
+        await db
+          .update(schema.researchJobs)
+          .set({
+            status: "completed",
+            result: JSON.stringify(result),
+            progress: 100,
+            completedAt: new Date(),
+          })
+          .where(eq(schema.researchJobs.id, sessionId));
+      } catch (err) {
+        await db
+          .update(schema.researchJobs)
+          .set({
+            status: "failed",
+            error: (err as Error).message,
+          })
+          .where(eq(schema.researchJobs.id, sessionId));
+      }
+    });
 
     res.status(201).json({
-      job_id: jobId,
+      job_id: sessionId,
+      session_id: sessionId,
       query,
       sources,
       depth,
-      status: "queued",
-      message: "Deep research job queued. Use GET /v1/oracle/:id to check status.",
+      status: "running",
+      created_at: job.createdAt,
+      message: "Deep research job started. Use GET /v1/oracle/:id to check status.",
     });
   })
 );

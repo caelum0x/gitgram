@@ -39,7 +39,7 @@ export const adService = {
       } as any);
     }
 
-    const response = await api.post('/v1/ads', formData, {
+    const response = await api.post('/ads', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -48,7 +48,7 @@ export const adService = {
   },
 
   getAds: async (campaignId?: string, status?: string, page = 1, limit = 20) => {
-    const response = await api.get('/v1/ads', {
+    const response = await api.get('/ads', {
       params: {
         campaignId,
         status,
@@ -60,37 +60,37 @@ export const adService = {
   },
 
   getAd: async (adId: string) => {
-    const response = await api.get(`/v1/ads/${adId}`);
+    const response = await api.get(`/ads/${adId}`);
     return response.data;
   },
 
   updateAd: async (adId: string, data: any) => {
-    const response = await api.put(`/v1/ads/${adId}`, data);
+    const response = await api.put(`/ads/${adId}`, data);
     return response.data;
   },
 
   deleteAd: async (adId: string) => {
-    const response = await api.delete(`/v1/ads/${adId}`);
+    const response = await api.delete(`/ads/${adId}`);
     return response.data;
   },
 
   pauseAd: async (adId: string) => {
-    const response = await api.post(`/v1/ads/${adId}/pause`);
+    const response = await api.post(`/ads/${adId}/pause`);
     return response.data;
   },
 
   resumeAd: async (adId: string) => {
-    const response = await api.post(`/v1/ads/${adId}/resume`);
+    const response = await api.post(`/ads/${adId}/resume`);
     return response.data;
   },
 
   getAdAnalytics: async (adId: string) => {
-    const response = await api.get(`/v1/ads/${adId}/analytics`);
+    const response = await api.get(`/ads/${adId}/analytics`);
     return response.data;
   },
 
   getFeedAds: async (feedPosition: number, placement: 'feed' | 'reels' | 'stories' | 'explore' = 'feed', limit = 1) => {
-    const response = await api.get('/v1/ads/feed', {
+    const response = await api.get('/ads/feed', {
       params: {
         position: feedPosition,
         placement,
@@ -101,44 +101,44 @@ export const adService = {
   },
 
   trackImpression: async (adId: string, metadata?: any) => {
-    const response = await api.post(`/v1/ads/${adId}/impression`, { metadata });
+    const response = await api.post(`/ads/${adId}/impression`, { metadata });
     return response.data;
   },
 
   trackClick: async (adId: string, metadata?: any) => {
-    const response = await api.post(`/v1/ads/${adId}/click`, { metadata });
+    const response = await api.post(`/ads/${adId}/click`, { metadata });
     return response.data;
   },
 
   trackConversion: async (adId: string, metadata?: any) => {
-    const response = await api.post(`/v1/ads/${adId}/conversion`, { metadata });
+    const response = await api.post(`/ads/${adId}/conversion`, { metadata });
     return response.data;
   },
 
   getMyAds: async (page = 1, limit = 20) => {
-    const response = await api.get('/v1/ads/my', {
+    const response = await api.get('/ads/my', {
       params: { page, limit },
     });
     return response.data;
   },
 
   getPreferences: async () => {
-    const response = await api.get('/v1/ads/preferences');
+    const response = await api.get('/ads/preferences');
     return response.data;
   },
 
   updatePreferences: async (preferences: any) => {
-    const response = await api.put('/v1/ads/preferences', preferences);
+    const response = await api.put('/ads/preferences', preferences);
     return response.data;
   },
 
   reportAd: async (adId: string, data: { reason: string; details?: string }) => {
-    const response = await api.post(`/v1/ads/${adId}/report`, data);
+    const response = await api.post(`/ads/${adId}/report`, data);
     return response.data;
   },
 
   trackView: async (adId: string, metadata?: any) => {
-    const response = await api.post(`/v1/ads/${adId}/view`, { metadata });
+    const response = await api.post(`/ads/${adId}/view`, { metadata });
     return response.data;
   },
 };

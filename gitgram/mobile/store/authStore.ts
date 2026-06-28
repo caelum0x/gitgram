@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import { pushNotificationService } from '../services/pushNotificationService';
+import { API_BASE_URL } from '../constants/Config';
+import { logger } from '../utils/logger';
 
 interface User {
   id: string;
@@ -59,26 +62,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!refreshToken) return null;
 
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api'}/v1/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-      });
+      // Use a bare axios call (not the shared `api` client) to avoid recursing
+      // through api's request interceptor, which itself calls refreshAccessToken.
+      // The base URL is sourced from Config so host/path stay consistent with
+      // authService and the rest of the app.
+      const response = await axios.post(
+        `${API_BASE_URL}/auth/refresh`,
+        { refreshToken },
+        { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        await AsyncStorage.setItem('accessToken', data.accessToken);
-        set({ accessToken: data.accessToken });
-        return data.accessToken;
-      } else {
-        // Refresh token expired, logout
-        await get().logout();
-        return null;
+      const accessToken: string | undefined = response.data?.accessToken;
+      if (accessToken) {
+        await AsyncStorage.setItem('accessToken', accessToken);
+        set({ accessToken });
+        return accessToken;
       }
+
+      // No token returned, treat as failed refresh
+      await get().logout();
+      return null;
     } catch (error) {
-      console.error('Error refreshing token:', error);
+      // Refresh token expired/invalid -> force logout so UI returns to auth flow
+      logger.error('Error refreshing token:', error);
+      await get().logout();
       return null;
     }
   },
@@ -96,7 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ isLoading: false });
       }
     } catch (error) {
-      console.error('Error initializing auth:', error);
+      logger.error('Error initializing auth:', error);
       set({ isLoading: false });
     }
   },

@@ -40,45 +40,45 @@ export const snippetService = {
     page?: number;
     limit?: number;
   }) => {
-    const { data } = await api.get('/v1/snippets', { params });
+    const { data } = await api.get('/snippets', { params });
     return data;
   },
 
   getSnippet: async (id: string) => {
-    const { data } = await api.get(`/v1/snippets/${id}`);
+    const { data } = await api.get(`/snippets/${id}`);
     return data;
   },
 
   createSnippet: async (snippetData: CreateSnippetData) => {
-    const { data } = await api.post('/v1/snippets', snippetData);
+    const { data } = await api.post('/snippets', snippetData);
     return data;
   },
 
   updateSnippet: async (id: string, snippetData: Partial<CreateSnippetData>) => {
-    const { data } = await api.put(`/v1/snippets/${id}`, snippetData);
+    const { data } = await api.put(`/snippets/${id}`, snippetData);
     return data;
   },
 
   deleteSnippet: async (id: string) => {
-    const { data } = await api.delete(`/v1/snippets/${id}`);
+    const { data } = await api.delete(`/snippets/${id}`);
     return data;
   },
 
   likeSnippet: async (id: string) => {
-    const { data } = await api.post(`/v1/snippets/${id}/like`);
+    const { data } = await api.post(`/snippets/${id}/like`);
     return data;
   },
 
   getTrendingSnippets: async (language?: string, limit = 10) => {
     const params: any = { limit };
     if (language) params.language = language;
-    const { data } = await api.get('/v1/snippets/trending', { params });
+    const { data } = await api.get('/snippets/trending', { params });
     return data;
   },
 
   // Get snippets from a specific repository
   getRepositorySnippets: async (repositoryId: string, page = 1, limit = 20) => {
-    const { data } = await api.get('/v1/snippets', {
+    const { data } = await api.get('/snippets', {
       params: { repositoryId, page, limit },
     });
     return data;
@@ -86,7 +86,7 @@ export const snippetService = {
 
   // Get current user's snippets
   getMySnippets: async (page = 1, limit = 20) => {
-    const { data } = await api.get('/v1/snippets', {
+    const { data } = await api.get('/snippets', {
       params: { mine: true, page, limit },
     });
     return data;
@@ -96,7 +96,7 @@ export const snippetService = {
   searchSnippets: async (query: string, language?: string, page = 1, limit = 20) => {
     const params: any = { q: query, page, limit };
     if (language) params.language = language;
-    const { data } = await api.get('/v1/snippets', { params });
+    const { data } = await api.get('/snippets', { params });
     return data;
   },
 };

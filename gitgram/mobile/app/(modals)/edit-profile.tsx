@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore';
 import { userService } from '../../services/userService';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { useToast } from '../../hooks/useToast';
+import { logger } from '../../utils/logger';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -71,7 +72,7 @@ export default function EditProfileScreen() {
       showToast('Profile updated successfully!', 'success');
       router.back();
     } catch (error: any) {
-      console.error('Update profile error:', error);
+      logger.error('Update profile error:', error);
       showToast(error.response?.data?.error || 'Failed to update profile', 'error');
     } finally {
       setLoading(false);

@@ -43,7 +43,8 @@ interface Session {
 
 interface RestoreProgress {
   status: 'idle' | 'running' | 'done' | 'error';
-  percent: number;
+  /** null while running with no measurable progress (indeterminate). */
+  percent: number | null;
   message: string;
 }
 
@@ -84,7 +85,7 @@ function RestoreSuccess({ session }: { session: Session }) {
           <Link href="/restore">Restore another</Link>
         </Button>
         <Button asChild>
-          <Link href="/sessions">View all sessions</Link>
+          <Link href="/dashboard/timeline">View all sessions</Link>
         </Button>
       </div>
     </div>
@@ -141,12 +142,14 @@ export default function SessionRestorePage() {
 
   const handleRestore = async () => {
     if (!session) return;
-    setProgress({ status: 'running', percent: 10, message: 'Preparing restore…' });
+    // Single atomic restore call with no progress stream: show an honest
+    // indeterminate running state, then 100% only on confirmed completion.
+    setProgress({
+      status: 'running',
+      percent: null,
+      message: createBackup ? 'Backing up and restoring…' : 'Restoring files…',
+    });
     try {
-      if (createBackup) {
-        setProgress({ status: 'running', percent: 30, message: 'Creating backup…' });
-      }
-      setProgress({ status: 'running', percent: 60, message: 'Restoring files…' });
       const res = await fetch('/api/v1/sessions/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -161,7 +164,7 @@ export default function SessionRestorePage() {
     } catch (err: unknown) {
       setProgress({
         status: 'error',
-        percent: 0,
+        percent: null,
         message: err instanceof Error ? err.message : 'Restore failed',
       });
     }
@@ -310,14 +313,22 @@ export default function SessionRestorePage() {
                       >
                         {progress.message}
                       </span>
-                      <span className="text-gray-500">{progress.percent}%</span>
+                      {progress.percent !== null && (
+                        <span className="text-gray-500">{progress.percent}%</span>
+                      )}
                     </div>
-                    <Progress
-                      value={progress.percent}
-                      indicatorClassName={
-                        progress.status === 'error' ? 'bg-red-600' : undefined
-                      }
-                    />
+                    {progress.percent !== null ? (
+                      <Progress
+                        value={progress.percent}
+                        indicatorClassName={
+                          progress.status === 'error' ? 'bg-red-600' : undefined
+                        }
+                      />
+                    ) : (
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+                        <div className="h-full w-full animate-pulse rounded-full bg-blue-600/70" />
+                      </div>
+                    )}
                   </div>
                 )}
 

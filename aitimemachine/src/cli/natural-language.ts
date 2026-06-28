@@ -4,8 +4,19 @@
  * Parses natural language queries into structured time travel operations
  */
 
-import { SqliteRepo } from "../store/sqlite_repo.js";
 import type { CheckpointRow } from "../store/repo.js";
+
+/**
+ * Narrow read interface the natural-language parser depends on. Both the
+ * SqliteRepo (used by src/mcp/server.ts) and the engine-backed adapter (used by
+ * the shipped CLI natural-language commands) satisfy this contract, so the
+ * parser works against whichever checkpoint store is populated.
+ */
+export interface CheckpointReader {
+  listCheckpointsNewestFirst(projectId: string, limit: number): CheckpointRow[];
+  getCheckpoint(projectId: string, checkpointId: string): CheckpointRow | null;
+  searchCheckpoints(projectId: string, query: string): CheckpointRow[];
+}
 
 export interface TimeQuery {
   type: "absolute" | "relative" | "event" | "unknown";
@@ -167,7 +178,7 @@ export function parseTimeQuery(query: string): TimeQuery {
  * Find checkpoints matching a natural language time query
  */
 export function findCheckpointsForQuery(
-  repo: SqliteRepo,
+  repo: CheckpointReader,
   projectId: string,
   query: TimeQuery,
   limit: number = 10
@@ -266,7 +277,7 @@ export function findCheckpointsForQuery(
  * Find the last "green" checkpoint (tests passed, build succeeded)
  */
 export function findLastGreenCheckpoint(
-  repo: SqliteRepo,
+  repo: CheckpointReader,
   projectId: string
 ): { checkpointId: string; name: string; createdAt: string } | null {
   const checkpoints = repo.listCheckpointsNewestFirst(projectId, 100);
@@ -618,7 +629,7 @@ export function parseAdvancedQuery(query: string): AdvancedQuery {
  * Find the best checkpoint matching an advanced query
  */
 export function findCheckpointForAdvancedQuery(
-  repo: SqliteRepo,
+  repo: CheckpointReader,
   projectId: string,
   query: AdvancedQuery,
   limit: number = 10
@@ -708,7 +719,7 @@ export function findCheckpointForAdvancedQuery(
  * Find potential error points in checkpoint history
  */
 export function analyzeErrorHistory(
-  repo: SqliteRepo,
+  repo: CheckpointReader,
   projectId: string,
   lookbackMinutes: number = 120
 ): {

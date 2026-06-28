@@ -4,8 +4,6 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Search,
-  Star,
-  GitFork,
   Clock,
   ArrowRight,
   Loader2,
@@ -22,24 +20,23 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  OFFICIAL_TEMPLATES,
+  COMMUNITY_TEMPLATES,
+  type Template,
+  type TemplateCategory,
+  type TemplateDifficulty,
+} from '@/lib/templates';
 
 // ---- Types ------------------------------------------------------------------
 
-type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced';
+type CategoryId = 'all' | TemplateCategory;
 
-type CategoryId = 'all' | 'frontend' | 'backend' | 'devops' | 'ai' | 'fullstack';
-
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  category: Exclude<CategoryId, 'all'>;
-  stack: string[];
-  estimatedTime: string;
-  difficulty: Difficulty;
-  stars: number;
-  forks: number;
-  official: boolean;
+interface FromTemplateResponse {
+  projectId: string;
+  sessionId: string;
+  nextPath: string;
+  scaffoldCommand: string;
 }
 
 // ---- Data -------------------------------------------------------------------
@@ -53,244 +50,13 @@ const CATEGORIES: { id: CategoryId; label: string; icon: React.ComponentType<{ c
   { id: 'fullstack', label: 'Full-Stack', icon: Zap },
 ];
 
-const TEMPLATES: Template[] = [
-  // Frontend
-  {
-    id: 'react-setup',
-    name: 'React Setup',
-    description: 'Vite + React + TypeScript starter with Tailwind CSS, ESLint, and Prettier pre-configured.',
-    category: 'frontend',
-    stack: ['React', 'TypeScript', 'Vite', 'Tailwind'],
-    estimatedTime: '5 min',
-    difficulty: 'Beginner',
-    stars: 2_840,
-    forks: 391,
-    official: true,
-  },
-  {
-    id: 'nextjs-app',
-    name: 'Next.js App',
-    description: 'Production-ready Next.js 14 app router with auth, database, and deployment config.',
-    category: 'frontend',
-    stack: ['Next.js', 'TypeScript', 'Prisma', 'NextAuth'],
-    estimatedTime: '10 min',
-    difficulty: 'Intermediate',
-    stars: 5_120,
-    forks: 743,
-    official: true,
-  },
-  {
-    id: 'vue-spa',
-    name: 'Vue SPA',
-    description: 'Vue 3 single-page application with Pinia state management and Vue Router.',
-    category: 'frontend',
-    stack: ['Vue 3', 'TypeScript', 'Pinia', 'Vue Router'],
-    estimatedTime: '8 min',
-    difficulty: 'Intermediate',
-    stars: 1_670,
-    forks: 218,
-    official: false,
-  },
-  // Backend
-  {
-    id: 'express-api',
-    name: 'Express API',
-    description: 'REST API with Express, Zod validation, JWT auth, PostgreSQL, and OpenAPI docs.',
-    category: 'backend',
-    stack: ['Node.js', 'Express', 'PostgreSQL', 'Zod'],
-    estimatedTime: '12 min',
-    difficulty: 'Intermediate',
-    stars: 3_290,
-    forks: 487,
-    official: true,
-  },
-  {
-    id: 'fastapi',
-    name: 'FastAPI',
-    description: 'Async Python API with FastAPI, Pydantic v2, SQLAlchemy, and auto-generated docs.',
-    category: 'backend',
-    stack: ['Python', 'FastAPI', 'SQLAlchemy', 'Alembic'],
-    estimatedTime: '10 min',
-    difficulty: 'Intermediate',
-    stars: 4_150,
-    forks: 612,
-    official: true,
-  },
-  {
-    id: 'go-service',
-    name: 'Go Service',
-    description: 'Idiomatic Go microservice with Chi router, sqlc, structured logging, and graceful shutdown.',
-    category: 'backend',
-    stack: ['Go', 'Chi', 'sqlc', 'PostgreSQL'],
-    estimatedTime: '15 min',
-    difficulty: 'Advanced',
-    stars: 2_010,
-    forks: 289,
-    official: false,
-  },
-  // DevOps
-  {
-    id: 'docker-deploy',
-    name: 'Docker Deploy',
-    description: 'Multi-stage Dockerfile, docker-compose for local dev, and GitHub Actions CD pipeline.',
-    category: 'devops',
-    stack: ['Docker', 'GitHub Actions', 'Nginx', 'Compose'],
-    estimatedTime: '20 min',
-    difficulty: 'Intermediate',
-    stars: 1_880,
-    forks: 334,
-    official: true,
-  },
-  {
-    id: 'k8s-setup',
-    name: 'K8s Setup',
-    description: 'Kubernetes manifests with Helm chart, HPA, ingress, and cert-manager TLS.',
-    category: 'devops',
-    stack: ['Kubernetes', 'Helm', 'Ingress', 'cert-manager'],
-    estimatedTime: '30 min',
-    difficulty: 'Advanced',
-    stars: 1_340,
-    forks: 201,
-    official: false,
-  },
-  {
-    id: 'cicd',
-    name: 'CI/CD Pipeline',
-    description: 'Complete CI/CD with GitHub Actions: lint, test, build, deploy, and Slack notifications.',
-    category: 'devops',
-    stack: ['GitHub Actions', 'Docker', 'AWS ECR', 'Slack'],
-    estimatedTime: '25 min',
-    difficulty: 'Intermediate',
-    stars: 2_560,
-    forks: 418,
-    official: true,
-  },
-  // AI Projects
-  {
-    id: 'llm-app',
-    name: 'LLM App',
-    description: 'Full-stack LLM application with streaming, chat history, and tool-use via the Claude API.',
-    category: 'ai',
-    stack: ['Next.js', 'Claude API', 'Vercel AI SDK', 'Redis'],
-    estimatedTime: '15 min',
-    difficulty: 'Intermediate',
-    stars: 6_740,
-    forks: 1_120,
-    official: true,
-  },
-  {
-    id: 'fine-tuning',
-    name: 'Fine-tuning',
-    description: 'Dataset preparation, LoRA fine-tuning with Unsloth, evaluation pipeline, and model export.',
-    category: 'ai',
-    stack: ['Python', 'PyTorch', 'Unsloth', 'Weights & Biases'],
-    estimatedTime: '45 min',
-    difficulty: 'Advanced',
-    stars: 3_890,
-    forks: 567,
-    official: false,
-  },
-  {
-    id: 'rag-system',
-    name: 'RAG System',
-    description: 'Retrieval-Augmented Generation with pgvector, chunking strategies, and a chat UI.',
-    category: 'ai',
-    stack: ['Python', 'FastAPI', 'pgvector', 'LangChain'],
-    estimatedTime: '30 min',
-    difficulty: 'Advanced',
-    stars: 5_210,
-    forks: 876,
-    official: true,
-  },
-  // Full-Stack
-  {
-    id: 'mern',
-    name: 'MERN Stack',
-    description: 'MongoDB, Express, React, Node.js — JWT auth, file uploads, and Mongoose models.',
-    category: 'fullstack',
-    stack: ['MongoDB', 'Express', 'React', 'Node.js'],
-    estimatedTime: '20 min',
-    difficulty: 'Intermediate',
-    stars: 4_430,
-    forks: 892,
-    official: false,
-  },
-  {
-    id: 't3-stack',
-    name: 'T3 Stack',
-    description: 'The full T3 stack: Next.js, tRPC, Tailwind, Prisma, and NextAuth — batteries included.',
-    category: 'fullstack',
-    stack: ['Next.js', 'tRPC', 'Prisma', 'NextAuth'],
-    estimatedTime: '12 min',
-    difficulty: 'Intermediate',
-    stars: 7_890,
-    forks: 1_340,
-    official: true,
-  },
-  {
-    id: 'django-react',
-    name: 'Django + React',
-    description: 'Django REST Framework backend + React SPA with JWT auth, Celery tasks, and Redis cache.',
-    category: 'fullstack',
-    stack: ['Django', 'DRF', 'React', 'Celery'],
-    estimatedTime: '25 min',
-    difficulty: 'Intermediate',
-    stars: 3_120,
-    forks: 534,
-    official: false,
-  },
-];
-
-const COMMUNITY_TEMPLATES: Template[] = [
-  {
-    id: 'supabase-saas',
-    name: 'Supabase SaaS Starter',
-    description: 'Multi-tenant SaaS boilerplate with Supabase auth, Row Level Security, and Stripe billing.',
-    category: 'fullstack',
-    stack: ['Next.js', 'Supabase', 'Stripe', 'Tailwind'],
-    estimatedTime: '20 min',
-    difficulty: 'Intermediate',
-    stars: 9_210,
-    forks: 1_870,
-    official: false,
-  },
-  {
-    id: 'rust-actix',
-    name: 'Rust Actix API',
-    description: 'High-performance REST API with Actix-web, SeaORM, and comprehensive error handling.',
-    category: 'backend',
-    stack: ['Rust', 'Actix-web', 'SeaORM', 'PostgreSQL'],
-    estimatedTime: '20 min',
-    difficulty: 'Advanced',
-    stars: 2_340,
-    forks: 312,
-    official: false,
-  },
-  {
-    id: 'electron-app',
-    name: 'Electron Desktop App',
-    description: 'Cross-platform desktop app with Electron, React, auto-updater, and native menu.',
-    category: 'frontend',
-    stack: ['Electron', 'React', 'TypeScript', 'Vite'],
-    estimatedTime: '15 min',
-    difficulty: 'Intermediate',
-    stars: 3_780,
-    forks: 621,
-    official: false,
-  },
-];
-
 // ---- Helpers ----------------------------------------------------------------
 
-const DIFFICULTY_COLOR: Record<Difficulty, string> = {
+const DIFFICULTY_COLOR: Record<TemplateDifficulty, string> = {
   Beginner: 'bg-green-500/20 text-green-400 border-green-800',
   Intermediate: 'bg-yellow-500/20 text-yellow-400 border-yellow-800',
   Advanced: 'bg-red-500/20 text-red-400 border-red-800',
 };
-
-function formatCount(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
 
 // ---- Sub-components ---------------------------------------------------------
 
@@ -330,20 +96,10 @@ function TemplateCard({ template, onUse, loading }: TemplateCardProps) {
 
       <div className="mt-auto space-y-3">
         <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" />
-              {template.estimatedTime}
-            </span>
-            <span className="flex items-center gap-1">
-              <Star className="w-3.5 h-3.5" />
-              {formatCount(template.stars)}
-            </span>
-            <span className="flex items-center gap-1">
-              <GitFork className="w-3.5 h-3.5" />
-              {formatCount(template.forks)}
-            </span>
-          </div>
+          <span className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" />
+            {template.estimatedTime} setup
+          </span>
           <span
             className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${DIFFICULTY_COLOR[template.difficulty]}`}
           >
@@ -388,7 +144,7 @@ export default function TemplatesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
-    return TEMPLATES.filter((t) => {
+    return OFFICIAL_TEMPLATES.filter((t) => {
       const matchesCategory = activeCategory === 'all' || t.category === activeCategory;
       const q = search.toLowerCase();
       const matchesSearch =
@@ -413,10 +169,10 @@ export default function TemplatesPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Server error ${res.status}`);
       }
-      const { sessionId } = (await res.json()) as { sessionId: string };
-      // Land on the new project's replay timeline (there is no bare
-      // /sessions/[id] route — replay is the project's session view).
-      router.push(`/sessions/${sessionId}/replay`);
+      const data = (await res.json()) as FromTemplateResponse;
+      // Land on the new project's timeline, which renders a proper
+      // "create your first checkpoint" empty state for a fresh project.
+      router.push(data.nextPath ?? `/dashboard/timeline?project=${data.projectId}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
       setLoadingId(null);
@@ -435,7 +191,9 @@ export default function TemplatesPage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
           <div className="inline-flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-full px-4 py-1.5 text-sm mb-6">
             <Zap className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-gray-300">{TEMPLATES.length} templates available</span>
+            <span className="text-gray-300">
+              {OFFICIAL_TEMPLATES.length + COMMUNITY_TEMPLATES.length} templates available
+            </span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-5">

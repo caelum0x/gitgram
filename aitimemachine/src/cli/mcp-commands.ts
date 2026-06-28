@@ -76,9 +76,13 @@ export function registerMcpCommands(program: Command): void {
       child.on('exit', (code) => process.exit(code || 0));
     });
 
-  // Global daemon
+  // Global daemon (auto-setup, periodic capture, cloud sync).
+  // Distinct from the auto-checkpoint daemon registered by watch-commands as
+  // `aitm daemon start|stop|status`. Named `global-daemon` so both are reachable
+  // (commander only allows one command per name; the first registrant wins, so
+  // a shared `daemon` name would have made one of them a dead no-op).
   program
-    .command('daemon')
+    .command('global-daemon')
     .description('Start global background daemon (auto-setup, periodic capture, cloud sync)')
     .option('--foreground', 'Run in foreground (for debugging)')
     .action(async (options) => {
@@ -96,8 +100,8 @@ export function registerMcpCommands(program: Command): void {
     });
 
   program
-    .command('daemon-stop')
-    .description('Stop the background daemon')
+    .command('global-daemon-stop')
+    .description('Stop the global background daemon')
     .action(async () => {
       const { DaemonManager } = await import('../server/daemon-manager.js');
       const dm = new DaemonManager();
@@ -106,8 +110,8 @@ export function registerMcpCommands(program: Command): void {
     });
 
   program
-    .command('daemon-status')
-    .description('Check daemon status')
+    .command('global-daemon-status')
+    .description('Check global daemon status')
     .action(async () => {
       const { DaemonManager } = await import('../server/daemon-manager.js');
       const dm = new DaemonManager();
@@ -120,8 +124,8 @@ export function registerMcpCommands(program: Command): void {
     });
 
   program
-    .command('daemon-logs')
-    .description('View daemon logs')
+    .command('global-daemon-logs')
+    .description('View global daemon logs')
     .option('-n, --lines <n>', 'Number of lines', '20')
     .action(async (options) => {
       const { DaemonManager } = await import('../server/daemon-manager.js');

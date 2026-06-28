@@ -11,6 +11,7 @@ import { Colors } from '../../constants/Colors';
 import Header from '../../components/navigation/Header';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Constants from 'expo-constants';
+import { logger } from '../../utils/logger';
 
 export default function AboutScreen() {
   const appVersion = Constants.expoConfig?.version || '1.0.0';
@@ -46,7 +47,7 @@ export default function AboutScreen() {
     try {
       await Linking.openURL(url);
     } catch (error) {
-      console.error('Failed to open URL:', error);
+      logger.error('Failed to open URL:', error);
     }
   };
 

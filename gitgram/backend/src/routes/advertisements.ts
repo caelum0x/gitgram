@@ -1,9 +1,11 @@
 import express from 'express';
 import { body, param } from 'express-validator';
 import * as advertisementsController from '../controllers/advertisementsController';
-import { authenticate } from '../middleware/auth';
+import * as adCampaignsController from '../controllers/adCampaignsController';
+import { authenticate, optionalAuth } from '../middleware/auth';
+import { requireModeratorOrAdmin } from '../middleware/authorization';
 import { validate } from '../middleware/validation';
-import { interactionLimiter } from '../middleware/rateLimiter';
+import { upload } from '../services/storageService';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
@@ -17,31 +19,69 @@ const adTrackingLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const createAdValidation = validate([
-  body('title').optional().isString().trim().isLength({ max: 200 }).withMessage('Title must be under 200 characters'),
-  body('content').optional().isString().trim().isLength({ max: 2000 }).withMessage('Content must be under 2000 characters'),
-  body('targetUrl').optional().isURL({ require_protocol: true }).withMessage('Target URL must be a valid URL with protocol'),
-  body('mediaUrl').optional().isURL({ require_protocol: true }).withMessage('Media URL must be a valid URL'),
-  body('type').optional().isIn(['banner', 'sponsored', 'native']).withMessage('Type must be banner, sponsored, or native'),
-  body('budget').optional().isFloat({ min: 0 }).withMessage('Budget must be a non-negative number'),
-  body('startDate').optional().isISO8601().withMessage('Start date must be a valid ISO 8601 date'),
-  body('endDate').optional().isISO8601().withMessage('End date must be a valid ISO 8601 date'),
+const idParam = validate([param('id').isString().notEmpty().withMessage('Invalid id')]);
+
+const createCampaignValidation = validate([
+  body('name').isString().trim().isLength({ min: 1, max: 200 }).withMessage('Campaign name is required'),
+  body('type').optional().isIn(['post', 'reel', 'story', 'banner', 'video']),
+  body('budget').exists().withMessage('Budget is required'),
+  body('billingType').optional().isIn(['cpc', 'cpm', 'cpa']),
 ]);
 
-const updateAdValidation = validate([
-  param('id').isUUID().withMessage('Invalid ad ID'),
-  body('status').isIn(['active', 'paused', 'stopped']).withMessage('Status must be active, paused, or stopped'),
-]);
+// ---------------------------------------------------------------------------
+// Campaign routes (declared before /:id ad routes to avoid path collisions)
+// ---------------------------------------------------------------------------
+router.post('/campaigns', authenticate, createCampaignValidation, adCampaignsController.createCampaign);
+router.get('/campaigns', authenticate, adCampaignsController.getCampaigns);
+router.get('/campaigns/:id', authenticate, idParam, adCampaignsController.getCampaign);
+router.put('/campaigns/:id', authenticate, idParam, adCampaignsController.updateCampaign);
+router.delete('/campaigns/:id', authenticate, idParam, adCampaignsController.deleteCampaign);
+router.post('/campaigns/:id/pause', authenticate, idParam, adCampaignsController.pauseCampaign);
+router.post('/campaigns/:id/resume', authenticate, idParam, adCampaignsController.resumeCampaign);
+router.post('/campaigns/:id/fund', authenticate, idParam, adCampaignsController.fundCampaign);
+router.get('/campaigns/:id/analytics', authenticate, idParam, adCampaignsController.getCampaignAnalytics);
 
-const adIdValidation = validate([
-  param('id').isUUID().withMessage('Invalid ad ID'),
-]);
+// ---------------------------------------------------------------------------
+// Admin moderation (moderator or admin only)
+// ---------------------------------------------------------------------------
+router.get('/admin/pending', authenticate, requireModeratorOrAdmin, advertisementsController.getPendingAds);
+router.post('/admin/:id/approve', authenticate, requireModeratorOrAdmin, idParam, advertisementsController.approveAd);
+router.post('/admin/:id/reject', authenticate, requireModeratorOrAdmin, idParam, advertisementsController.rejectAd);
 
-router.post('/', authenticate, createAdValidation, advertisementsController.createAd);
-router.get('/', authenticate, advertisementsController.getAds);
-router.patch('/:id', authenticate, updateAdValidation, advertisementsController.updateAd);
+// ---------------------------------------------------------------------------
+// Ad preferences
+// ---------------------------------------------------------------------------
+router.get('/preferences', authenticate, advertisementsController.getAdPreferences);
+router.put('/preferences', authenticate, advertisementsController.updateAdPreferences);
+
+// ---------------------------------------------------------------------------
+// Public ad delivery (auth optional)
+// ---------------------------------------------------------------------------
 router.get('/active', advertisementsController.getActiveAds);
-router.post('/:id/impression', adTrackingLimiter, adIdValidation, advertisementsController.trackImpressionRoute);
-router.post('/:id/click', adTrackingLimiter, adIdValidation, advertisementsController.trackClickRoute);
+router.get('/feed', advertisementsController.getFeedAds);
+
+// ---------------------------------------------------------------------------
+// Personal ad management
+// ---------------------------------------------------------------------------
+router.get('/my/ads', authenticate, advertisementsController.getMyAds);
+
+router.post('/', authenticate, upload.single('media'), advertisementsController.createAd);
+router.get('/', authenticate, advertisementsController.getAds);
+
+router.get('/:id', optionalAuth, idParam, advertisementsController.getAd);
+router.put('/:id', authenticate, idParam, advertisementsController.updateAd);
+router.patch('/:id', authenticate, idParam, advertisementsController.updateAd);
+router.delete('/:id', authenticate, idParam, advertisementsController.deleteAd);
+
+router.post('/:id/pause', authenticate, idParam, advertisementsController.pauseAd);
+router.post('/:id/resume', authenticate, idParam, advertisementsController.resumeAd);
+router.get('/:id/analytics', authenticate, idParam, advertisementsController.getAdAnalytics);
+router.post('/:id/report', authenticate, idParam, advertisementsController.reportAd);
+
+// Tracking (public, rate-limited)
+router.post('/:id/impression', adTrackingLimiter, idParam, advertisementsController.trackImpressionRoute);
+router.post('/:id/view', adTrackingLimiter, idParam, advertisementsController.trackImpressionRoute);
+router.post('/:id/click', adTrackingLimiter, idParam, advertisementsController.trackClickRoute);
+router.post('/:id/conversion', adTrackingLimiter, idParam, advertisementsController.trackConversionRoute);
 
 export default router;

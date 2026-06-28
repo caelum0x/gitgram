@@ -16,17 +16,17 @@ const settingsSections = [
     title: 'Account',
     items: [
       { icon: 'edit', label: 'Edit Profile', route: '/(modals)/edit-profile' },
-      { icon: 'lock', label: 'Change Password', route: '/settings/password' },
-      { icon: 'email', label: 'Email Settings', route: '/settings/email' },
-      { icon: 'delete', label: 'Delete Account', route: '/settings/delete-account' },
+      { icon: 'lock', label: 'Change Password', route: '/profile/settings/password' },
+      { icon: 'email', label: 'Email Settings', route: '/profile/settings/email' },
+      { icon: 'delete', label: 'Delete Account', route: '/account/delete' },
     ],
   },
   {
     title: 'Privacy',
     items: [
-      { icon: 'visibility', label: 'Privacy Settings', route: '/settings/privacy' },
-      { icon: 'block', label: 'Blocked Users', route: '/settings/blocked' },
-      { icon: 'security', label: 'Security', route: '/settings/security' },
+      { icon: 'visibility', label: 'Privacy Settings', route: '/profile/settings/privacy' },
+      { icon: 'block', label: 'Blocked Users', route: '/profile/settings/blocked' },
+      { icon: 'security', label: 'Security', route: '/profile/settings/security' },
     ],
   },
   {

@@ -2,7 +2,7 @@ import api from './api';
 
 export const postService = {
   getFollowingFeed: async (page = 1, limit = 20) => {
-    const response = await api.get('/v1/posts/feed', {
+    const response = await api.get('/posts/feed', {
       params: { page, limit },
     });
     return response.data;
@@ -13,12 +13,12 @@ export const postService = {
     if (userId) {
       params.userId = userId;
     }
-    const response = await api.get('/v1/posts', { params });
+    const response = await api.get('/posts', { params });
     return response.data;
   },
 
   createPost: async (data: FormData) => {
-    const response = await api.post('/v1/posts', data, {
+    const response = await api.post('/posts', data, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -27,70 +27,70 @@ export const postService = {
   },
 
   likePost: async (postId: string) => {
-    const response = await api.post(`/v1/posts/${postId}/like`);
+    const response = await api.post(`/posts/${postId}/like`);
     return response.data;
   },
 
   getComments: async (postId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/posts/${postId}/comments`, {
+    const response = await api.get(`/posts/${postId}/comments`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   createComment: async (postId: string, content: string) => {
-    const response = await api.post(`/v1/posts/${postId}/comments`, { content });
+    const response = await api.post(`/posts/${postId}/comments`, { content });
     return response.data;
   },
 
   deletePost: async (postId: string) => {
-    const response = await api.delete(`/v1/posts/${postId}`);
+    const response = await api.delete(`/posts/${postId}`);
     return response.data;
   },
 
   searchPosts: async (query: string, page = 1, limit = 20) => {
-    const response = await api.get('/v1/posts/search', {
+    const response = await api.get('/posts/search', {
       params: { q: query, page, limit },
     });
     return response.data;
   },
 
   getPost: async (postId: string) => {
-    const response = await api.get(`/v1/posts/${postId}`);
+    const response = await api.get(`/posts/${postId}`);
     return response.data;
   },
 
   updatePost: async (postId: string, data: { content?: string; hashtags?: string[] }) => {
-    const response = await api.put(`/v1/posts/${postId}`, data);
+    const response = await api.put(`/posts/${postId}`, data);
     return response.data;
   },
 
   retweetPost: async (postId: string, comment?: string) => {
-    const response = await api.post(`/v1/posts/${postId}/retweet`, { comment });
+    const response = await api.post(`/posts/${postId}/retweet`, { comment });
     return response.data;
   },
 
   savePost: async (postId: string) => {
-    const response = await api.post(`/v1/posts/${postId}/save`);
+    const response = await api.post(`/posts/${postId}/save`);
     return response.data;
   },
 
   getSavedPosts: async (page = 1, limit = 20) => {
-    const response = await api.get('/v1/posts/saved', {
+    const response = await api.get('/posts/saved', {
       params: { page, limit },
     });
     return response.data;
   },
 
   getPostShares: async (postId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/posts/${postId}/shares`, {
+    const response = await api.get(`/posts/${postId}/shares`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   getPostLikes: async (postId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/posts/${postId}/likes`, {
+    const response = await api.get(`/posts/${postId}/likes`, {
       params: { page, limit },
     });
     return response.data;
@@ -98,56 +98,56 @@ export const postService = {
 
   isPostSaved: async (postId: string) => {
     // Check if post is in saved posts
-    const response = await api.get('/v1/posts/saved', {
+    const response = await api.get('/posts/saved', {
       params: { postId },
     });
     return response.data;
   },
 
   getTrending: async (timeframe: 'today' | 'week' | 'month' = 'today', page = 1, limit = 20) => {
-    const response = await api.get('/v1/posts/trending', {
+    const response = await api.get('/posts/trending', {
       params: { timeframe, page, limit },
     });
     return response.data;
   },
 
   getArchivedPosts: async (page = 1, limit = 20) => {
-    const response = await api.get('/v1/posts/archived', {
+    const response = await api.get('/posts/archived', {
       params: { page, limit },
     });
     return response.data;
   },
 
   getTaggedPosts: async (userId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/posts/tagged/${userId}`, {
+    const response = await api.get(`/posts/tagged/${userId}`, {
       params: { page, limit },
     });
     return response.data;
   },
 
   reportPost: async (postId: string, data: { reason: string; details?: string }) => {
-    const response = await api.post(`/v1/posts/${postId}/report`, data);
+    const response = await api.post(`/posts/${postId}/report`, data);
     return response.data;
   },
 
   // Comment actions
   likeComment: async (postId: string, commentId: string) => {
-    const response = await api.post(`/v1/posts/${postId}/comments/${commentId}/like`);
+    const response = await api.post(`/posts/${postId}/comments/${commentId}/like`);
     return response.data;
   },
 
   deleteComment: async (postId: string, commentId: string) => {
-    const response = await api.delete(`/v1/posts/${postId}/comments/${commentId}`);
+    const response = await api.delete(`/posts/${postId}/comments/${commentId}`);
     return response.data;
   },
 
   updateComment: async (postId: string, commentId: string, content: string) => {
-    const response = await api.put(`/v1/posts/${postId}/comments/${commentId}`, { content });
+    const response = await api.put(`/posts/${postId}/comments/${commentId}`, { content });
     return response.data;
   },
 
   getCommentLikes: async (postId: string, commentId: string, page = 1, limit = 20) => {
-    const response = await api.get(`/v1/posts/${postId}/comments/${commentId}/likes`, {
+    const response = await api.get(`/posts/${postId}/comments/${commentId}/likes`, {
       params: { page, limit },
     });
     return response.data;

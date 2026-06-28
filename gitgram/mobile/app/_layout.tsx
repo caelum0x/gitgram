@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import NetworkStatus from '../components/common/NetworkStatus';
+import { ToastProvider } from '../components/proximity/Toast';
 import { pushNotificationService } from '../services/pushNotificationService';
 import { paymentDeepLinkHandler } from '../utils/paymentDeepLinkHandler';
 import { setupNotificationDeepLinkHandler, handleNotificationDeepLink } from '../utils/notificationDeepLinkHandler';
@@ -58,12 +59,14 @@ export default function RootLayout() {
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <NetworkStatus />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="(modals)" />
-          </Stack>
+          <ToastProvider>
+            <NetworkStatus />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="(modals)" />
+            </Stack>
+          </ToastProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </ErrorBoundary>

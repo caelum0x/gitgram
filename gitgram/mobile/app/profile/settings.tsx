@@ -1,23 +1,55 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
+import { ScrollView, StyleSheet, View, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '../../components/ui/ThemedView';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { Colors } from '../../constants/Colors';
+import { useAuthStore } from '../../store/authStore';
+import { authService } from '../../services/authService';
+import { logger } from '../../utils/logger';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
+// Every route below resolves to a real screen. Account/Privacy/Theme/Language/Help
+// live under app/profile/settings/*, Security is the hub at
+// app/profile/settings/security.tsx, and Notifications/About reuse the complete
+// screens under app/settings/*.
 const SETTINGS_ITEMS = [
   { icon: 'person', label: 'Account', route: '/profile/settings/account' },
-  { icon: 'notifications', label: 'Notifications', route: '/profile/settings/notifications' },
+  { icon: 'notifications', label: 'Notifications', route: '/settings/notifications' },
   { icon: 'lock', label: 'Privacy', route: '/profile/settings/privacy' },
   { icon: 'security', label: 'Security', route: '/profile/settings/security' },
   { icon: 'palette', label: 'Theme', route: '/profile/settings/theme' },
+  { icon: 'language', label: 'Language', route: '/profile/settings/language' },
   { icon: 'help', label: 'Help & Support', route: '/profile/settings/help' },
-  { icon: 'info', label: 'About', route: '/profile/settings/about' },
+  { icon: 'info', label: 'About', route: '/settings/about' },
 ];
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handleLogout = () => {
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          const { refreshToken } = useAuthStore.getState();
+          try {
+            if (refreshToken) {
+              await authService.logout(refreshToken);
+            }
+          } catch (error) {
+            logger.error('Logout error:', error);
+          } finally {
+            await logout();
+            router.replace('/(auth)/login');
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -25,7 +57,7 @@ export default function SettingsScreen() {
         <View style={styles.header}>
           <ThemedText type="title">Settings</ThemedText>
         </View>
-        
+
         <View style={styles.section}>
           {SETTINGS_ITEMS.map((item, index) => (
             <TouchableOpacity
@@ -44,7 +76,7 @@ export default function SettingsScreen() {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.logoutButton}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <ThemedText style={styles.logoutText}>Log Out</ThemedText>
         </TouchableOpacity>
       </ScrollView>

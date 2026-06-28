@@ -19,10 +19,30 @@ const AITM_API_URL =
   (typeof process !== 'undefined' && process.env.AITM_API_URL) ||
   'http://localhost:3001';
 
+/**
+ * Turn a low-level fetch failure into an actionable message. Beads tools are
+ * pure HTTP proxies to the AITM API server; when it isn't running the raw
+ * `TypeError: fetch failed` is opaque to the MCP client, so we surface the
+ * configured URL and how to start the server.
+ */
+function apiUnreachableError(endpoint: string, cause: unknown): Error {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return new Error(
+    `Could not reach the AITM API server at ${AITM_API_URL} (beads${endpoint}): ${reason}. ` +
+      'Beads tools proxy to a separately-running AITM API server. ' +
+      'Start it (e.g. `npm run start` in aitimemachine/api-server) and/or set AITM_API_URL to its base URL.'
+  );
+}
+
 async function beadsGet(endpoint: string): Promise<ReturnType<typeof jsonResponse>> {
-  const res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: unknown) {
+    throw apiUnreachableError(endpoint, err);
+  }
   if (!res.ok) {
     throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
   }
@@ -31,11 +51,16 @@ async function beadsGet(endpoint: string): Promise<ReturnType<typeof jsonRespons
 }
 
 async function beadsPost(endpoint: string, body: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  const res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err: unknown) {
+    throw apiUnreachableError(endpoint, err);
+  }
   if (!res.ok) {
     throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
   }
@@ -44,11 +69,16 @@ async function beadsPost(endpoint: string, body: unknown): Promise<ReturnType<ty
 }
 
 async function beadsPatch(endpoint: string, body?: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  const res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (err: unknown) {
+    throw apiUnreachableError(endpoint, err);
+  }
   if (!res.ok) {
     throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
   }

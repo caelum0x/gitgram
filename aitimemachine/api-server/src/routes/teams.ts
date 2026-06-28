@@ -10,6 +10,7 @@
  *   GET    /teams/:id                          - Get team details + stats
  *   PATCH  /teams/:id                          - Update team (admin only)
  *   POST   /teams/:id/members                  - Invite a member (admin only)
+ *   POST   /teams/invitations/:token/accept    - Redeem an invitation
  *   DELETE /teams/:id/members/:userId          - Remove a member (admin only)
  *   GET    /teams/:id/sessions                 - List shared sessions
  *   POST   /teams/:id/sessions/:sessionId/share - Share a session with the team
@@ -18,7 +19,6 @@
 
 import { Router } from "express";
 import crypto from "crypto";
-import { z } from "zod";
 import { db, schema } from "../db/index.js";
 import { apiKeyAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import {
@@ -26,62 +26,26 @@ import {
   requireTeamAdmin,
   TeamAuthenticatedRequest,
 } from "../middleware/teamMiddleware.js";
-import { eq, and, desc, count, or } from "drizzle-orm";
+import { eq, and, desc, count, or, sql } from "drizzle-orm";
 import { logger } from "../lib/monitoring.js";
+import { sendInviteEmail } from "./teamInviteEmail.js";
+import {
+  createTeamSchema,
+  updateTeamSchema,
+  inviteMemberSchema,
+  acceptInvitationSchema,
+  generateTeamId,
+  generateMemberId,
+  generateInviteCode,
+  generateInvitationId,
+  normalizeSlug,
+} from "./teamHelpers.js";
 
 const router = Router();
 
 // All team routes require authentication
 router.use(apiKeyAuth);
 
-// ============================================
-// VALIDATION SCHEMAS
-// ============================================
-
-const createTeamSchema = z.object({
-  name: z.string().min(1).max(100).trim(),
-  slug: z.string().min(3).max(50).optional(),
-  description: z.string().max(500).optional(),
-});
-
-const updateTeamSchema = z.object({
-  name: z.string().min(1).max(100).trim().optional(),
-  slug: z.string().min(3).max(50).optional(),
-  description: z.string().max(500).optional(),
-});
-
-const inviteMemberSchema = z.object({
-  email: z.string().email(),
-  role: z.enum(["admin", "member", "viewer"]),
-});
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-function generateTeamId(): string {
-  return `team_${crypto.randomBytes(12).toString("hex")}`;
-}
-
-function generateMemberId(): string {
-  return `mem_${crypto.randomBytes(12).toString("hex")}`;
-}
-
-function generateInviteCode(): string {
-  return crypto.randomBytes(16).toString("hex");
-}
-
-function generateInvitationId(): string {
-  return `inv_${crypto.randomBytes(12).toString("hex")}`;
-}
-
-function normalizeSlug(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .substring(0, 50);
-}
 
 // ============================================
 // POST /teams — Create a team
@@ -191,9 +155,7 @@ router.get(
         .select({ count: count() })
         .from(schema.chatSessions)
         .where(
-          and(
-            eq((schema.chatSessions.metadata as any).teamId, team.id)
-          )
+          sql`${schema.chatSessions.metadata}->>'teamId' = ${team.id}`
         );
 
       const [memberCount] = await db
@@ -376,6 +338,28 @@ router.post(
         invitedBy: actorId,
       });
 
+      // Deliver the invitation email. Email failures must not roll back the
+      // invitation row — the token is still valid and can be resent — so we
+      // capture delivery status and surface it to the caller.
+      let emailDelivered = false;
+      try {
+        await sendInviteEmail({
+          email,
+          teamName: team.name,
+          inviterEmail: req.user!.email,
+          role,
+          token,
+          expiresAt,
+        });
+        emailDelivered = true;
+      } catch (emailError) {
+        logger.error(
+          "Failed to send team invitation email",
+          emailError instanceof Error ? emailError : undefined,
+          { details: String(emailError), invitationId }
+        );
+      }
+
       return res.status(201).json({
         invitation: {
           id: invitationId,
@@ -385,7 +369,10 @@ router.post(
           expiresAt,
           teamId: team.id,
         },
-        message: `Invitation sent to ${email}`,
+        emailDelivered,
+        message: emailDelivered
+          ? `Invitation sent to ${email}`
+          : `Invitation created for ${email}, but the email could not be delivered`,
       });
     } catch (error) {
       logger.error("Invite team member error", error instanceof Error ? error : undefined, {
@@ -395,6 +382,122 @@ router.post(
     }
   }
 );
+
+// ============================================
+// POST /teams/invitations/:token/accept — Redeem an invitation
+// ============================================
+//
+// Note: this route is intentionally NOT guarded by requireTeamMember/Admin —
+// the caller is not yet a member of the target team. It only requires a valid
+// authenticated user (apiKeyAuth, applied router-wide) whose email matches the
+// invitation. Placed before "/:id/members/:userId" so the literal
+// "invitations" segment is matched ahead of the "/:id" param routes.
+
+router.post("/invitations/:token/accept", async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = acceptInvitationSchema.safeParse({ token: req.params.token });
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Validation error",
+        message: "Invalid invitation token",
+      });
+    }
+
+    const userId = req.user!.userId;
+    const userEmail = req.user!.email;
+    const { token } = parsed.data;
+
+    const [invitation] = await db
+      .select()
+      .from(schema.orgInvitations)
+      .where(eq(schema.orgInvitations.token, token))
+      .limit(1);
+
+    if (!invitation) {
+      return res.status(404).json({
+        error: "Not found",
+        message: "Invitation not found or already used",
+      });
+    }
+
+    if (invitation.expiresAt.getTime() < Date.now()) {
+      // Clean up expired invitation so the token cannot be retried.
+      await db
+        .delete(schema.orgInvitations)
+        .where(eq(schema.orgInvitations.id, invitation.id));
+      return res.status(410).json({
+        error: "Gone",
+        message: "This invitation has expired",
+      });
+    }
+
+    // The invitation is bound to a specific email; only that recipient may redeem it.
+    if (invitation.email.toLowerCase() !== userEmail.toLowerCase()) {
+      return res.status(403).json({
+        error: "Forbidden",
+        message: "This invitation was issued for a different email address",
+      });
+    }
+
+    // Idempotency: if already a member, consume the invitation and report success.
+    const [existingMember] = await db
+      .select({ id: schema.orgMembers.id })
+      .from(schema.orgMembers)
+      .where(
+        and(
+          eq(schema.orgMembers.orgId, invitation.orgId),
+          eq(schema.orgMembers.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (existingMember) {
+      await db
+        .delete(schema.orgInvitations)
+        .where(eq(schema.orgInvitations.id, invitation.id));
+      return res.json({
+        success: true,
+        alreadyMember: true,
+        teamId: invitation.orgId,
+        message: "You are already a member of this team",
+      });
+    }
+
+    const now = new Date();
+    await db.insert(schema.orgMembers).values({
+      id: generateMemberId(),
+      orgId: invitation.orgId,
+      userId,
+      role: invitation.role,
+      invitedBy: invitation.invitedBy,
+      joinedAt: now,
+    });
+
+    // Invitation is single-use — remove it once redeemed.
+    await db
+      .delete(schema.orgInvitations)
+      .where(eq(schema.orgInvitations.id, invitation.id));
+
+    const [team] = await db
+      .select()
+      .from(schema.organizations)
+      .where(eq(schema.organizations.id, invitation.orgId))
+      .limit(1);
+
+    return res.status(201).json({
+      success: true,
+      teamId: invitation.orgId,
+      role: invitation.role,
+      team: team ?? null,
+      message: "Invitation accepted — you are now a member of the team",
+    });
+  } catch (error) {
+    logger.error("Accept team invitation error", error instanceof Error ? error : undefined, {
+      details: String(error),
+    });
+    return res.status(500).json({ error: "Failed to accept invitation" });
+  }
+});
 
 // ============================================
 // DELETE /teams/:id/members/:userId — Remove member (admin only)
@@ -492,7 +595,7 @@ router.get(
         .from(schema.chatSessions)
         .innerJoin(schema.users, eq(schema.chatSessions.userId, schema.users.id))
         .where(
-          eq((schema.chatSessions.metadata as any).teamId, team.id)
+          sql`${schema.chatSessions.metadata}->>'teamId' = ${team.id}`
         )
         .orderBy(desc(schema.chatSessions.startedAt))
         .limit(limit)
@@ -502,7 +605,7 @@ router.get(
         .select({ count: count() })
         .from(schema.chatSessions)
         .where(
-          eq((schema.chatSessions.metadata as any).teamId, team.id)
+          sql`${schema.chatSessions.metadata}->>'teamId' = ${team.id}`
         );
 
       return res.json({

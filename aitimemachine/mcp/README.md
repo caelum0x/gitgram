@@ -78,37 +78,31 @@ Add to `~/.claude/claude_desktop_config.json`:
 }
 ```
 
-### HTTP/SSE Transport
+### HTTP (Streamable) Transport
+
+The server selects its transport via flags (`--transport` / `-t`) and port via
+`--port` / `-p`. The default transport is `stdio`; the default HTTP port is `3002`.
+Only `stdio` and `http` are valid — there is no SSE transport.
 
 ```bash
-# Streamable HTTP (recommended for remote)
-node mcp/dist/index.js http 3001
+# Streamable HTTP on the default port (3002)
+node mcp/dist/index.js --transport http
 
-# SSE (legacy compatibility)
-node mcp/dist/index.js sse 3001
+# Streamable HTTP on a custom port
+node mcp/dist/index.js --transport http --port 8080
+
+# Short flags also work
+node mcp/dist/index.js -t http -p 8080
 ```
 
-Configure for Streamable HTTP:
+Configure your MCP client for Streamable HTTP (match the port you started with):
 
 ```json
 {
   "mcpServers": {
     "ai-time-machine": {
       "type": "http",
-      "url": "http://localhost:3001/mcp"
-    }
-  }
-}
-```
-
-Configure for SSE:
-
-```json
-{
-  "mcpServers": {
-    "ai-time-machine": {
-      "type": "sse",
-      "url": "http://localhost:3001/sse"
+      "url": "http://localhost:3002/mcp"
     }
   }
 }
@@ -119,9 +113,9 @@ Configure for SSE:
 When running with `--transport http`, the MCP server also exposes an A2A-compatible discovery card and JSON-RPC endpoint:
 
 ```bash
-curl http://127.0.0.1:3001/.well-known/agent-card.json
+curl http://127.0.0.1:3002/.well-known/agent-card.json
 
-curl -X POST http://127.0.0.1:3001/a2a \
+curl -X POST http://127.0.0.1:3002/a2a \
   -H 'content-type: application/json' \
   --data '{
     "jsonrpc": "2.0",
@@ -263,6 +257,26 @@ for await (const message of query({
 | `tm_prompt_debug_regression` | Generate debug prompt |
 | `tm_prompt_write_postmortem` | Generate postmortem prompt |
 | `tm_prompt_generate_repro_steps` | Generate repro steps |
+
+## Optional tool groups & external dependencies
+
+Several tool groups are only registered when their backing service is configured
+via environment variables, and require that service to be running:
+
+| Tool group | Enable with | External dependency |
+|------------|-------------|---------------------|
+| Workspace (`ws_*`) | `AITM_API_URL` or `AITM_WORKSPACE_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `ws_*` tools are HTTP proxies to its `/workspace/*` endpoints. |
+| Beads (`beads_*`) | `BEADS_BINARY` or `AITM_BEADS_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `beads_*` tools are HTTP proxies to its `/beads/*` endpoints. |
+| GitNexus (`gn_*`) | `GITNEXUS_URL` or `AITM_GITNEXUS_ENABLED=1` | The bundled GitNexus engine. |
+| Context7 docs (`tm_docs_*`) | `CONTEXT7_API_KEY` or `AITM_CONTEXT7_ENABLED=1` | A Context7 API key. |
+| PAL (`pal_*`) | `AITM_PAL_ENABLED=1` or `PAL_VENV_DIR` | A Python subprocess / venv. |
+| GitHub (`gh_*`) | `GITHUB_TOKEN` | GitHub API. |
+| Claude (`claude_*`) | `ANTHROPIC_API_KEY` | Anthropic API. |
+
+> **Note:** Workspace and Beads tools do nothing without a separately-running
+> AITM API server. If the server is unreachable, these tools return an
+> actionable error naming the configured `AITM_API_URL` and how to start the
+> server — rather than a raw `fetch failed`.
 
 ## Resources (4)
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking, TextInput } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import repositoryService from '../../../services/repositoryService';
+import { logger } from '../../../utils/logger';
 
 const REACTIONS = ['👍', '❤️', '🎉', '🚀', '👀', '🔥', '💯'];
 
@@ -28,7 +29,7 @@ export default function RepoDetail() {
       setIsFollowing(repoData.isFollowing);
       setComments(commentsData.comments || []);
     } catch (error) {
-      console.error('Failed to load repo', error);
+      logger.error('Failed to load repo', error);
     } finally {
       setLoading(false);
     }
@@ -43,7 +44,7 @@ export default function RepoDetail() {
       }
       setIsFollowing(!isFollowing);
     } catch (error) {
-      console.error('Failed to follow/unfollow', error);
+      logger.error('Failed to follow/unfollow', error);
     }
   };
 
@@ -51,7 +52,7 @@ export default function RepoDetail() {
     try {
       await repositoryService.addReaction(owner as string, name as string, type);
     } catch (error) {
-      console.error('Failed to add reaction', error);
+      logger.error('Failed to add reaction', error);
     }
   };
 
@@ -62,7 +63,7 @@ export default function RepoDetail() {
       setNewComment('');
       loadRepo();
     } catch (error) {
-      console.error('Failed to add comment', error);
+      logger.error('Failed to add comment', error);
     }
   };
 

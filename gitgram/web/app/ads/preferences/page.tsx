@@ -19,7 +19,7 @@ export default function AdPreferencesPage() {
 
   const loadPreferences = async () => {
     try {
-      const response = await api.get('/v1/ads/preferences')
+      const response = await api.get('/v1/advertisements/preferences')
       if (response.data.preferences) {
         setPreferences(response.data.preferences)
       }
@@ -33,7 +33,7 @@ export default function AdPreferencesPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.put('/v1/ads/preferences', preferences)
+      await api.put('/v1/advertisements/preferences', preferences)
       router.back()
     } catch (error) {
       console.error('Save ad preferences error:', error)

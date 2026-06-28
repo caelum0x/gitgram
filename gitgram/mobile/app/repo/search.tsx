@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, TextInput, FlatList, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import repositoryService from '../../services/repositoryService';
+import { logger } from '../../utils/logger';
 
 export default function RepoSearch() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function RepoSearch() {
       const data = await repositoryService.search(query);
       setResults(data.repositories);
     } catch (error) {
-      console.error('Search failed', error);
+      logger.error('Search failed', error);
     } finally {
       setLoading(false);
     }

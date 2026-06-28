@@ -6,6 +6,7 @@ import { ThemedView } from '../../components/ui/ThemedView';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { Colors } from '../../constants/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { logger } from '../../utils/logger';
 
 interface ReelEngagement {
   [reelId: string]: {
@@ -56,7 +57,7 @@ export default function ReelsScreen() {
       });
       setEngagement(initialEngagement);
     } catch (error) {
-      console.error('Load reels error:', error);
+      logger.error('Load reels error:', error);
     }
   };
 
@@ -85,7 +86,7 @@ export default function ReelsScreen() {
       }));
     } catch (error) {
       // Rollback on failure
-      console.error('Like reel error:', error);
+      logger.error('Like reel error:', error);
       setEngagement(prev => {
         const current = prev[reelId];
         return {
@@ -109,7 +110,7 @@ export default function ReelsScreen() {
       const response = await reelService.getReelComments(reelId, 1, 50);
       setComments(response.comments || []);
     } catch (error) {
-      console.error('Load comments error:', error);
+      logger.error('Load comments error:', error);
       Alert.alert('Error', 'Failed to load comments.');
     } finally {
       setLoadingComments(false);
@@ -132,7 +133,7 @@ export default function ReelsScreen() {
           : reel
       ));
     } catch (error) {
-      console.error('Submit comment error:', error);
+      logger.error('Submit comment error:', error);
       Alert.alert('Error', 'Failed to post comment. Please try again.');
     } finally {
       setSubmittingComment(false);
@@ -154,13 +155,13 @@ export default function ReelsScreen() {
 
       if (result.action === Share.sharedAction) {
         if (result.activityType) {
-          console.log('Shared with activity type:', result.activityType);
+          logger.log('Shared with activity type:', result.activityType);
         } else {
-          console.log('Reel shared successfully');
+          logger.log('Reel shared successfully');
         }
       }
     } catch (error) {
-      console.error('Share error:', error);
+      logger.error('Share error:', error);
       Alert.alert('Error', 'Failed to share reel.');
     }
   }, []);

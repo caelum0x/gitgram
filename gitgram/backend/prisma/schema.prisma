@@ -96,6 +96,9 @@ model User {
   twoFactorEnabled  Boolean  @default(false)
   twoFactorSecret   String?
   interests         String[] @default([])  // User interests for recommendations (e.g., "typescript", "react", "ai")
+  location          String?
+  latitude          Float?
+  longitude         Float?
   lastLoginAt       DateTime?
   lastLoginIp       String?
   lastActiveAt      DateTime?  // Last time the user produced any activity (post/comment/like)
@@ -369,6 +372,11 @@ model Post {
   status         String    @default("PUBLISHED") // PUBLISHED, DRAFT, SCHEDULED
   isArchived   Boolean  @default(false)
   archivedAt   DateTime?
+
+  // Optional geotagging for map / nearby discovery
+  location  String?
+  latitude  Float?
+  longitude Float?
 
   likesCount    Int @default(0)
   commentsCount Int @default(0)
@@ -771,15 +779,20 @@ model ScheduledPost {
 model Advertisement {
   id             String    @id @default(cuid())
   advertiserId   String
+  campaignId     String?
   title          String
   content        String    @db.Text
   mediaUrl       String?
   targetUrl      String
+  callToAction   String?
+  placement      String[]  @default([])
+  priority       Int       @default(0)
   targetAudience String?
   budget         Float     @default(0)
   spent          Float     @default(0)
   impressions    Int       @default(0)
   clicks         Int       @default(0)
+  conversions    Int       @default(0)
   status         String    @default("draft")
   type           String    @default("banner")
   startDate      DateTime?
@@ -788,6 +801,7 @@ model Advertisement {
   updatedAt      DateTime  @updatedAt
 
   @@index([advertiserId])
+  @@index([campaignId])
   @@index([status])
 }
 
@@ -964,6 +978,9 @@ model Project {
   forks       Int      @default(0)
   likesCount  Int      @default(0)
   viewsCount  Int      @default(0)
+  location    String?
+  latitude    Float?
+  longitude   Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1932,4 +1949,146 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action])
   @@map("audit_logs")
+}
+
+// ============================================
+// STORE: Creator marketplace items & purchases
+// ============================================
+
+model StoreItem {
+  id          String   @id @default(cuid())
+  sellerId    String
+  title       String
+  description String?  @db.Text
+  price       Float    @default(0)
+  category    String   @default("other")
+  images      String[] @default([])
+  status      String   @default("active") // active, sold, archived
+  polarProductId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchases StorePurchase[]
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model StorePurchase {
+  id           String   @id @default(cuid())
+  itemId       String
+  buyerId      String
+  sellerId     String
+  amount       Float    @default(0)
+  status       String   @default("pending") // pending, completed, failed, refunded
+  provider     String   @default("internal") // internal, polar
+  checkoutId   String?
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  item StoreItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+}
+
+// ============================================
+// MOMENTS: BeReal-style screenshot + selfie posts
+// ============================================
+
+model Moment {
+  id            String   @id @default(cuid())
+  userId        String
+  screenshotUrl String
+  selfieUrl     String
+  caption       String?  @db.Text
+  location      String?
+  likesCount    Int      @default(0)
+  commentsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime?
+
+  likes MomentLike[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model MomentLike {
+  id        String   @id @default(cuid())
+  momentId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, userId])
+  @@index([momentId])
+  @@index([userId])
+}
+
+// ============================================
+// FEEDBACK: User-submitted bug reports & feature requests
+// ============================================
+
+model Feedback {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String   @default("other") // bug, feature, other
+  title         String
+  content       String   @db.Text
+  screenshotUrl String?
+  status        String   @default("open") // open, in_review, resolved, closed
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================
+// AD CAMPAIGNS: Container for advertisements
+// ============================================
+
+model AdCampaign {
+  id             String   @id @default(cuid())
+  advertiserId   String
+  name           String
+  description    String?  @db.Text
+  type           String   @default("post") // post, reel, story, banner, video
+  budget         Float    @default(0)
+  dailyBudget    Float?
+  spent          Float    @default(0)
+  billingType    String   @default("cpc") // cpc, cpm, cpa
+  status         String   @default("active") // active, paused, completed, draft
+  targetAudience String?  @db.Text // JSON string
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([advertiserId])
+  @@index([status])
+}
+
+// ============================================
+// AD PREFERENCES: Per-user ad personalization settings
+// ============================================
+
+model AdPreferences {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  personalizedAds     Boolean  @default(true)
+  interestCategories  String[] @default([])
+  optOut              Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
 }

@@ -10,11 +10,17 @@ import { jsonResponse, textResponse } from '../lib/tool-responses.js';
 // ============================================================================
 // In-process Context7 client (replaces the previous CONTEXT7_URL JSON-RPC proxy)
 //
-// All tools call the @upstash/context7-sdk client directly. The tool
-// names / inputs / outputs are unchanged. The SDK exposes two primitives:
-//   - searchLibrary(query, libraryName) -> Library[]   (resolve / list)
-//   - getContext(query, libraryId)      -> Documentation[]  (docs / examples /
-//     api search / changelog / version compare are expressed as scoped queries)
+// All tools call the @upstash/context7-sdk client directly. The SDK exposes
+// exactly two primitives, and NEITHER accepts a token budget — getContext only
+// sends { query, libraryId, type } to the v2/context endpoint:
+//   - searchLibrary(query, libraryName) -> Library[]      (resolve / list)
+//   - getContext(query, libraryId)      -> Documentation[] (retrieval)
+//
+// The "examples / api search / changelog / version compare" tools are
+// retrieval queries scoped by phrasing — they are NOT backed by dedicated
+// structured-diff/changelog endpoints, so their descriptions are worded as
+// "retrieval scoped to ..." rather than promising structured output. There is
+// no `tokens` parameter because the SDK and endpoint cannot honor one.
 // ============================================================================
 
 let _client: Context7 | null = null;
@@ -59,7 +65,6 @@ export const registerContext7Tools = createToolRegistrar([
     schema: {
       libraryId: z.string().min(1).describe('The Context7 library ID returned by tm_docs_resolve'),
       query: z.string().min(1).describe('The documentation topic or question to look up'),
-      tokens: z.number().int().positive().optional().describe('Maximum number of tokens to return (default: 5000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ libraryId, query }) => {
@@ -74,7 +79,11 @@ export const registerContext7Tools = createToolRegistrar([
 
   defineTool({
     name: 'tm_docs_list_libraries',
-    description: 'List all libraries indexed in Context7. Useful for discovering what documentation is available before resolving a library ID.',
+    description:
+      'Search Context7 for libraries matching a term and return the matches (id, name, trust score, versions). ' +
+      'Context7 does not expose a full catalog listing, so this is a search-backed discovery query: ' +
+      'omit "query" to search the generic term "library", or pass a term to narrow results. ' +
+      'Equivalent to tm_docs_resolve but tuned for browsing candidates rather than picking one ID.',
     schema: {
       query: z.string().optional().describe('Optional filter string to narrow results by library name or topic'),
     },
@@ -92,11 +101,13 @@ export const registerContext7Tools = createToolRegistrar([
 
   defineTool({
     name: 'tm_docs_get_examples',
-    description: 'Fetch code examples for a resolved Context7 library ID. Returns runnable snippets and usage patterns for the library.',
+    description:
+      'Retrieve documentation for a resolved Context7 library ID scoped to code examples and usage patterns. ' +
+      'This is a retrieval query (not a dedicated examples index); results are documentation snippets ' +
+      'matched to an "examples" phrasing, optionally narrowed by a topic.',
     schema: {
       libraryId: z.string().min(1).describe('The Context7 library ID returned by tm_docs_resolve'),
       topic: z.string().optional().describe('Optional topic to filter examples (e.g. "authentication", "pagination")'),
-      tokens: z.number().int().positive().optional().describe('Maximum number of tokens to return (default: 3000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ libraryId, topic }) => {
@@ -112,11 +123,13 @@ export const registerContext7Tools = createToolRegistrar([
 
   defineTool({
     name: 'tm_docs_search_api',
-    description: 'Search for a specific API method, class, or function within a resolved Context7 library. Returns matching signatures, parameters, and return types.',
+    description:
+      'Retrieve documentation for a resolved Context7 library ID scoped to a specific API symbol ' +
+      '(method, class, or function). This is a retrieval query against the docs index, not a ' +
+      'structured symbol/signature lookup; results are the documentation snippets most relevant to the symbol.',
     schema: {
       libraryId: z.string().min(1).describe('The Context7 library ID returned by tm_docs_resolve'),
       symbol: z.string().min(1).describe('The method, function, or class name to search for (e.g. "useState", "Router", "createServer")'),
-      tokens: z.number().int().positive().optional().describe('Maximum number of tokens to return (default: 3000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ libraryId, symbol }) => {
@@ -131,12 +144,14 @@ export const registerContext7Tools = createToolRegistrar([
 
   defineTool({
     name: 'tm_docs_compare_versions',
-    description: 'Compare API differences between two versions of a resolved Context7 library. Returns added, removed, and changed symbols.',
+    description:
+      'Retrieve documentation for a resolved Context7 library ID scoped to differences and breaking ' +
+      'changes between two versions. This is a retrieval query, not a structured API diff: it returns ' +
+      'documentation snippets discussing the version delta rather than a computed added/removed/changed symbol list.',
     schema: {
       libraryId: z.string().min(1).describe('The Context7 library ID returned by tm_docs_resolve'),
       fromVersion: z.string().min(1).describe('The baseline version to compare from (e.g. "18.0.0")'),
       toVersion: z.string().min(1).describe('The target version to compare to (e.g. "19.0.0")'),
-      tokens: z.number().int().positive().optional().describe('Maximum number of tokens to return (default: 4000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ libraryId, fromVersion, toVersion }) => {
@@ -155,11 +170,13 @@ export const registerContext7Tools = createToolRegistrar([
 
   defineTool({
     name: 'tm_docs_get_changelog',
-    description: 'Fetch the changelog for a resolved Context7 library. Returns version history, breaking changes, and release notes.',
+    description:
+      'Retrieve documentation for a resolved Context7 library ID scoped to changelog, release notes, ' +
+      'and breaking changes. This is a retrieval query against the docs index, not a dedicated changelog ' +
+      'API: results are documentation snippets matched to changelog phrasing, optionally narrowed to a version.',
     schema: {
       libraryId: z.string().min(1).describe('The Context7 library ID returned by tm_docs_resolve'),
       version: z.string().optional().describe('Optional specific version to fetch changelog for; omit to get the full history'),
-      tokens: z.number().int().positive().optional().describe('Maximum number of tokens to return (default: 4000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ libraryId, version }) => {
@@ -179,7 +196,6 @@ export const registerContext7Tools = createToolRegistrar([
     schema: {
       source: z.string().min(1).describe('Source code content to scan for import statements'),
       query: z.string().optional().describe('Optional documentation topic to look up for each detected library (default: "overview")'),
-      tokens: z.number().int().positive().optional().describe('Maximum tokens per library (default: 2000)'),
     },
     annotations: readOnlyAnnotations({ openWorldHint: true }),
     run: async ({ source, query }) => {

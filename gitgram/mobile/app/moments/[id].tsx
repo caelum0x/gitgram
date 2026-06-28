@@ -60,7 +60,9 @@ export default function MomentDetailScreen() {
   };
 
   const handleComment = () => {
-    router.push(`/moments/${id}/comments`);
+    // Moments support reactions (not threaded comments) at the API level, so the
+    // interaction button opens the reactions screen.
+    router.push(`/moments/${id}/reactions`);
   };
 
   if (loading) {

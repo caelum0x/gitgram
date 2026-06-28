@@ -18,6 +18,7 @@ router.use(apiKeyAuth);
 const REGISTRY_URLS: Record<string, string> = {
   npm: "https://registry.npmjs.org",
   pypi: "https://pypi.org/pypi",
+  crates: "https://crates.io/api/v1/crates",
 };
 
 const UNPKG_URL = "https://unpkg.com";
@@ -74,6 +75,39 @@ async function fetchPypiInfo(packageName: string): Promise<PypiPackageInfo> {
     throw new Error(`PyPI returned ${resp.status} for ${packageName}`);
   }
   return resp.json() as Promise<PypiPackageInfo>;
+}
+
+interface CratesPackageInfo {
+  crate: {
+    name: string;
+    description?: string | null;
+    max_stable_version?: string | null;
+    max_version?: string | null;
+    newest_version?: string | null;
+    repository?: string | null;
+    homepage?: string | null;
+    documentation?: string | null;
+  };
+  versions?: Array<{ num: string; license?: string | null; yanked?: boolean }>;
+}
+
+/**
+ * Fetch crates.io (Rust) crate metadata.
+ */
+async function fetchCratesInfo(packageName: string): Promise<CratesPackageInfo> {
+  const url = `${REGISTRY_URLS.crates}/${encodeURIComponent(packageName)}`;
+  const resp = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      // crates.io requires a descriptive User-Agent or it returns 403.
+      "User-Agent": "gitgram-aitm-package-search (https://gitgram.app)",
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!resp.ok) {
+    throw new Error(`crates.io returned ${resp.status} for ${packageName}`);
+  }
+  return resp.json() as Promise<CratesPackageInfo>;
 }
 
 /**
@@ -177,6 +211,30 @@ router.get(
         license: info.info.license || null,
         homepage: info.info.home_page || null,
       });
+    } else if (reg === "crates" || reg === "cargo") {
+      const info = await fetchCratesInfo(pkg);
+      const versions = (info.versions ?? [])
+        .filter((v) => !v.yanked)
+        .map((v) => v.num)
+        .slice(0, 30);
+      const latest =
+        info.crate.max_stable_version ||
+        info.crate.newest_version ||
+        info.crate.max_version ||
+        versions[0] ||
+        null;
+      const license = info.versions?.find((v) => v.num === latest)?.license ?? null;
+
+      res.json({
+        registry: "crates",
+        package_name: info.crate.name,
+        description: info.crate.description || null,
+        latest_version: latest,
+        versions,
+        repository: info.crate.repository || null,
+        license,
+        homepage: info.crate.homepage || info.crate.documentation || null,
+      });
     } else {
       res.json({
         registry: reg,
@@ -185,7 +243,7 @@ router.get(
         latest_version: null,
         description: null,
         repository: null,
-        message: `Registry "${reg}" is not yet supported. Supported: npm, pypi`,
+        message: `Registry "${reg}" is not yet supported for info. Supported: npm, pypi, crates`,
       });
     }
   })

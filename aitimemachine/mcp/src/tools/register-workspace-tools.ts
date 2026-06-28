@@ -12,16 +12,36 @@ import {
   defineTool,
 } from '../lib/tool-runtime.js';
 import { readOnlyAnnotations } from '../lib/tool-annotations.js';
-import { jsonResponse, textResponse } from '../lib/tool-responses.js';
+import { jsonResponse } from '../lib/tool-responses.js';
 
 const AITM_API_URL =
   (typeof process !== 'undefined' && process.env.AITM_API_URL) ||
   'http://localhost:3001';
 
+/**
+ * Turn a low-level fetch failure (connection refused / DNS / network) into an
+ * actionable message. Workspace tools are pure HTTP proxies to the AITM API
+ * server, so when it isn't running the raw `TypeError: fetch failed` is opaque
+ * to the MCP client. We surface the configured URL and how to start the server.
+ */
+function apiUnreachableError(endpoint: string, cause: unknown): Error {
+  const reason = cause instanceof Error ? cause.message : String(cause);
+  return new Error(
+    `Could not reach the AITM API server at ${AITM_API_URL} (workspace${endpoint}): ${reason}. ` +
+      'Workspace tools proxy to a separately-running AITM API server. ' +
+      'Start it (e.g. `npm run start` in aitimemachine/api-server) and/or set AITM_API_URL to its base URL.'
+  );
+}
+
 async function workspaceGet(endpoint: string): Promise<ReturnType<typeof jsonResponse>> {
-  const res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: unknown) {
+    throw apiUnreachableError(endpoint, err);
+  }
   if (!res.ok) {
     throw new Error(`Workspace API error: ${res.status} ${res.statusText}`);
   }
@@ -30,11 +50,16 @@ async function workspaceGet(endpoint: string): Promise<ReturnType<typeof jsonRes
 }
 
 async function workspacePost(endpoint: string, body: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  const res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err: unknown) {
+    throw apiUnreachableError(endpoint, err);
+  }
   if (!res.ok) {
     throw new Error(`Workspace API error: ${res.status} ${res.statusText}`);
   }

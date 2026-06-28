@@ -95,7 +95,9 @@ interface OutdatedPackage {
 
 interface AnalyzeDependenciesResult {
   outdated: OutdatedPackage[];
+  /** Total number of installed/declared direct + transitive dependencies. */
   total: number;
+  /** Count of dependencies already on their latest version (total - outdated). */
   upToDate: number;
 }
 
@@ -105,6 +107,80 @@ function semverBump(current: string, latest: string): 'major' | 'minor' | 'patch
   if ((l[0] ?? 0) > (c[0] ?? 0)) return 'major';
   if ((l[1] ?? 0) > (c[1] ?? 0)) return 'minor';
   return 'patch';
+}
+
+/**
+ * Count the total number of installed dependencies for an ecosystem.
+ * Returns `null` when the count cannot be determined (e.g. the CLI is missing),
+ * so callers can fall back to a conservative estimate rather than reporting 0.
+ */
+async function countTotalDependencies(
+  projectPath: string,
+  ecosystem: 'npm' | 'pip' | 'cargo' | 'go'
+): Promise<number | null> {
+  try {
+    if (ecosystem === 'npm') {
+      // `npm ls --all --json` lists the full resolved dependency tree.
+      let raw = '';
+      try {
+        raw = await run('npm', ['ls', '--all', '--json'], projectPath);
+      } catch (err: unknown) {
+        // npm ls exits non-zero on peer/extraneous warnings but still emits JSON.
+        raw = (err as { stdout?: string }).stdout ?? '';
+      }
+      if (!raw.trim()) return null;
+      const tree = JSON.parse(raw) as { dependencies?: Record<string, unknown> };
+      return countNpmTree(tree.dependencies);
+    }
+
+    if (ecosystem === 'pip') {
+      const raw = await run('pip', ['list', '--format=json'], projectPath);
+      const parsed = JSON.parse(raw) as unknown[];
+      return Array.isArray(parsed) ? parsed.length : null;
+    }
+
+    if (ecosystem === 'cargo') {
+      // `cargo metadata` enumerates every package in the resolved graph.
+      const raw = await run('cargo', ['metadata', '--format-version', '1'], projectPath);
+      const parsed = JSON.parse(raw) as { packages?: unknown[] };
+      return Array.isArray(parsed.packages)
+        ? Math.max(parsed.packages.length - 1, 0) // exclude the root crate itself
+        : null;
+    }
+
+    // go: `go list -m all` prints one module per line (first line is the main module).
+    const raw = await run('go', ['list', '-m', 'all'], projectPath);
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+    return Math.max(lines.length - 1, 0);
+  } catch {
+    return null;
+  }
+}
+
+/** Recursively count unique nodes in an `npm ls --json` dependency tree. */
+function countNpmTree(
+  deps: Record<string, unknown> | undefined,
+  seen = new Set<string>()
+): number {
+  if (!deps) return 0;
+  let count = 0;
+  for (const [name, node] of Object.entries(deps)) {
+    const version =
+      node && typeof node === 'object' && 'version' in node
+        ? String((node as { version?: unknown }).version)
+        : '';
+    const key = `${name}@${version}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      count++;
+    }
+    const child =
+      node && typeof node === 'object' && 'dependencies' in node
+        ? (node as { dependencies?: Record<string, unknown> }).dependencies
+        : undefined;
+    count += countNpmTree(child, seen);
+  }
+  return count;
 }
 
 async function analyzeDependencies(
@@ -123,7 +199,9 @@ async function analyzeDependencies(
       raw = nodeErr.stdout ?? '';
     }
     if (!raw.trim()) {
-      return { outdated: [], total: 0, upToDate: 0 };
+      const totalOnly = await countTotalDependencies(projectPath, ecosystem);
+      const resolvedTotal = totalOnly ?? 0;
+      return { outdated: [], total: resolvedTotal, upToDate: resolvedTotal };
     }
     const parsed = JSON.parse(raw) as Record<string, { current: string; latest: string }>;
     for (const [name, info] of Object.entries(parsed)) {
@@ -188,10 +266,19 @@ async function analyzeDependencies(
     }
   }
 
+  // Derive the full dependency count so `total` reflects ALL deps (not just the
+  // outdated ones) and `upToDate` is meaningful. If the count cannot be
+  // determined (CLI missing), fall back to the outdated count as a lower bound.
+  const totalInstalled = await countTotalDependencies(projectPath, ecosystem);
+  const total = totalInstalled !== null
+    ? Math.max(totalInstalled, outdated.length)
+    : outdated.length;
+  const upToDate = Math.max(total - outdated.length, 0);
+
   return {
     outdated,
-    total: outdated.length,
-    upToDate: 0, // unknown without full list; set to 0 per spec
+    total,
+    upToDate,
   };
 }
 
@@ -304,48 +391,187 @@ interface ComplexityResult {
   avgComplexity: number;
 }
 
-/** Rough cyclomatic complexity: 1 + decision points. */
-function measureComplexity(source: string, filePath: string, threshold: number): ComplexityResult {
-  // Split into crude function blocks using a regex heuristic.
-  // Works well enough for TS/JS without a full AST.
-  const functionPattern =
-    /(?:function\s+([\w$]+)|(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>|\w+\s*=>)|([\w$]+)\s*\([^)]*\)\s*\{)/g;
+// Minimal structural typings for the @babel/parser AST nodes we traverse.
+// We avoid a hard dependency on @babel/types to keep the import surface small.
+interface BabelNode {
+  type: string;
+  start?: number;
+  loc?: { start?: { line?: number } };
+  id?: { name?: string } | null;
+  key?: { name?: string; value?: string | number } | null;
+  // The parser attaches arbitrary child nodes/arrays; index for traversal.
+  [key: string]: unknown;
+}
 
-  const decisionKeywords = /\b(?:if|else\s+if|for|while|do|switch|case|\?\s*[^:]+\s*:|&&|\|\||\?\?|catch)\b/g;
+const FUNCTION_NODE_TYPES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+  'ObjectMethod',
+  'ClassMethod',
+  'ClassPrivateMethod',
+]);
 
-  const functions: FunctionComplexity[] = [];
-  let match: RegExpExecArray | null;
+// AST node types that introduce a cyclomatic branch (each adds +1).
+const BRANCH_NODE_TYPES = new Set([
+  'IfStatement',
+  'ForStatement',
+  'ForInStatement',
+  'ForOfStatement',
+  'WhileStatement',
+  'DoWhileStatement',
+  'SwitchCase', // each non-default case adds a branch
+  'ConditionalExpression', // genuine ternary `a ? b : c`
+  'CatchClause',
+]);
 
-  // Collect approximate function start positions and names
-  const funcStarts: Array<{ name: string; start: number }> = [];
-  while ((match = functionPattern.exec(source)) !== null) {
-    const name = match[1] ?? match[2] ?? match[3] ?? '<anonymous>';
-    funcStarts.push({ name, start: match.index });
+/** True for logical operators that short-circuit and thus add a branch. */
+function isLogicalBranch(node: BabelNode): boolean {
+  if (node.type !== 'LogicalExpression') return false;
+  const op = (node as { operator?: string }).operator;
+  return op === '&&' || op === '||' || op === '??';
+}
+
+/** Derive a human-readable name for a function-like AST node. */
+function functionName(node: BabelNode, parent: BabelNode | null): string {
+  if (node.id?.name) return node.id.name;
+  if (node.type === 'ObjectMethod' || node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') {
+    const key = node.key;
+    if (key?.name) return key.name;
+    if (key && typeof key.value !== 'undefined') return String(key.value);
+  }
+  // Named via assignment: `const foo = () => {}` / `foo = function () {}`.
+  if (parent) {
+    if (parent.type === 'VariableDeclarator') {
+      const pid = (parent as { id?: { name?: string } }).id;
+      if (pid?.name) return pid.name;
+    }
+    if (parent.type === 'AssignmentExpression') {
+      const left = (parent as { left?: { name?: string; property?: { name?: string } } }).left;
+      if (left?.name) return left.name;
+      if (left?.property?.name) return left.property.name;
+    }
+    if (parent.type === 'Property' || parent.type === 'ObjectProperty') {
+      const key = (parent as { key?: { name?: string; value?: string | number } }).key;
+      if (key?.name) return key.name;
+      if (key && typeof key.value !== 'undefined') return String(key.value);
+    }
+  }
+  return '<anonymous>';
+}
+
+/** Iterate the direct child AST nodes of a node. */
+function* childNodes(node: BabelNode): Generator<BabelNode> {
+  for (const key of Object.keys(node)) {
+    if (key === 'loc' || key === 'start' || key === 'end' || key === 'leadingComments' || key === 'trailingComments') {
+      continue;
+    }
+    const value = node[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === 'object' && typeof (item as BabelNode).type === 'string') {
+          yield item as BabelNode;
+        }
+      }
+    } else if (value && typeof value === 'object' && typeof (value as BabelNode).type === 'string') {
+      yield value as BabelNode;
+    }
+  }
+}
+
+/**
+ * Count the cyclomatic complexity contributed by a function body, WITHOUT
+ * descending into nested function scopes (those are measured separately).
+ * Cyclomatic complexity = 1 + number of decision points.
+ */
+function complexityOfFunctionBody(fnNode: BabelNode): number {
+  let decisions = 0;
+
+  const visit = (node: BabelNode): void => {
+    for (const child of childNodes(node)) {
+      // Do not cross into nested functions — they get their own measurement.
+      if (FUNCTION_NODE_TYPES.has(child.type)) continue;
+
+      if (child.type === 'SwitchCase') {
+        // `default:` (no test) does not add a branch; real cases do.
+        if ((child as { test?: unknown }).test) decisions++;
+      } else if (BRANCH_NODE_TYPES.has(child.type)) {
+        decisions++;
+      } else if (isLogicalBranch(child)) {
+        decisions++;
+      }
+
+      visit(child);
+    }
+  };
+
+  visit(fnNode);
+  return 1 + decisions;
+}
+
+/**
+ * Measure per-function cyclomatic complexity using a real Babel AST.
+ *
+ * Scoping each function via the AST avoids the pitfalls of regex heuristics:
+ * nested/anonymous functions are attributed correctly, optional chaining (`?.`)
+ * is never mistaken for a ternary, and named expressions resolve to their
+ * binding name. Only functions at or above `threshold` are returned; if the
+ * source contains no functions, a single `<module>` entry reports file-level
+ * complexity.
+ */
+async function measureComplexity(source: string, filePath: string, threshold: number): Promise<ComplexityResult> {
+  const { parse } = await import('@babel/parser');
+
+  let ast: BabelNode;
+  try {
+    ast = parse(source, {
+      sourceType: 'unambiguous',
+      errorRecovery: true,
+      plugins: [
+        'typescript',
+        'jsx',
+        'decorators-legacy',
+        'classProperties',
+        'classPrivateMethods',
+        'classPrivateProperties',
+        'topLevelAwait',
+        'importAssertions',
+      ],
+    }) as unknown as BabelNode;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to parse ${filePath}: ${msg}`);
   }
 
-  if (funcStarts.length === 0) {
-    // File-level complexity
-    const decisions = (source.match(decisionKeywords) ?? []).length;
-    const complexity = 1 + decisions;
-    if (complexity >= threshold) {
-      const lineNum = 1;
-      functions.push({ name: '<module>', complexity, location: `${filePath}:${lineNum}` });
-    }
-  } else {
-    for (let i = 0; i < funcStarts.length; i++) {
-      const start = funcStarts[i].start;
-      const end = funcStarts[i + 1]?.start ?? source.length;
-      const block = source.slice(start, end);
-      const decisions = (block.match(decisionKeywords) ?? []).length;
-      const complexity = 1 + decisions;
+  const functions: FunctionComplexity[] = [];
+
+  // Walk the whole tree; when we hit a function node, measure it (its body
+  // walk stops at nested functions, which the outer walk will reach separately).
+  const walk = (node: BabelNode, parent: BabelNode | null): void => {
+    if (FUNCTION_NODE_TYPES.has(node.type)) {
+      const complexity = complexityOfFunctionBody(node);
       if (complexity >= threshold) {
-        const lineNum = source.slice(0, start).split('\n').length;
+        const line = node.loc?.start?.line ?? 1;
         functions.push({
-          name: funcStarts[i].name,
+          name: functionName(node, parent),
           complexity,
-          location: `${filePath}:${lineNum}`,
+          location: `${filePath}:${line}`,
         });
       }
+    }
+    for (const child of childNodes(node)) {
+      walk(child, node);
+    }
+  };
+
+  walk(ast, null);
+
+  if (functions.length === 0) {
+    // No functions cleared the threshold — report file-level complexity so the
+    // tool always returns something actionable.
+    const moduleComplexity = complexityOfFunctionBody(ast);
+    if (moduleComplexity >= threshold) {
+      functions.push({ name: '<module>', complexity: moduleComplexity, location: `${filePath}:1` });
     }
   }
 
@@ -497,7 +723,10 @@ export const registerAnalysisTools = createToolRegistrar([
     description:
       'Analyze project dependencies and find outdated packages. ' +
       'Supports npm, pip, cargo, and go ecosystems. ' +
-      'Returns a list of outdated packages with current/latest versions and upgrade severity.',
+      'Returns a list of outdated packages with current/latest versions and upgrade severity, ' +
+      'plus "total" (count of all installed dependencies) and "upToDate" (total minus outdated). ' +
+      'When the dependency count cannot be determined (e.g. the ecosystem CLI is missing), ' +
+      '"total" falls back to the number of outdated packages.',
     schema: {
       projectPath: z.string().describe('Absolute path to the project root directory'),
       ecosystem: z
@@ -544,8 +773,9 @@ export const registerAnalysisTools = createToolRegistrar([
   defineTool({
     name: 'measure_code_complexity',
     description:
-      'Measure cyclomatic complexity of TypeScript or JavaScript files. ' +
-      'Counts decision points (if/else/switch/for/while/ternary/logical operators) per function. ' +
+      'Measure cyclomatic complexity of TypeScript or JavaScript files using a real Babel AST. ' +
+      'Scopes each function (including nested and anonymous ones) and counts decision points ' +
+      '(if/for/while/do/switch case/ternary/&&/||/??/catch) without miscounting optional chaining. ' +
       'Returns per-function complexity, max, and average. ' +
       'Only functions at or above the threshold are included in the output.',
     schema: {
@@ -564,7 +794,7 @@ export const registerAnalysisTools = createToolRegistrar([
     annotations: readOnlyAnnotations(),
     run: async (args) => {
       const source = await readFile(args.filePath, 'utf8');
-      const result = measureComplexity(source, args.filePath, args.threshold ?? 5);
+      const result = await measureComplexity(source, args.filePath, args.threshold ?? 5);
       return jsonResponse(result);
     },
   }),

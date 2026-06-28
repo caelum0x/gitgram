@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { db, schema } from "../db/index.js";
-import { eq, and, desc, sql, like } from "drizzle-orm";
+import { eq, and, desc, sql, like, inArray } from "drizzle-orm";
 import { apiKeyAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { Errors, asyncHandler } from "../middleware/errors.js";
 import { createIndexingService, IndexingService } from "../services/indexing.js";
@@ -95,6 +95,112 @@ async function updateReindexJob(options: {
   } catch {
     // Best-effort persistence
   }
+}
+
+// Initial-indexing job persistence (type "index"). Mirrors the reindex helpers
+// so the granular progress polled via GET /:id survives restarts and is visible
+// across instances rather than living only in the in-memory Map.
+async function persistIndexJob(options: {
+  jobId: string;
+  repositoryId: string;
+  userId: string;
+  status: string;
+  progress: number;
+  error?: string;
+}): Promise<void> {
+  try {
+    await db.insert(schema.jobs).values({
+      id: options.jobId,
+      userId: options.userId,
+      type: "index",
+      status: options.status,
+      params: { repositoryId: options.repositoryId },
+      progress: options.progress,
+      error: options.error,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  } catch {
+    // Best-effort persistence
+  }
+}
+
+async function updateIndexJob(options: {
+  jobId: string;
+  status: string;
+  progress: number;
+  error?: string;
+  result?: Record<string, unknown>;
+  completedAt?: Date;
+}): Promise<void> {
+  try {
+    await db
+      .update(schema.jobs)
+      .set({
+        status: options.status,
+        progress: options.progress,
+        error: options.error,
+        result: options.result,
+        updatedAt: new Date(),
+        completedAt: options.completedAt,
+      })
+      .where(eq(schema.jobs.id, options.jobId));
+  } catch {
+    // Best-effort persistence
+  }
+}
+
+/**
+ * Load the latest persisted index/reindex job for a repository from the DB,
+ * used as a fallback when the in-memory progress entry is absent (e.g. after a
+ * restart or when serving from a different instance).
+ */
+async function loadLatestIndexJob(
+  repositoryId: string,
+  userId: string
+): Promise<
+  | {
+      jobId: string;
+      status: string;
+      progress: number;
+      filesTotal: number | null;
+      filesIndexed: number | null;
+      error: string | undefined;
+      startedAt: Date | null;
+      completedAt: Date | null;
+    }
+  | null
+> {
+  const rows = await db
+    .select()
+    .from(schema.jobs)
+    .where(
+      and(
+        eq(schema.jobs.userId, userId),
+        inArray(schema.jobs.type, ["index", "reindex"])
+      )
+    )
+    .orderBy(desc(schema.jobs.createdAt))
+    .limit(50);
+
+  const latest = rows.find(
+    (row) => (row.params as Record<string, unknown> | null)?.repositoryId === repositoryId
+  );
+  if (!latest) {
+    return null;
+  }
+
+  const result = latest.result as Record<string, unknown> | null;
+  return {
+    jobId: latest.id,
+    status: latest.status || "pending",
+    progress: latest.progress ?? 0,
+    filesTotal: (result?.filesTotal as number | undefined) ?? null,
+    filesIndexed: (result?.filesIndexed as number | undefined) ?? null,
+    error: latest.error || undefined,
+    startedAt: latest.createdAt ?? null,
+    completedAt: latest.completedAt ?? null,
+  };
 }
 
 /**
@@ -367,15 +473,26 @@ router.post(
       },
     });
 
-    // Initialize job tracking
+    // Initialize job tracking. The in-memory Map gives fast, granular progress
+    // for the originating instance; the jobs table is the durable source of
+    // truth so progress survives restarts and is readable from other instances.
+    const indexJobId = generateId("idxjob");
+    const initialStatus = isGitHubRepo ? "cloning" : "indexing";
     indexingJobs.set(repoId, {
-      jobId: repoId,
+      jobId: indexJobId,
       repositoryId: repoId,
-      status: isGitHubRepo ? "cloning" : "indexing",
+      status: initialStatus,
       progress: 0,
       filesTotal: 0,
       filesIndexed: 0,
       startedAt: new Date(),
+    });
+    await persistIndexJob({
+      jobId: indexJobId,
+      repositoryId: repoId,
+      userId: req.user!.userId,
+      status: initialStatus,
+      progress: 0,
     });
 
     // Start async indexing process
@@ -394,6 +511,11 @@ router.post(
           await fs.mkdir(path.dirname(rootPath), { recursive: true });
           await cloneRepository(url, rootPath, branch);
           job.status = "indexing";
+          await updateIndexJob({
+            jobId: indexJobId,
+            status: "indexing",
+            progress: 0,
+          });
         }
 
         // Get all files
@@ -416,6 +538,15 @@ router.post(
         if (result.error) {
           job.error = result.error;
         }
+
+        await updateIndexJob({
+          jobId: indexJobId,
+          status: result.status,
+          progress: 100,
+          error: result.error,
+          result: { filesTotal: job.filesTotal, filesIndexed: result.filesIndexed },
+          completedAt: job.completedAt,
+        });
       } catch (error) {
         job.status = "failed";
         job.error = (error as Error).message;
@@ -424,6 +555,14 @@ router.post(
           .update(schema.repositories)
           .set({ indexStatus: "failed", updatedAt: new Date() })
           .where(eq(schema.repositories.id, repoId));
+
+        await updateIndexJob({
+          jobId: indexJobId,
+          status: "failed",
+          progress: job.progress,
+          error: job.error,
+          completedAt: new Date(),
+        });
       }
     })();
 
@@ -525,8 +664,28 @@ router.get(
       throw Errors.notFound("Repository", id);
     }
 
-    // Get job progress if available
-    const job = indexingJobs.get(id);
+    // Get job progress. Prefer the fast in-memory entry on this instance; fall
+    // back to the durable jobs table so progress survives restarts and is
+    // correct when served from a different instance.
+    const inMemoryJob = indexingJobs.get(id);
+    const dbJob = inMemoryJob ? null : await loadLatestIndexJob(id, req.user!.userId);
+    const job = inMemoryJob
+      ? {
+          status: inMemoryJob.status as string,
+          filesTotal: inMemoryJob.filesTotal,
+          filesIndexed: inMemoryJob.filesIndexed,
+          progress: inMemoryJob.progress,
+          error: inMemoryJob.error,
+        }
+      : dbJob
+      ? {
+          status: dbJob.status,
+          filesTotal: dbJob.filesTotal ?? 0,
+          filesIndexed: dbJob.filesIndexed ?? 0,
+          progress: dbJob.progress,
+          error: dbJob.error,
+        }
+      : null;
 
     // Get detailed stats from indexing service
     let stats = null;

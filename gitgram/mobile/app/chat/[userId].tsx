@@ -18,6 +18,7 @@ import { initializeSocket, disconnectSocket } from '../../services/socketService
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import * as ImagePicker from 'expo-image-picker';
+import { logger } from '../../utils/logger';
 
 const TYPING_DEBOUNCE_MS = 2000; // Stop typing after 2 seconds of no input
 
@@ -272,13 +273,18 @@ export default function ChatScreen() {
 
       if (!result.canceled && result.assets[0]) {
         setSending(true);
+        const asset = result.assets[0];
+        const isVideo = asset.type === 'video';
+        const ext = asset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+        const mimeType = asset.mimeType || (isVideo ? `video/${ext}` : `image/${ext}`);
+
+        // recipientId/content are appended by messageService.sendMessage.
         const formData = new FormData();
-        formData.append('recipientId', userId);
         formData.append('media', {
-          uri: result.assets[0].uri,
-          type: result.assets[0].type || 'image/jpeg',
-          name: `media.${result.assets[0].uri.split('.').pop()}`,
-        } as any);
+          uri: asset.uri,
+          type: mimeType,
+          name: `media.${ext}`,
+        } as unknown as Blob);
 
         const response = await messageService.sendMessage(userId, '', formData);
         setMessages((prev) => [response.message, ...prev]);
@@ -286,13 +292,13 @@ export default function ChatScreen() {
         if (socketRef.current) {
           socketRef.current.emit('sendMessage', {
             recipientId: userId,
-            mediaType: result.assets[0].type?.startsWith('video') ? 'video' : 'image',
+            mediaType: isVideo ? 'video' : 'image',
             mediaUrl: response.message.mediaUrl,
           });
         }
       }
     } catch (error) {
-      console.error('Send media error:', error);
+      logger.error('Send media error:', error);
     } finally {
       setSending(false);
     }

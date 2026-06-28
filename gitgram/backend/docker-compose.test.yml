@@ -1,0 +1,41 @@
+# =============================================================================
+# Gitgram Backend - E2E test harness (ephemeral Postgres + Redis).
+#
+# Brings up a disposable PostgreSQL and Redis so the E2E suite can exercise the
+# real HTTP API against real datastores — no mocks. Use:
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   npm run test:e2e
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Or simply:  npm run test:e2e:docker
+# =============================================================================
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: gitgram-postgres-test
+    environment:
+      POSTGRES_USER: gitgram_test
+      POSTGRES_PASSWORD: gitgram_test
+      POSTGRES_DB: gitgram_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitgram_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: gitgram-redis-test
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

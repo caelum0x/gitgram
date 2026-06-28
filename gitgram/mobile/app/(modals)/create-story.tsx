@@ -12,6 +12,7 @@ import { Colors } from '../../constants/Colors';
 import { storyService } from '../../services/storyService';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { useToast } from '../../hooks/useToast';
+import { logger } from '../../utils/logger';
 
 export default function CreateStoryScreen() {
   const router = useRouter();
@@ -46,7 +47,7 @@ export default function CreateStoryScreen() {
         await uploadStory(result.assets[0].uri, 'image');
       }
     } catch (error) {
-      console.error('Pick image error:', error);
+      logger.error('Pick image error:', error);
       showToast('Failed to pick image', 'error');
     }
   };
@@ -72,7 +73,7 @@ export default function CreateStoryScreen() {
         await uploadStory(result.assets[0].uri, 'image');
       }
     } catch (error) {
-      console.error('Take photo error:', error);
+      logger.error('Take photo error:', error);
       showToast('Failed to take photo', 'error');
     }
   };
@@ -93,7 +94,7 @@ export default function CreateStoryScreen() {
       showToast('Story created successfully!', 'success');
       router.back();
     } catch (error) {
-      console.error('Upload story error:', error);
+      logger.error('Upload story error:', error);
       showToast('Failed to create story', 'error');
     } finally {
       setLoading(false);

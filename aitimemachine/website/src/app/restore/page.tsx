@@ -38,6 +38,12 @@ interface ProjectVerification {
   lastCheckpoint: string | null;
 }
 
+interface UserProject {
+  id: string;
+  name: string;
+  rootPath: string | null;
+}
+
 interface Session {
   id: string;
   name: string;
@@ -49,7 +55,8 @@ interface Session {
 
 interface RestoreProgress {
   status: 'idle' | 'running' | 'done' | 'error';
-  percent: number;
+  /** null while running with no measurable progress (indeterminate). */
+  percent: number | null;
   message: string;
 }
 
@@ -163,8 +170,39 @@ function Step1SelectProject({ onVerified }: Step1Props) {
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState<ProjectVerification | null>(null);
 
+  // Real project picker: the browser cannot read arbitrary filesystem paths,
+  // so we let the user pick from the projects AITM already tracks for them.
+  const [userProjects, setUserProjects] = useState<UserProject[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   useEffect(() => {
     setRecentProjects(loadRecentProjects());
+  }, []);
+
+  const loadUserProjects = useCallback(async () => {
+    setProjectsLoading(true);
+    try {
+      const res = await fetch('/api/projects');
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = (await res.json()) as { projects: UserProject[] };
+      setUserProjects(data.projects ?? []);
+    } catch {
+      setUserProjects([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, []);
+
+  const openPicker = useCallback(() => {
+    setPickerOpen(true);
+    loadUserProjects();
+  }, [loadUserProjects]);
+
+  const pickProject = useCallback((project: UserProject) => {
+    if (project.rootPath) setProjectPath(project.rootPath);
+    else setProjectPath(project.name);
+    setPickerOpen(false);
   }, []);
 
   const verifyProject = useCallback(
@@ -216,14 +254,54 @@ function Step1SelectProject({ onVerified }: Step1Props) {
           />
           <Button
             variant="outline"
-            onClick={() => {
-              const val = prompt('Paste your project path:');
-              if (val) setProjectPath(val.trim());
-            }}
+            type="button"
+            onClick={() => (pickerOpen ? setPickerOpen(false) : openPicker())}
+            aria-expanded={pickerOpen}
           >
             <FolderOpen className="w-4 h-4 mr-1" /> Browse
           </Button>
         </div>
+
+        {/* Real project picker, backed by the user's tracked projects */}
+        {pickerOpen && (
+          <div className="rounded-lg border border-gray-700 bg-gray-900 p-2">
+            {projectsLoading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading your projects…
+              </div>
+            ) : userProjects.length === 0 ? (
+              <p className="px-3 py-6 text-center text-sm text-gray-500">
+                No tracked projects found. Run{' '}
+                <code className="font-mono text-xs text-gray-400">aitm init</code> in a project,
+                or type a path above.
+              </p>
+            ) : (
+              <ul className="max-h-56 overflow-y-auto">
+                {userProjects.map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      onClick={() => pickProject(project)}
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+                    >
+                      <FolderOpen className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-white">
+                          {project.name}
+                        </span>
+                        {project.rootPath && (
+                          <span className="block truncate text-xs text-gray-500">
+                            {project.rootPath}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-red-400 flex items-center gap-1">
@@ -456,12 +534,15 @@ function Step3ConfirmRestore({ projectPath, session, onBack, onDone }: Step3Prop
   });
 
   const handleRestore = async () => {
-    setProgress({ status: 'running', percent: 10, message: 'Preparing restore…' });
+    // The restore endpoint is a single atomic call with no progress stream, so
+    // we show an honest indeterminate running state rather than fabricated
+    // step percentages, then 100% only once the server confirms completion.
+    setProgress({
+      status: 'running',
+      percent: null,
+      message: createBackup ? 'Backing up and restoring…' : 'Restoring files…',
+    });
     try {
-      if (createBackup) {
-        setProgress({ status: 'running', percent: 30, message: 'Creating backup…' });
-      }
-      setProgress({ status: 'running', percent: 60, message: 'Restoring files…' });
       const res = await fetch('/api/v1/sessions/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -476,7 +557,7 @@ function Step3ConfirmRestore({ projectPath, session, onBack, onDone }: Step3Prop
     } catch (err: unknown) {
       setProgress({
         status: 'error',
-        percent: 0,
+        percent: null,
         message: err instanceof Error ? err.message : 'Restore failed',
       });
     }
@@ -565,14 +646,22 @@ function Step3ConfirmRestore({ projectPath, session, onBack, onDone }: Step3Prop
             >
               {progress.message}
             </span>
-            <span className="text-gray-500">{progress.percent}%</span>
+            {progress.percent !== null && (
+              <span className="text-gray-500">{progress.percent}%</span>
+            )}
           </div>
-          <Progress
-            value={progress.percent}
-            indicatorClassName={
-              progress.status === 'error' ? 'bg-red-600' : undefined
-            }
-          />
+          {progress.percent !== null ? (
+            <Progress
+              value={progress.percent}
+              indicatorClassName={
+                progress.status === 'error' ? 'bg-red-600' : undefined
+              }
+            />
+          ) : (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
+              <div className="h-full w-full animate-pulse rounded-full bg-blue-600/70" />
+            </div>
+          )}
         </div>
       )}
 

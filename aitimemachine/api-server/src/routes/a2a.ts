@@ -193,7 +193,7 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
  * POST /a2a/agents/register
  * Register a new agent. Returns { agentId, apiKey }.
  */
-router.post("/agents/register", (req: Request, res: Response): void => {
+router.post("/agents/register", async (req: Request, res: Response): Promise<void> => {
   const parsed = registerAgentSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() });
@@ -201,7 +201,7 @@ router.post("/agents/register", (req: Request, res: Response): void => {
   }
 
   try {
-    const result = a2aService.registerAgent(parsed.data);
+    const result = await a2aService.registerAgent(parsed.data);
     res.status(201).json(result);
   } catch (error: unknown) {
     const message =
@@ -214,8 +214,8 @@ router.post("/agents/register", (req: Request, res: Response): void => {
  * GET /a2a/agents
  * List registered agents (public metadata only).
  */
-router.get("/agents", (_req: Request, res: Response): void => {
-  const agents = a2aService.getAgents();
+router.get("/agents", async (_req: Request, res: Response): Promise<void> => {
+  const agents = await a2aService.getAgents();
   res.json({ agents });
 });
 
@@ -223,14 +223,14 @@ router.get("/agents", (_req: Request, res: Response): void => {
  * DELETE /a2a/agents/:agentId
  * Unregister an agent. Requires a valid Bearer API key.
  */
-router.delete("/agents/:agentId", (req: Request, res: Response): void => {
+router.delete("/agents/:agentId", async (req: Request, res: Response): Promise<void> => {
   const apiKey = extractBearerToken(req);
   if (!apiKey) {
     res.status(401).json({ error: "Missing Bearer token" });
     return;
   }
 
-  const callerAgentId = a2aService.resolveApiKey(apiKey);
+  const callerAgentId = await a2aService.resolveApiKey(apiKey);
   if (!callerAgentId) {
     res.status(401).json({ error: "Invalid API key" });
     return;
@@ -242,7 +242,7 @@ router.delete("/agents/:agentId", (req: Request, res: Response): void => {
     return;
   }
 
-  const removed = a2aService.unregisterAgent(agentId);
+  const removed = await a2aService.unregisterAgent(agentId);
   if (!removed) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -263,7 +263,7 @@ router.post("/message", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const callerAgentId = a2aService.resolveApiKey(apiKey);
+  const callerAgentId = await a2aService.resolveApiKey(apiKey);
   if (!callerAgentId) {
     res.status(401).json({ error: "Invalid API key" });
     return;
@@ -302,7 +302,7 @@ router.get("/messages/:agentId", async (req: Request, res: Response): Promise<vo
     return;
   }
 
-  const callerAgentId = a2aService.resolveApiKey(apiKey);
+  const callerAgentId = await a2aService.resolveApiKey(apiKey);
   if (!callerAgentId) {
     res.status(401).json({ error: "Invalid API key" });
     return;
@@ -345,7 +345,7 @@ router.post("/broadcast", async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  const callerAgentId = a2aService.resolveApiKey(apiKey);
+  const callerAgentId = await a2aService.resolveApiKey(apiKey);
   if (!callerAgentId) {
     res.status(401).json({ error: "Invalid API key" });
     return;

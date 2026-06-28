@@ -14,6 +14,7 @@ import EmptyState from '../../components/common/EmptyState';
 import { userService } from '../../services/userService';
 import { logger } from '../../utils/logger';
 import { Image } from 'expo-image';
+import FollowSuggestions from '../../components/proximity/FollowSuggestions';
 
 export default function SuggestedUsersScreen() {
   const router = useRouter();
@@ -103,6 +104,7 @@ export default function SuggestedUsersScreen() {
           renderItem={renderUser}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={<FollowSuggestions title="People to follow" />}
         />
       ) : (
         <EmptyState

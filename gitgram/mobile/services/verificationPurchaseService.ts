@@ -2,14 +2,14 @@ import api from './api';
 
 export const verificationPurchaseService = {
   getPricing: async (type: 'standard' | 'golden', period: 'monthly' | 'annual' = 'monthly') => {
-    const response = await api.get('/v1/verification/pricing', {
+    const response = await api.get('/verification/pricing', {
       params: { type, period },
     });
     return response.data;
   },
 
   createCheckout: async (type: 'standard' | 'golden', period: 'monthly' | 'annual' = 'monthly') => {
-    const response = await api.post('/v1/verification/purchase/checkout', {
+    const response = await api.post('/verification/purchase/checkout', {
       type,
       period,
     });
@@ -17,22 +17,22 @@ export const verificationPurchaseService = {
   },
 
   getPurchaseStatus: async () => {
-    const response = await api.get('/v1/verification/purchase/status');
+    const response = await api.get('/verification/purchase/status');
     return response.data;
   },
 
   cancelPurchase: async () => {
-    const response = await api.post('/v1/verification/purchase/cancel');
+    const response = await api.post('/verification/purchase/cancel');
     return response.data;
   },
 
   upgradeToGolden: async () => {
-    const response = await api.post('/v1/verification/purchase/upgrade');
+    const response = await api.post('/verification/purchase/upgrade');
     return response.data;
   },
 
   downgradeToStandard: async () => {
-    const response = await api.post('/v1/verification/purchase/downgrade');
+    const response = await api.post('/verification/purchase/downgrade');
     return response.data;
   },
 };

@@ -5,13 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  FlatList,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Colors } from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
-import { authService } from '../../services/authService';
 import { userService } from '../../services/userService';
 import { postService } from '../../services/postService';
 import { reelService } from '../../services/reelService';
@@ -20,12 +19,13 @@ import api from '../../services/api';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import PostCard from '../../components/Post/PostCard';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { logger } from '../../utils/logger';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'posts' | 'reels' | 'saved' | 'projects'>('posts');
   const [posts, setPosts] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
@@ -64,30 +64,29 @@ export default function ProfileScreen() {
         setReels(reelsResponse.reels || []);
       } else if (activeTab === 'saved') {
         // Load saved posts
-        const savedResponse = await api.get('/v1/posts/saved');
+        const savedResponse = await api.get('/posts/saved');
         setSavedPosts(savedResponse.data.posts || []);
       } else if (activeTab === 'projects') {
         const projectsResponse = await githubService.getUserProjects();
         setGithubProjects(projectsResponse.projects || []);
       }
     } catch (error) {
-      console.error('Load profile error:', error);
+      logger.error('Load profile error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    const { refreshToken } = useAuthStore.getState();
-    if (refreshToken) {
-      try {
-        await authService.logout(refreshToken);
-      } catch (error) {
-        console.error('Logout error:', error);
-      }
+  const handleShareProfile = async () => {
+    if (!user) return;
+    try {
+      await Share.share({
+        message: `Check out @${user.username} on Gitgram`,
+        url: `https://gitgram.app/${user.username}`,
+      });
+    } catch (error) {
+      logger.error('Share profile error:', error);
     }
-    await logout();
-    router.replace('/(auth)/login');
   };
 
   if (!user) {
@@ -102,8 +101,8 @@ export default function ProfileScreen() {
           <Icon name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{user.username}</Text>
-        <TouchableOpacity style={styles.moreButton} onPress={handleLogout}>
-          <Icon name="logout" size={24} color={Colors.text} />
+        <TouchableOpacity style={styles.moreButton} onPress={() => router.push('/menu')}>
+          <Icon name="menu" size={24} color={Colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -156,13 +155,16 @@ export default function ProfileScreen() {
             {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
           </View>
 
-          {/* Follow/Message Buttons */}
+          {/* Own-profile actions: edit + share (Follow/Message belong on other users' profiles) */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.followButton}>
-              <Text style={styles.followButtonText}>Follow</Text>
+            <TouchableOpacity
+              style={styles.followButton}
+              onPress={() => router.push('/(modals)/edit-profile')}
+            >
+              <Text style={styles.followButtonText}>Edit Profile</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.messageButton}>
-              <Text style={styles.messageButtonText}>Message</Text>
+            <TouchableOpacity style={styles.messageButton} onPress={handleShareProfile}>
+              <Text style={styles.messageButtonText}>Share Profile</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -241,7 +243,7 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     key={reel.id}
                     style={[styles.gridItem, { height: 200 }]} // Taller for reels
-                    onPress={() => router.push(`/reels`)} // Navigate to reels feed, ideally to specific reel
+                    onPress={() => router.push(`/reel/${reel.id}`)}
                   >
                     <Image
                       source={{ uri: reel.thumbnailUrl }}

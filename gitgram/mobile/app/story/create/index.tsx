@@ -7,6 +7,7 @@ import { ThemedView } from '../../../components/ui/ThemedView';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Colors } from '../../../constants/Colors';
 import { storyService } from '../../../services/storyService';
+import { logger } from '../../../utils/logger';
 
 export default function CreateStoryScreen() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function CreateStoryScreen() {
       // Navigate back to home after successful upload
       router.back();
     } catch (err) {
-      console.error('Failed to upload story:', err);
+      logger.error('Failed to upload story:', err);
       setError('Failed to create story. Please try again.');
       Alert.alert(
         'Upload Failed',
@@ -61,7 +62,7 @@ export default function CreateStoryScreen() {
           await uploadStory(photo.uri, 'image');
         }
       } catch (err) {
-        console.error('Failed to take picture:', err);
+        logger.error('Failed to take picture:', err);
         Alert.alert('Error', 'Failed to capture photo. Please try again.');
       }
     }
@@ -94,7 +95,7 @@ export default function CreateStoryScreen() {
         await uploadStory(asset.uri, mediaType);
       }
     } catch (err) {
-      console.error('Failed to pick from gallery:', err);
+      logger.error('Failed to pick from gallery:', err);
       Alert.alert('Error', 'Failed to select media. Please try again.');
     }
   };
