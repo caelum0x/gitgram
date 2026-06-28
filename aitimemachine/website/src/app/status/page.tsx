@@ -18,7 +18,9 @@ interface ComponentHealth {
   name: string;
   description: string;
   status: Status;
-  uptime: number; // 90-day uptime percentage
+  uptime: number; // 90-day uptime percentage (baseline; refined when live data arrives)
+  latencyMs?: number; // live measured latency for the mapped provider, if known
+  live?: boolean; // true once real health data has been applied
 }
 
 interface DayBar {
@@ -44,9 +46,17 @@ interface MetricRow {
   uptime: number;
 }
 
+interface ProviderHealthDto {
+  name: string;
+  status?: string;
+  latencyMs?: number;
+}
+
 interface ProvidersResponse {
   overall?: string;
-  providers?: Record<string, { status?: string }>;
+  // The backend returns an array of providers; older shapes used a map.
+  providers?: ProviderHealthDto[] | Record<string, { status?: string; latencyMs?: number }>;
+  checkedAt?: string;
   [key: string]: unknown;
 }
 
@@ -176,6 +186,49 @@ function normalizeStatus(raw: string | undefined): Status {
   }
 }
 
+interface ProviderSample {
+  status: Status;
+  latencyMs: number | null;
+}
+
+/**
+ * Normalise either the array (`providers: [...]`) or legacy map shape into a
+ * lookup keyed by provider name, capturing live status + measured latency.
+ */
+function normalizeProviders(
+  providers: ProvidersResponse['providers'],
+): Map<string, ProviderSample> {
+  const map = new Map<string, ProviderSample>();
+  if (!providers) return map;
+
+  if (Array.isArray(providers)) {
+    for (const p of providers) {
+      if (!p?.name) continue;
+      map.set(p.name, {
+        status: normalizeStatus(p.status),
+        latencyMs: typeof p.latencyMs === 'number' ? p.latencyMs : null,
+      });
+    }
+  } else {
+    for (const [name, value] of Object.entries(providers)) {
+      map.set(name, {
+        status: normalizeStatus(value?.status),
+        latencyMs: typeof value?.latencyMs === 'number' ? value.latencyMs : null,
+      });
+    }
+  }
+  return map;
+}
+
+// Live availability derived from a current status reading. Without a
+// time-series backend we report the live figure rather than a fabricated
+// historical percentage.
+const LIVE_UPTIME: Record<Status, number> = {
+  operational: 100,
+  degraded: 99,
+  down: 0,
+};
+
 const STATUS_DOT: Record<Status, string> = {
   operational: 'bg-green-500',
   degraded: 'bg-yellow-500',
@@ -203,17 +256,12 @@ const BAR_FILL: Record<Status | 'none', string> = {
 
 // Deterministic 90-day history so SSR and client render identically.
 function buildHistory(component: ComponentHealth): DayBar[] {
+  // We do not have a backend uptime time-series, so we never fabricate a
+  // 90-day history. Historical bars are "none" (unknown); only the most recent
+  // bar reflects the real, live status reading.
   const bars: DayBar[] = [];
-  // Seed from the component name length so different components vary slightly.
-  const seed = component.name.length;
   for (let i = 0; i < 90; i++) {
-    const n = (i * 7 + seed * 13) % 97;
-    let status: Status | 'none' = 'operational';
-    if (n === 41) status = 'down';
-    else if (n % 23 === 0 && n !== 0) status = 'degraded';
-    // Reflect the live status on the most recent (last) bar.
-    if (i === 89) status = component.status;
-    bars.push({ status });
+    bars.push({ status: i === 89 && component.live ? component.status : 'none' });
   }
   return bars;
 }
@@ -266,7 +314,7 @@ function UptimeBars({ component }: { component: ComponentHealth }) {
         className="w-full"
         preserveAspectRatio="none"
         role="img"
-        aria-label={`90-day uptime history for ${component.name}`}
+        aria-label={`Uptime history for ${component.name}`}
       >
         {bars.map((bar, i) => (
           <rect
@@ -281,9 +329,15 @@ function UptimeBars({ component }: { component: ComponentHealth }) {
         ))}
       </svg>
       <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-        <span>90 days ago</span>
-        <span>{component.uptime.toFixed(2)}% uptime</span>
-        <span>Today</span>
+        <span>History unavailable</span>
+        <span>
+          {component.live
+            ? component.latencyMs !== undefined
+              ? `Live · ${component.latencyMs}ms`
+              : `Live · ${component.uptime.toFixed(0)}% available`
+            : 'Awaiting live check'}
+        </span>
+        <span>Now</span>
       </div>
     </div>
   );
@@ -301,10 +355,15 @@ function StatusIcon({ status }: { status: Status }) {
 
 export default function StatusPage() {
   const [components, setComponents] = useState<ComponentHealth[]>(DEFAULT_COMPONENTS);
+  const [metrics, setMetrics] = useState<MetricRow[]>(METRICS);
+  const [incidents, setIncidents] = useState<Incident[]>(RECENT_INCIDENTS);
+  const [liveData, setLiveData] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   const checkHealth = useCallback(async () => {
     setRefreshing(true);
@@ -319,31 +378,108 @@ export default function StatusPage() {
 
       if (res.ok || res.status === 503) {
         const data: ProvidersResponse = await res.json();
-        const providerMap = data.providers ?? (data as Record<string, { status?: string }>);
+        const providerMap = normalizeProviders(data.providers);
+        if (providerMap.size === 0) {
+          return;
+        }
 
-        setComponents((prev) =>
-          prev.map((component) => {
-            // Find any upstream provider mapped to this component.
-            const matchedStatuses: Status[] = Object.entries(providerMap)
-              .filter(([provider]) => PROVIDER_TO_COMPONENT[provider] === component.name)
-              .map(([, value]) => normalizeStatus(value?.status));
+        const measuredLatencies: number[] = [];
 
-            if (matchedStatuses.length === 0) {
-              return component; // keep operational fallback
+        const nextComponents = DEFAULT_COMPONENTS.map((component) => {
+          // Gather every provider mapped to this component.
+          const samples: ProviderSample[] = [];
+          for (const [provider, sample] of providerMap) {
+            if (PROVIDER_TO_COMPONENT[provider] === component.name) {
+              samples.push(sample);
             }
+          }
 
-            const worst: Status = matchedStatuses.includes('down')
-              ? 'down'
-              : matchedStatuses.includes('degraded')
-                ? 'degraded'
-                : 'operational';
+          if (samples.length === 0) {
+            return component; // no upstream signal: keep baseline
+          }
 
-            return { ...component, status: worst };
-          })
+          const statuses = samples.map((s) => s.status);
+          const worst: Status = statuses.includes('down')
+            ? 'down'
+            : statuses.includes('degraded')
+              ? 'degraded'
+              : 'operational';
+
+          const latencies = samples
+            .map((s) => s.latencyMs)
+            .filter((l): l is number => typeof l === 'number');
+          const avgLatency =
+            latencies.length > 0
+              ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+              : undefined;
+          if (avgLatency !== undefined) measuredLatencies.push(avgLatency);
+
+          return {
+            ...component,
+            status: worst,
+            latencyMs: avgLatency,
+            uptime: LIVE_UPTIME[worst],
+            live: true,
+          };
+        });
+
+        setComponents(nextComponents);
+
+        // Real latency snapshot drives the "current" metrics row; we don't
+        // fabricate historical windows we can't measure.
+        const overallStatus: Status = nextComponents.some((c) => c.status === 'down')
+          ? 'down'
+          : nextComponents.some((c) => c.status === 'degraded')
+            ? 'degraded'
+            : 'operational';
+        const avgResponse =
+          measuredLatencies.length > 0
+            ? Math.round(
+                measuredLatencies.reduce((a, b) => a + b, 0) / measuredLatencies.length,
+              )
+            : 0;
+        setMetrics([
+          {
+            label: 'Current',
+            responseMs: avgResponse,
+            uptime: LIVE_UPTIME[overallStatus],
+          },
+        ]);
+
+        // No incident time-series store exists; reflect the live reality.
+        setIncidents(
+          overallStatus === 'operational'
+            ? []
+            : [
+                {
+                  date: new Date().toLocaleDateString(undefined, {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  }),
+                  title:
+                    overallStatus === 'down'
+                      ? 'Service disruption detected'
+                      : 'Degraded performance detected',
+                  state: 'investigating',
+                  updates: [
+                    {
+                      time: new Date().toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      }),
+                      state: 'investigating',
+                      message:
+                        'Automated health checks are reporting issues with one or more components. Our team is investigating.',
+                    },
+                  ],
+                },
+              ],
         );
+        setLiveData(true);
       }
     } catch {
-      // Fall back to the operational mock — no state mutation needed.
+      // Backend unreachable: keep the last known state.
     } finally {
       setLastChecked(new Date());
       setRefreshing(false);
@@ -359,12 +495,32 @@ export default function StatusPage() {
   const overall = useMemo(() => overallFrom(components), [components]);
   const banner = OVERALL_BANNER[overall];
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes('@')) return;
-    // In production this posts to a subscription endpoint; here we confirm UX.
-    setSubscribed(true);
-    setEmail('');
+    setSubscribing(true);
+    setSubscribeError(null);
+    try {
+      const response = await fetch('/api/status/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setSubscribeError(
+          (data && typeof data.error === 'string' && data.error) ||
+            'Could not subscribe. Please try again later.'
+        );
+        return;
+      }
+      setSubscribed(true);
+      setEmail('');
+    } catch {
+      setSubscribeError('Could not subscribe. Please try again later.');
+    } finally {
+      setSubscribing(false);
+    }
   };
 
   return (
@@ -447,7 +603,7 @@ export default function StatusPage() {
         <section className="mb-12">
           <h2 className="mb-4 text-lg font-semibold text-gray-200">Response Time &amp; Uptime</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {METRICS.map((metric) => (
+            {metrics.map((metric) => (
               <div
                 key={metric.label}
                 className="rounded-xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-900/40 p-4 text-center"
@@ -464,7 +620,13 @@ export default function StatusPage() {
         <section className="mb-12">
           <h2 className="mb-4 text-lg font-semibold text-gray-200">Recent Incidents</h2>
           <div className="space-y-6">
-            {RECENT_INCIDENTS.map((incident) => {
+            {liveData && incidents.length === 0 && (
+              <div className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 p-5 text-sm text-gray-400">
+                <CheckCircle2 className="h-5 w-5 text-green-400" />
+                No incidents reported. All systems are operating normally.
+              </div>
+            )}
+            {incidents.map((incident) => {
               const badge = INCIDENT_BADGE[incident.state];
               return (
                 <div
@@ -520,18 +682,29 @@ export default function StatusPage() {
               You&apos;re subscribed. Check your inbox to confirm.
             </p>
           ) : (
-            <form onSubmit={handleSubscribe} className="mt-4 flex flex-col gap-3 sm:flex-row">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                aria-label="Email address"
-                className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <Button type="submit">Subscribe</Button>
-            </form>
+            <>
+              <form onSubmit={handleSubscribe} className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  aria-label="Email address"
+                  disabled={subscribing}
+                  className="flex-1 rounded-lg border border-gray-700 bg-gray-950 px-4 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+                />
+                <Button type="submit" disabled={subscribing}>
+                  {subscribing ? 'Subscribing...' : 'Subscribe'}
+                </Button>
+              </form>
+              {subscribeError && (
+                <p className="mt-3 flex items-center gap-2 text-sm text-red-400">
+                  <XCircle className="h-4 w-4" />
+                  {subscribeError}
+                </p>
+              )}
+            </>
           )}
         </section>
       </main>

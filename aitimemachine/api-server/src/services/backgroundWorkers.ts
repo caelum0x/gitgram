@@ -2,6 +2,8 @@ import { logger } from "../lib/monitoring.js";
 import { processDeleteRequestsWorker } from "./deleteRequestsWorker.js";
 import { processRetentionWorker } from "./retentionWorker.js";
 import { processGCWorker } from "./gcWorker.js";
+import { processQueue as processWebhookQueue } from "./webhookDelivery.js";
+import { recoverStuckPaperIndexing } from "../routes/research-papers.js";
 import { DATA_CLASSES, DataClass } from "./retention.js";
 import { WorkerScheduler, WorkerRunResult } from "./scheduler.js";
 
@@ -40,9 +42,12 @@ function startLegacyWorkers(): LegacyWorkerHandle {
   const deleteEnabled = parseBoolean(process.env.DELETE_WORKER_ENABLED, false);
   const retentionEnabled = parseBoolean(process.env.RETENTION_WORKER_ENABLED, false);
 
+  const webhookEnabled = parseBoolean(process.env.WEBHOOK_WORKER_ENABLED, false);
+
   const timers: NodeJS.Timeout[] = [];
   let deleteInFlight = false;
   let retentionInFlight = false;
+  let webhookInFlight = false;
 
   const runDeleteWorker = async () => {
     if (!deleteEnabled || deleteInFlight) return;
@@ -92,6 +97,22 @@ function startLegacyWorkers(): LegacyWorkerHandle {
     }
   };
 
+  const runWebhookWorker = async () => {
+    if (!webhookEnabled || webhookInFlight) return;
+    webhookInFlight = true;
+    try {
+      const processed = await processWebhookQueue();
+      logger.info("webhook worker cycle complete", { processed });
+    } catch (error) {
+      logger.error(
+        "webhook worker cycle failed",
+        error instanceof Error ? error : new Error(String(error))
+      );
+    } finally {
+      webhookInFlight = false;
+    }
+  };
+
   if (deleteEnabled) {
     const intervalMs = parseIntervalMs(process.env.DELETE_WORKER_INTERVAL_MS, 60_000);
     timers.push(setInterval(() => void runDeleteWorker(), intervalMs));
@@ -107,6 +128,15 @@ function startLegacyWorkers(): LegacyWorkerHandle {
     logger.info("retention worker scheduled (legacy)", { intervalMs });
     if (parseBoolean(process.env.RETENTION_WORKER_RUN_ON_START, true)) {
       void runRetentionWorker();
+    }
+  }
+
+  if (webhookEnabled) {
+    const intervalMs = parseIntervalMs(process.env.WEBHOOK_WORKER_INTERVAL_MS, 60_000);
+    timers.push(setInterval(() => void runWebhookWorker(), intervalMs));
+    logger.info("webhook worker scheduled (legacy)", { intervalMs });
+    if (parseBoolean(process.env.WEBHOOK_WORKER_RUN_ON_START, true)) {
+      void runWebhookWorker();
     }
   }
 
@@ -193,6 +223,38 @@ function startManagedWorkers(): WorkerScheduler {
         success: true,
         itemsProcessed: result.orphanedBlobsDeleted + result.staleCheckpointFilesDeleted,
       };
+    },
+  });
+
+  // Webhook delivery worker — retries pending/retry-due webhook deliveries
+  const webhookCron = process.env.WEBHOOK_CRON || "* * * * *"; // default: every minute
+  scheduler.register({
+    name: "webhook",
+    cronExpression: webhookCron,
+    enabled: parseBoolean(process.env.WEBHOOK_WORKER_ENABLED, true),
+    lockTtlMs: 120_000, // 2 min
+    execute: async (): Promise<WorkerRunResult> => {
+      const processed = await processWebhookQueue();
+      return {
+        success: true,
+        itemsProcessed: processed,
+      };
+    },
+  });
+
+  // Research-paper indexing recovery — re-processes papers stuck in
+  // pending/indexing after a crash so they never strand with null content.
+  const paperIndexingCron = process.env.PAPER_INDEXING_CRON || "*/5 * * * *"; // default: every 5 min
+  scheduler.register({
+    name: "paper-indexing",
+    cronExpression: paperIndexingCron,
+    enabled: parseBoolean(process.env.PAPER_INDEXING_WORKER_ENABLED, true),
+    lockTtlMs: 600_000, // 10 min
+    execute: async (): Promise<WorkerRunResult> => {
+      const recovered = await recoverStuckPaperIndexing(
+        Math.min(Math.max(Number(process.env.PAPER_INDEXING_LIMIT || 25), 1), 200)
+      );
+      return { success: true, itemsProcessed: recovered };
     },
   });
 

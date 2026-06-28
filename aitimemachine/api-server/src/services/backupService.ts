@@ -22,7 +22,10 @@ import {
 } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
 import { logger } from "../lib/monitoring.js";
+import { db, schema } from "../db/index.js";
+import { eq, and } from "drizzle-orm";
 import { CheckpointSummary } from "./exportService.js";
+import { buildSessionBackupData } from "./exportService.js";
 
 // ============================================================================
 // Types
@@ -367,6 +370,36 @@ export async function deleteBackup(sessionId: string): Promise<boolean> {
     logger.error("deleteBackup: failed", err instanceof Error ? err : undefined, { sessionId, key });
     throw err;
   }
+}
+
+/**
+ * Build a SessionBackup payload for a session owned by the given user and
+ * upload it to S3. Returns the backup result, or null when S3 is not
+ * configured. Throws when the session does not exist or is not owned by
+ * the user.
+ */
+export async function backupUserSession(
+  userId: string,
+  sessionId: string
+): Promise<BackupResult | null> {
+  const [session] = await db
+    .select({ id: schema.chatSessions.id, userId: schema.chatSessions.userId })
+    .from(schema.chatSessions)
+    .where(
+      and(eq(schema.chatSessions.id, sessionId), eq(schema.chatSessions.userId, userId))
+    )
+    .limit(1);
+
+  if (!session) {
+    throw new Error("Session not found");
+  }
+
+  const data = await buildSessionBackupData(userId, sessionId);
+  if (!data) {
+    throw new Error("Session not found");
+  }
+
+  return backupSession(sessionId, data);
 }
 
 /**

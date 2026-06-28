@@ -8,6 +8,7 @@ import {
   uploadMedia,
   uploadMultipleImages,
 } from '../services/storageService';
+import { getVideoMetadata } from '../services/videoService';
 import logger from '../utils/logger';
 import { asyncHandler, Errors, ApiError } from '../middleware/errorHandler';
 
@@ -189,3 +190,28 @@ export const uploadReelCover = asyncHandler(async (req: AuthRequest, res: Respon
     compressionRatio: result.compressionRatio,
   });
 });
+
+/**
+ * Probe an already-uploaded video URL and return real metadata
+ * (duration, dimensions, container format, byte size).
+ *
+ * The URL is restricted to configured trusted media hosts inside the service
+ * layer to prevent SSRF. Returns 400 for invalid/untrusted URLs.
+ */
+export const getVideoMetadataHandler = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const videoUrl = typeof req.body?.videoUrl === 'string' ? req.body.videoUrl.trim() : '';
+    if (!videoUrl) {
+      throw Errors.badRequest('videoUrl is required');
+    }
+
+    try {
+      const metadata = await getVideoMetadata(videoUrl);
+      res.json({ success: true, data: metadata });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to read video metadata';
+      logger.warn('Video metadata request rejected', { message });
+      throw Errors.badRequest(message);
+    }
+  }
+);

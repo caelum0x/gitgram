@@ -203,17 +203,12 @@ export default function InstallPage() {
           ))}
         </ol>
 
-        {/* Screenshot placeholder */}
+        {/* App preview */}
         <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-hidden mb-10">
           <div className="px-4 py-3 border-b border-[var(--border)]">
             <p className="text-xs font-medium text-[var(--foreground-secondary)] uppercase tracking-wide">Preview</p>
           </div>
-          <div className="flex items-center justify-center h-48 text-[var(--foreground-secondary)]">
-            <div className="text-center">
-              <div className="text-4xl mb-2">📸</div>
-              <p className="text-sm">Screenshot coming soon</p>
-            </div>
-          </div>
+          <AppPreview />
         </div>
 
         {/* CTA */}
@@ -254,4 +249,80 @@ export default function InstallPage() {
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => void
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
+/**
+ * Self-contained visual preview of the Gitgram app shell rendered with the
+ * real theme tokens. Used on the install page so users see what the installed
+ * PWA looks like without shipping a heavy screenshot asset.
+ */
+function AppPreview() {
+  return (
+    <div className="flex items-center justify-center p-6 bg-[var(--background)]">
+      <div
+        className="w-full max-w-[260px] rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-xl"
+        role="img"
+        aria-label="Preview of the Gitgram app feed"
+      >
+        {/* Status bar */}
+        <div className="flex items-center justify-between px-2 pb-2">
+          <span className="text-[10px] font-medium text-[var(--foreground-secondary)]">9:41</span>
+          <span className="text-[10px] font-bold text-[var(--primary)]">Gitgram</span>
+          <span className="text-[10px] text-[var(--foreground-secondary)]">▮▮▮</span>
+        </div>
+
+        {/* Stories ring row */}
+        <div className="flex gap-2 px-1 pb-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="w-9 h-9 rounded-full flex-shrink-0"
+              style={{
+                background:
+                  'linear-gradient(135deg, var(--primary), var(--accent))',
+                padding: 2,
+              }}
+            >
+              <div className="w-full h-full rounded-full bg-[var(--surface-secondary)]" />
+            </div>
+          ))}
+        </div>
+
+        {/* Feed cards */}
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-2.5 mb-2.5"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-5 h-5 rounded-full bg-[var(--surface-secondary)]" />
+              <div className="h-2 w-16 rounded bg-[var(--surface-secondary)]" />
+            </div>
+            <div className="space-y-1.5 mb-2">
+              <div className="h-2 w-full rounded bg-[var(--surface-secondary)]" />
+              <div className="h-2 w-4/5 rounded bg-[var(--surface-secondary)]" />
+            </div>
+            <div className="flex gap-3">
+              <span className="text-[10px] text-[var(--foreground-secondary)]">❤ 24</span>
+              <span className="text-[10px] text-[var(--foreground-secondary)]">💬 8</span>
+              <span className="text-[10px] text-[var(--foreground-secondary)]">⭐ 12</span>
+            </div>
+          </div>
+        ))}
+
+        {/* Bottom tab bar */}
+        <div className="flex items-center justify-around border-t border-[var(--border)] pt-2 mt-1">
+          {['🏠', '🔍', '➕', '🔔', '👤'].map((icon, i) => (
+            <span
+              key={i}
+              className="text-sm"
+              style={{ opacity: i === 0 ? 1 : 0.5 }}
+            >
+              {icon}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }

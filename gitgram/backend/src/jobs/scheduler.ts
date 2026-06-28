@@ -85,22 +85,51 @@ async function cleanupExpiredSessions() {
 }
 
 /**
- * Update user activity metrics
+ * Update user activity metrics.
+ *
+ * Aggregates the distinct set of users who produced any activity (post, comment,
+ * or like) in the last 24 hours and stamps their User.lastActiveAt so the value
+ * reflects real engagement rather than only login events.
  */
 async function updateActivityMetrics() {
     try {
-        // Update last active for users who have recent interactions
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        // This is a simplified version - you might want to track more specific metrics
-        const activeUsers = await prisma.post.groupBy({
-            by: ['userId'],
-            where: {
-                createdAt: { gte: oneDayAgo },
-            },
+        const [posters, commenters, likers] = await Promise.all([
+            prisma.post.groupBy({
+                by: ['userId'],
+                where: { createdAt: { gte: oneDayAgo } },
+            }),
+            prisma.comment.groupBy({
+                by: ['userId'],
+                where: { createdAt: { gte: oneDayAgo } },
+            }),
+            prisma.like.groupBy({
+                by: ['userId'],
+                where: { createdAt: { gte: oneDayAgo } },
+            }),
+        ]);
+
+        const activeUserIds = new Set<string>(
+            [
+                ...posters.map((p) => p.userId),
+                ...commenters.map((c) => c.userId),
+                ...likers.map((l) => l.userId),
+            ].filter((id): id is string => typeof id === 'string')
+        );
+
+        if (activeUserIds.size === 0) {
+            logger.info('No active users in last 24 hours');
+            return;
+        }
+
+        const result = await prisma.user.updateMany({
+            where: { id: { in: Array.from(activeUserIds) } },
+            data: { lastActiveAt: now },
         });
 
-        logger.info(`Found ${activeUsers.length} active users in last 24 hours`);
+        logger.info(`Updated lastActiveAt for ${result.count} active user(s) in last 24 hours`);
     } catch (error) {
         logger.error('Error updating activity metrics:', error);
     }

@@ -164,6 +164,7 @@ export const mockFollows: any[] = [];
 export const mockTrendScores: any[] = [];
 export const mockRestoreEvents: any[] = [];
 export const mockTrees: any[] = [];
+export const mockSharedSessions: any[] = [];
 
 export function resetStores() {
   mockUsers.length = 0;
@@ -208,6 +209,7 @@ export function resetStores() {
   mockTrendScores.length = 0;
   mockRestoreEvents.length = 0;
   mockTrees.length = 0;
+  mockSharedSessions.length = 0;
 }
 
 // ============================================================================
@@ -275,6 +277,7 @@ const mockSchema: any = {
   trendScores: fieldProxy("trendScores"),
   restoreEvents: fieldProxy("restoreEvents"),
   trees: fieldProxy("trees"),
+  sharedSessions: fieldProxy("sharedSessions"),
 };
 
 // Map table names to stores
@@ -322,6 +325,7 @@ function getStore(tableName: string): any[] {
     case "trendScores": return mockTrendScores;
     case "restoreEvents": return mockRestoreEvents;
     case "trees": return mockTrees;
+    case "sharedSessions": return mockSharedSessions;
     default: return [];
   }
 }
@@ -1002,12 +1006,25 @@ vi.mock("fs/promises", () => ({
   rm: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Mock child_process (used by repositories for git clone)
-vi.mock("child_process", () => ({
-  exec: vi.fn((_cmd: string, callback: Function) => {
+// Mock child_process (used by repositories for git clone, and by
+// workspace/beads routes which import `execFile`). The mock must expose every
+// named export the source imports, otherwise importing the app throws
+// "No <name> export is defined on the child_process mock".
+vi.mock("child_process", () => {
+  const exec = vi.fn((_cmd: string, callback: Function) => {
     callback(null, { stdout: "", stderr: "" });
-  }),
-}));
+  });
+  // execFile signature: (file, args?, options?, callback)
+  const execFile = vi.fn((...args: unknown[]) => {
+    const callback = args.find((a) => typeof a === "function") as
+      | ((err: Error | null, result: { stdout: string; stderr: string }) => void)
+      | undefined;
+    if (callback) {
+      callback(null, { stdout: "", stderr: "" });
+    }
+  });
+  return { exec, execFile };
+});
 
 // Mock data pipeline service
 vi.mock("../src/services/data-pipeline.js", () => {

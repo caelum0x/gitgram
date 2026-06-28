@@ -8,15 +8,14 @@
 
 import { randomUUID } from "crypto";
 import { db, schema } from "../db/index.js";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { logger } from "../lib/monitoring.js";
 
 // ---------------------------------------------------------------------------
-// In-memory store for share records (replace with a DB table when ready)
+// Persistence
 // ---------------------------------------------------------------------------
-// We use a plain Map here because the schema does not yet have a session_shares
-// table. The Map is process-local — acceptable for a single-server deployment.
-// When a DB table is added, swap out the helpers below.
+// Share records are persisted in the `shared_sessions` table so they survive
+// restarts and work across multiple server instances.
 
 export type ShareVisibility = "public" | "private" | "team";
 
@@ -61,16 +60,51 @@ export interface ShareWithSession {
   };
 }
 
-// Process-local store. Key: shareId, Value: ShareRecord.
-const shareStore = new Map<string, ShareRecord>();
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+type SharedSessionRow = typeof schema.sharedSessions.$inferSelect;
+
 function isExpired(record: ShareRecord): boolean {
   if (!record.expiresAt) return false;
   return record.expiresAt < new Date();
+}
+
+function isValidVisibility(value: string): value is ShareVisibility {
+  return value === "public" || value === "private" || value === "team";
+}
+
+/** Map a shared_sessions DB row into the public ShareRecord shape. */
+function rowToRecord(row: SharedSessionRow): ShareRecord {
+  const visibility = isValidVisibility(row.visibility) ? row.visibility : "private";
+  return {
+    shareId: row.shareId,
+    sessionId: row.sessionId,
+    ownerId: row.createdBy,
+    visibility,
+    teamId: row.teamId ?? undefined,
+    createdAt: row.createdAt ?? new Date(),
+    expiresAt: row.expiresAt ?? null,
+  };
+}
+
+/**
+ * Fetch an active (non-revoked) share by its public token. Returns null when
+ * no matching active share exists.
+ */
+async function fetchActiveShare(shareId: string): Promise<ShareRecord | null> {
+  const [row] = await db
+    .select()
+    .from(schema.sharedSessions)
+    .where(
+      and(
+        eq(schema.sharedSessions.shareId, shareId),
+        isNull(schema.sharedSessions.revokedAt)
+      )
+    )
+    .limit(1);
+  return row ? rowToRecord(row) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,23 +155,35 @@ export async function createShare(
   }
 
   const shareId = randomUUID();
+  const id = `share_${randomUUID()}`;
   const createdAt = new Date();
   const expiresAt =
     expiresIn != null
       ? new Date(createdAt.getTime() + expiresIn * 60 * 60 * 1000)
       : null;
 
+  const resolvedTeamId = visibility === "team" ? teamId ?? null : null;
+
+  await db.insert(schema.sharedSessions).values({
+    id,
+    sessionId,
+    shareId,
+    visibility,
+    teamId: resolvedTeamId,
+    expiresAt,
+    createdBy: userId,
+    createdAt,
+  });
+
   const record: ShareRecord = {
     shareId,
     sessionId,
     ownerId: userId,
     visibility,
-    teamId: visibility === "team" ? teamId : undefined,
+    teamId: resolvedTeamId ?? undefined,
     createdAt,
     expiresAt,
   };
-
-  shareStore.set(shareId, record);
 
   logger.info("Session share created", {
     shareId,
@@ -162,7 +208,7 @@ export async function getShare(
   requestingUserId?: string,
   requestingTeamId?: string
 ): Promise<ShareWithSession> {
-  const record = shareStore.get(shareId);
+  const record = await fetchActiveShare(shareId);
 
   if (!record) {
     throw new Error(`Share '${shareId}' not found`);
@@ -273,7 +319,7 @@ export async function revokeShare(
   shareId: string,
   userId: string
 ): Promise<void> {
-  const record = shareStore.get(shareId);
+  const record = await fetchActiveShare(shareId);
 
   if (!record) {
     throw new Error(`Share '${shareId}' not found`);
@@ -283,7 +329,10 @@ export async function revokeShare(
     throw new Error("You do not have permission to revoke this share");
   }
 
-  shareStore.delete(shareId);
+  await db
+    .update(schema.sharedSessions)
+    .set({ revokedAt: new Date() })
+    .where(eq(schema.sharedSessions.shareId, shareId));
 
   logger.info("Session share revoked", { shareId, userId });
 }
@@ -313,17 +362,19 @@ export async function listShares(
     throw new Error(`Session '${sessionId}' not found or not owned by user`);
   }
 
-  const results: ShareRecord[] = [];
+  const rows = await db
+    .select()
+    .from(schema.sharedSessions)
+    .where(
+      and(
+        eq(schema.sharedSessions.sessionId, sessionId),
+        eq(schema.sharedSessions.createdBy, userId),
+        isNull(schema.sharedSessions.revokedAt)
+      )
+    )
+    .orderBy(desc(schema.sharedSessions.createdAt));
 
-  for (const record of shareStore.values()) {
-    if (record.sessionId === sessionId && record.ownerId === userId) {
-      if (!isExpired(record)) {
-        results.push(record);
-      }
-    }
-  }
-
-  return results.sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-  );
+  return rows
+    .map(rowToRecord)
+    .filter((record) => !isExpired(record));
 }

@@ -1,24 +1,33 @@
 import { Router, Request, Response } from "express";
 import { execFile, exec } from "child_process";
 import { promisify } from "util";
-import path from "path";
-import { fileURLToPath } from "url";
 import { ingestTask, type BeadsTask } from "../services/memoryService.js";
+import { resolveBeadsBinary } from "../services/engineManager.js";
 import { logger } from "../lib/monitoring.js";
+import { apiKeyAuth } from "../middleware/auth.js";
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const BEADS_BIN = process.env.BEADS_BINARY || path.join(__dirname, "../../../../beads/bd");
+/**
+ * Resolve the beads binary path through the central engineManager so all
+ * engine paths come from one source of truth. Falls back to `bd` on PATH
+ * when no bundled/env binary is found, surfacing a clear error at exec time.
+ */
+function beadsBin(): string {
+  return resolveBeadsBinary().path ?? "bd";
+}
 
 const router = Router();
+
+// Every beads endpoint reads or mutates task-management state and shells out
+// to the beads binary, so the entire router requires an authenticated user.
+router.use(apiKeyAuth);
 
 // GET /beads/tasks — list all tasks
 router.get("/tasks", async (_req: Request, res: Response) => {
   try {
-    const { stdout } = await execAsync(`"${BEADS_BIN}" list --json`);
+    const { stdout } = await execAsync(`"${beadsBin()}" list --json`);
     const data: unknown = JSON.parse(stdout || "[]");
     res.json({ success: true, data });
   } catch (err: unknown) {
@@ -42,7 +51,7 @@ router.post("/tasks", async (req: Request, res: Response) => {
   }
 
   try {
-    const { stdout } = await execFileAsync(BEADS_BIN, args);
+    const { stdout } = await execFileAsync(beadsBin(), args);
     const trimmed = stdout.trim();
     const data: unknown = trimmed ? JSON.parse(trimmed) : null;
 
@@ -67,7 +76,7 @@ router.put("/tasks/:id/ready", async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const { stdout } = await execFileAsync(BEADS_BIN, ["ready", id]);
+    const { stdout } = await execFileAsync(beadsBin(), ["ready", id]);
     const trimmed = stdout.trim();
     const data: unknown = trimmed ? JSON.parse(trimmed) : null;
     res.json({ success: true, data });
@@ -81,7 +90,7 @@ router.put("/tasks/:id/done", async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const { stdout } = await execFileAsync(BEADS_BIN, ["done", id]);
+    const { stdout } = await execFileAsync(beadsBin(), ["done", id]);
     const trimmed = stdout.trim();
     const data: unknown = trimmed ? JSON.parse(trimmed) : null;
     res.json({ success: true, data });
@@ -95,7 +104,7 @@ router.get("/tasks/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
-    const { stdout } = await execFileAsync(BEADS_BIN, ["show", "--json", id]);
+    const { stdout } = await execFileAsync(beadsBin(), ["show", "--json", id]);
     const data: unknown = JSON.parse(stdout);
     res.json({ success: true, data });
   } catch (err: unknown) {

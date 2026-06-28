@@ -95,7 +95,8 @@ vi.mock("ioredis", () => {
     disconnect = mockRedisDisconnect;
     constructor(_url: string, _opts?: unknown) {}
   }
-  return { default: Redis };
+  // The service imports the named `Redis` export; also provide `default`.
+  return { Redis, default: Redis };
 });
 
 // ---------------------------------------------------------------------------

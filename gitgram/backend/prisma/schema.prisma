@@ -98,6 +98,7 @@ model User {
   interests         String[] @default([])  // User interests for recommendations (e.g., "typescript", "react", "ai")
   lastLoginAt       DateTime?
   lastLoginIp       String?
+  lastActiveAt      DateTime?  // Last time the user produced any activity (post/comment/like)
   scheduledDeletion DateTime?  // Date when account will be deleted (30-day grace period)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -141,6 +142,10 @@ model User {
   // Repository stars
   stars Star[]
 
+  // Multi-account switching grants
+  switchGrantsGranted  AccountSwitchGrant[] @relation("SwitchGrantOwner")
+  switchGrantsReceived AccountSwitchGrant[] @relation("SwitchGrantTarget")
+
   @@index([email])
   @@index([githubId])
   @@index([username])
@@ -156,6 +161,29 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// ============================================
+// ACCOUNT SWITCH GRANT: explicit, revocable authorization for one user
+// (ownerUser) to switch into / assume the session of another user
+// (targetUser). Enables true multi-account switching without sharing
+// credentials. A grant must exist and be active for switchAccount to
+// produce a session for a *different* user.
+// ============================================
+
+model AccountSwitchGrant {
+  id           String    @id @default(cuid())
+  ownerUserId  String // the user who is allowed to switch
+  targetUserId String // the account they may switch into
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+
+  ownerUser  User @relation("SwitchGrantOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  targetUser User @relation("SwitchGrantTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, targetUserId])
+  @@index([ownerUserId])
+  @@index([targetUserId])
 }
 
 // ============================================
@@ -179,6 +207,8 @@ model Repository {
   language    String?
   topics      String[]
   htmlUrl     String
+  isPrivate   Boolean  @default(false) // mirrors GitHub repo visibility
+  ownerAvatar String? // GitHub owner avatar URL (populated by sync)
 
   // Additional GitHub data
   openIssues    Int       @default(0)
@@ -193,6 +223,7 @@ model Repository {
   commentsCount  Int @default(0)
   postsCount     Int @default(0)
   followersCount Int @default(0)
+  viewsCount     Int @default(0)
 
   // Claiming & Management
   claimedBy    String? // User ID who claimed
@@ -222,6 +253,7 @@ model Repository {
   starredBy        Star[]
   referrers        RepositoryReferrer[]
   pathViews        RepositoryPathView[]
+  clones           RepositoryClone[]
 
   // Metadata
   lastSynced DateTime @default(now())
@@ -1010,15 +1042,18 @@ enum DevicePlatform {
 }
 
 model PushDevice {
-  id         String         @id @default(cuid())
-  userId     String
-  pushToken  String         @unique
-  platform   DevicePlatform
-  deviceName String?
-  active     Boolean        @default(true)
-  lastUsed   DateTime       @default(now())
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id                  String         @id @default(cuid())
+  userId              String
+  pushToken           String         @unique
+  platform            DevicePlatform
+  deviceName          String?
+  // Full Web Push subscription (endpoint + p256dh/auth keys) serialized as JSON.
+  // Only populated for WEB platform devices.
+  webPushSubscription String?        @db.Text
+  active              Boolean        @default(true)
+  lastUsed            DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
   @@index([userId])
   @@index([active])
@@ -1857,6 +1892,26 @@ model RepositoryPathView {
   @@index([repositoryId])
   @@index([repositoryId, date])
   @@map("repository_path_views")
+}
+
+// ============================================
+// REPOSITORY ANALYTICS: Clones
+// ============================================
+
+model RepositoryClone {
+  id           String   @id @default(cuid())
+  repositoryId String
+  count        Int      @default(0)
+  uniqueCount  Int      @default(0)
+  date         DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, date], name: "repoId_date")
+  @@index([repositoryId, date])
+  @@map("repository_clones")
 }
 
 // ============================================

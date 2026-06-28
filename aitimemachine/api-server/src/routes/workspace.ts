@@ -3,11 +3,17 @@ import { execFile, exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import fs from "fs";
+import { apiKeyAuth } from "../middleware/auth.js";
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 
 const router = Router();
+
+// Every workspace endpoint reads the server filesystem (file listings, file
+// contents, git status) and some shell out to the OS, so the entire router
+// requires an authenticated user — matching the sibling /beads router.
+router.use(apiKeyAuth);
 
 const WORKSPACE = process.env.WORKSPACE_PATH || process.cwd();
 

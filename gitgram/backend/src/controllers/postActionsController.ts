@@ -249,10 +249,6 @@ export const reportPost = asyncHandler(async (req: AuthRequest, res: Response) =
   res.json({ message: 'Post reported' });
 });
 
-export const getArchivedPosts = asyncHandler(async (req: AuthRequest, res: Response) => {
-  res.json([]);
-});
-
 export const likePost = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const account = await prisma.account.findFirst({ where: { userId: req.userId } });

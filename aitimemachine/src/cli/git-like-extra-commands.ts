@@ -6,7 +6,7 @@
 
 import { Command } from 'commander';
 import { TimeMachineEngine } from '../core/engine.js';
-import { C, formatSize, timeAgo } from './cli-helpers.js';
+import { C, formatSize, timeAgo, safeCommand } from './cli-helpers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -14,8 +14,7 @@ import * as os from 'os';
 export function registerGitLikeExtraCommands(program: Command): void {
 
   // Clean
-  program
-    .command('clean')
+  safeCommand(program, 'clean')
     .description('Remove files not in latest checkpoint (like git clean)')
     .option('-n, --dry-run', 'Show what would be removed')
     .option('-f, --force', 'Actually remove files')
@@ -49,8 +48,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // Revert
-  program
-    .command('revert <checkpoint>')
+  safeCommand(program, 'revert <checkpoint>')
     .description('Create checkpoint that undoes changes (like git revert)')
     .action(async (checkpoint) => {
       const engine = new TimeMachineEngine(process.cwd());
@@ -75,8 +73,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // Shortlog
-  program
-    .command('shortlog')
+  safeCommand(program, 'shortlog')
     .description('Summarize checkpoint history (like git shortlog)')
     .option('-n, --numbered', 'Sort by number of checkpoints')
     .option('-s, --summary', 'Show only counts')
@@ -96,8 +93,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // Worktree
-  program
-    .command('worktree <action> [path]')
+  safeCommand(program, 'worktree <action> [path]')
     .description('Manage working directory snapshots')
     .action(async (action, targetPath) => {
       const worktreeDir = path.join(os.homedir(), '.aitimemachine', 'worktrees', encodeURIComponent(process.cwd()));
@@ -129,8 +125,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // Annotate
-  program
-    .command('annotate <checkpoint>')
+  safeCommand(program, 'annotate <checkpoint>')
     .alias('note')
     .description('Add notes or tags to a checkpoint')
     .option('-n, --note <text>', 'Set note text')
@@ -164,8 +159,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // List tags (annotation-based)
-  program
-    .command('tags')
+  safeCommand(program, 'tags')
     .description('List all checkpoint tags')
     .option('-t, --tag <tag>', 'Show checkpoints with specific tag')
     .action(async (options) => {
@@ -187,8 +181,7 @@ export function registerGitLikeExtraCommands(program: Command): void {
     });
 
   // Report
-  program
-    .command('report <from> [to]')
+  safeCommand(program, 'report <from> [to]')
     .description('Generate markdown comparison report')
     .option('-o, --output <file>', 'Output file (default: stdout)')
     .option('--checkpoint', 'Generate single checkpoint report')

@@ -72,6 +72,9 @@
     "verify:secrets:production": "bash scripts/validate-prod-secrets.sh production full"
   },
   "overrides": {
-    "@types/uuid": "9.0.8"
+    "@types/uuid": "$@types/uuid"
+  },
+  "dependencies": {
+    "@types/uuid": "^9.0.8"
   }
 }

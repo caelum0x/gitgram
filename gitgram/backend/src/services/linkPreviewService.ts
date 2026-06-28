@@ -169,7 +169,7 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreviewData | n
     });
 
     // Check content type
-    const contentType = response.headers['content-type'] || '';
+    const contentType = String(response.headers['content-type'] || '');
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       logger.debug('Non-HTML content type for link preview:', { url, contentType });
       return null;

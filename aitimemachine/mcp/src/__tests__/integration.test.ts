@@ -27,6 +27,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolRuntimeContext } from '../lib/tool-runtime.js';
+// Statically import the GitNexus registrar so its heavy `gitnexus` package
+// dependency (native DB + parsers, ~8s cold load) is resolved once during file
+// import — NOT inside a per-test `beforeEach` hook where it would exceed the
+// 15s hookTimeout and cause the hook to abort mid-registration (which then
+// surfaced as a spurious "Tool gn_list_repos is already registered" cascade).
+import { registerGitNexusTools } from '../tools/register-gitnexus-tools.js';
 
 // ---------------------------------------------------------------------------
 // Minimal ToolRuntimeContext — satisfies the interface for registrars that
@@ -284,10 +290,9 @@ describe('Workspace tools registration', () => {
 describe('GitNexus tools registration', () => {
   let server: McpServer;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     server = buildServer();
     process.env.GITNEXUS_URL = 'http://localhost:19997'; // unused — guard only
-    const { registerGitNexusTools } = await import('../tools/register-gitnexus-tools.js');
     registerGitNexusTools(server, mockRuntime);
   });
 

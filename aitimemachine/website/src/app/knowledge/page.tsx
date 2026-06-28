@@ -23,130 +23,24 @@ import { Footer } from '@/components/Footer';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { KB_DOCS, searchDocs, type DocCategory, type KBDoc } from './data';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const RECENT_DOCS = [...KB_DOCS]
+  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  .slice(0, 5);
 
-type DocCategory = 'Installation' | 'Commands' | 'API' | 'Integrations' | 'Troubleshooting';
-
-interface KBDoc {
+// A single hit from the signed-in user's indexed workspace (code + embeddings).
+interface WorkspaceHit {
   id: string;
-  title: string;
-  excerpt: string;
-  tags: string[];
-  category: DocCategory;
-  updatedAt: string;
-  relevanceScore?: number;
+  filePath: string;
+  language: string | null;
+  snippet: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Static mock data — replace with API calls when the KB API is wired up
-// ---------------------------------------------------------------------------
-
-const MOCK_DOCS: KBDoc[] = [
-  {
-    id: 'install-cli',
-    title: 'Installing the AITM CLI',
-    excerpt:
-      'Install the AITimeMachine CLI globally with npm or pnpm. The CLI requires Node.js 18+ and …',
-    tags: ['cli', 'npm', 'installation'],
-    category: 'Installation',
-    updatedAt: '2026-06-18',
-  },
-  {
-    id: 'install-vscode',
-    title: 'VS Code Extension Setup',
-    excerpt:
-      'Install the AITM VS Code extension from the marketplace. After installation, sign in with …',
-    tags: ['vscode', 'extension', 'installation'],
-    category: 'Installation',
-    updatedAt: '2026-06-15',
-  },
-  {
-    id: 'cmd-checkpoint',
-    title: 'aitm checkpoint',
-    excerpt:
-      'Create a named save point for the current working tree. Captures all tracked and untracked …',
-    tags: ['cli', 'checkpoint', 'commands'],
-    category: 'Commands',
-    updatedAt: '2026-06-20',
-  },
-  {
-    id: 'cmd-restore',
-    title: 'aitm restore',
-    excerpt:
-      'Restore the working tree to a previous checkpoint or session. Supports partial restore …',
-    tags: ['cli', 'restore', 'commands'],
-    category: 'Commands',
-    updatedAt: '2026-06-20',
-  },
-  {
-    id: 'cmd-diff',
-    title: 'aitm diff',
-    excerpt:
-      'Show the diff between the current working tree and a previous checkpoint. Outputs a git-style …',
-    tags: ['cli', 'diff', 'commands'],
-    category: 'Commands',
-    updatedAt: '2026-06-19',
-  },
-  {
-    id: 'api-rest-overview',
-    title: 'REST API Overview',
-    excerpt:
-      'The AITM API follows REST conventions. All endpoints require a Bearer token obtained from …',
-    tags: ['api', 'rest', 'auth'],
-    category: 'API',
-    updatedAt: '2026-06-17',
-  },
-  {
-    id: 'api-sessions',
-    title: 'Sessions API Reference',
-    excerpt:
-      'List, create, and delete sessions. A session is an ordered log of checkpoints for a single …',
-    tags: ['api', 'sessions', 'reference'],
-    category: 'API',
-    updatedAt: '2026-06-17',
-  },
-  {
-    id: 'integration-github',
-    title: 'GitHub Actions Integration',
-    excerpt:
-      'Automatically create checkpoints on every push or pull request with the official AITM …',
-    tags: ['github', 'ci', 'integrations'],
-    category: 'Integrations',
-    updatedAt: '2026-06-14',
-  },
-  {
-    id: 'integration-claude',
-    title: 'Claude / Anthropic Agent Integration',
-    excerpt:
-      'Wire AITM into Claude Code sessions so that every agentic run is backed up. Uses the MCP …',
-    tags: ['claude', 'mcp', 'agent', 'integrations'],
-    category: 'Integrations',
-    updatedAt: '2026-06-13',
-  },
-  {
-    id: 'trouble-restore-conflict',
-    title: 'Restore fails with merge conflict',
-    excerpt:
-      'If aitm restore exits with a merge conflict error, the target checkpoint diverged from …',
-    tags: ['troubleshooting', 'restore', 'conflict'],
-    category: 'Troubleshooting',
-    updatedAt: '2026-06-11',
-  },
-  {
-    id: 'trouble-auth-token',
-    title: 'Authentication token expired',
-    excerpt:
-      'When the CLI reports "token expired", run aitm login to refresh your credentials. Tokens …',
-    tags: ['troubleshooting', 'auth', 'token'],
-    category: 'Troubleshooting',
-    updatedAt: '2026-06-10',
-  },
-];
-
-const RECENT_DOCS = MOCK_DOCS.slice(0, 5);
+interface KBSearchResponse {
+  files?: Array<{ id: string; filePath: string; language: string | null; snippet: string | null }>;
+  embeddings?: Array<{ id: string; filePath: string; language: string | null; snippet: string | null }>;
+}
 
 // ---------------------------------------------------------------------------
 // Category config
@@ -165,42 +59,6 @@ const CATEGORIES: CategoryConfig[] = [
   { label: 'Integrations', icon: Puzzle, color: 'text-amber-400' },
   { label: 'Troubleshooting', icon: Wrench, color: 'text-rose-400' },
 ];
-
-// ---------------------------------------------------------------------------
-// Naive client-side search with BM25-style scoring
-// ---------------------------------------------------------------------------
-
-function scoreDoc(doc: KBDoc, query: string): number {
-  const q = query.toLowerCase();
-  const terms = q.split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return 0;
-
-  const haystack = `${doc.title} ${doc.excerpt} ${doc.tags.join(' ')}`.toLowerCase();
-  let score = 0;
-
-  for (const term of terms) {
-    const titleHits = (doc.title.toLowerCase().match(new RegExp(term, 'g')) ?? []).length;
-    const bodyHits = (haystack.match(new RegExp(term, 'g')) ?? []).length;
-    score += titleHits * 3 + bodyHits;
-  }
-  return score;
-}
-
-function clientSearch(query: string, category: DocCategory | null): KBDoc[] {
-  const q = query.trim();
-  let results = category
-    ? MOCK_DOCS.filter((d) => d.category === category)
-    : MOCK_DOCS;
-
-  if (q) {
-    results = results
-      .map((d) => ({ ...d, relevanceScore: scoreDoc(d, q) }))
-      .filter((d) => (d.relevanceScore ?? 0) > 0)
-      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-  }
-
-  return results;
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -291,17 +149,18 @@ function DocCard({ doc }: { doc: KBDoc }) {
 export default function KnowledgePage() {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<DocCategory | null>(null);
-  const [results, setResults] = useState<KBDoc[]>(MOCK_DOCS);
+  const [results, setResults] = useState<KBDoc[]>(KB_DOCS);
   const [isSearching, setIsSearching] = useState(false);
+  const [workspaceHits, setWorkspaceHits] = useState<WorkspaceHit[]>([]);
+  const [workspaceSearching, setWorkspaceSearching] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Debounced search
+  // Debounced search over the curated knowledge base (always available).
   const runSearch = useCallback(
     (q: string, cat: DocCategory | null) => {
       setIsSearching(true);
-      // Simulated async — swap for real fetch('/api/knowledge/search') when ready
       const id = setTimeout(() => {
-        setResults(clientSearch(q, cat));
+        setResults(searchDocs(q, cat));
         setIsSearching(false);
       }, 120);
       return () => clearTimeout(id);
@@ -313,6 +172,56 @@ export default function KnowledgePage() {
     const cleanup = runSearch(query, activeCategory);
     return cleanup;
   }, [query, activeCategory, runSearch]);
+
+  // Augment with real results from the signed-in user's indexed workspace.
+  // Anonymous visitors / outages degrade gracefully to docs-only results.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setWorkspaceHits([]);
+      setWorkspaceSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setWorkspaceSearching(true);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ query: trimmed, limit: '8' });
+      fetch(`/api/knowledge-base/search?${params.toString()}`, {
+        signal: controller.signal,
+      })
+        .then((res) => (res.ok ? (res.json() as Promise<KBSearchResponse>) : null))
+        .then((data) => {
+          if (cancelled || !data) {
+            if (!cancelled) setWorkspaceHits([]);
+            return;
+          }
+          const hits = [...(data.files ?? []), ...(data.embeddings ?? [])]
+            .filter((h) => h.filePath)
+            .slice(0, 8)
+            .map((h) => ({
+              id: h.id,
+              filePath: h.filePath,
+              language: h.language ?? null,
+              snippet: h.snippet ?? null,
+            }));
+          setWorkspaceHits(hits);
+        })
+        .catch(() => {
+          if (!cancelled) setWorkspaceHits([]);
+        })
+        .finally(() => {
+          if (!cancelled) setWorkspaceSearching(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   // Cmd+K shortcut
   useEffect(() => {
@@ -470,6 +379,46 @@ export default function KnowledgePage() {
                 </button>
               )}
             </div>
+
+            {/* Workspace results (signed-in users with indexed content) */}
+            {(workspaceSearching || workspaceHits.length > 0) && (
+              <div className="mb-8">
+                <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-white/25">
+                  <FileText className="h-3.5 w-3.5" />
+                  From your workspace
+                  {workspaceSearching && (
+                    <Loader2 className="h-3 w-3 animate-spin text-white/30" />
+                  )}
+                </p>
+                {workspaceHits.length > 0 && (
+                  <ul className="space-y-2">
+                    {workspaceHits.map((hit) => (
+                      <li
+                        key={hit.id}
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Code2 className="h-3.5 w-3.5 shrink-0 text-purple-400" />
+                          <span className="truncate font-mono text-sm text-white/80">
+                            {hit.filePath}
+                          </span>
+                          {hit.language && (
+                            <Badge className="ml-auto shrink-0 bg-white/5 text-[10px] text-white/40">
+                              {hit.language}
+                            </Badge>
+                          )}
+                        </div>
+                        {hit.snippet && (
+                          <p className="mt-1.5 line-clamp-2 text-xs text-white/35">
+                            {hit.snippet}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {/* Doc grid */}
             {results.length === 0 ? (

@@ -14,6 +14,7 @@ import {
   checkAllProviders,
   getCachedHealth,
 } from "../services/providerHealthService.js";
+import { enginePaths, ENGINE_DIRS } from "../services/engineManager.js";
 
 const router = Router();
 
@@ -292,6 +293,23 @@ router.get("/providers/:name", async (req: Request, res: Response) => {
       message: err instanceof Error ? err.message : String(err),
     });
   }
+});
+
+/**
+ * GET /health/engines - Bundled engine binary resolution diagnostics.
+ *
+ * Reports whether each first-party engine (beads, git, pal) resolves to a
+ * bundled build, an env override, the system PATH, or is unavailable.
+ * No authentication required.
+ */
+router.get("/engines", (_req: Request, res: Response) => {
+  const engines = enginePaths();
+  const allResolved = Object.values(engines).every((e) => e.path !== null);
+  return res.status(allResolved ? 200 : 503).json({
+    status: allResolved ? "ok" : "degraded",
+    dirs: ENGINE_DIRS,
+    engines,
+  });
 });
 
 export default router;

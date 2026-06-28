@@ -3,22 +3,33 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { APIClient } from '@/lib/api';
+import { APIClient, type Checkpoint } from '@/lib/api';
 import { useTimeline } from '@/store/timeline';
 import FileBrowser from '@/components/FileBrowser';
 import DiffViewer from '@/components/DiffViewer';
 
 const TimelineVisualizer = dynamic(() => import('@/components/TimelineVisualizer'), { ssr: false });
 
+// Detailed checkpoint returned by getCheckpoint(). The list shape from the API
+// client already carries id/description/timestamp/files.
+type CheckpointDetail = Checkpoint;
+
+type RestoreStatus =
+  | { state: 'idle' }
+  | { state: 'restoring' }
+  | { state: 'success'; message: string }
+  | { state: 'error'; message: string };
+
 export default function Home() {
   const { checkpoints, currentIndex, setCheckpoints, goTo, setLoading, loading } = useTimeline();
   const [client] = useState(() => new APIClient());
-  const [selectedCheckpoint, setSelectedCheckpoint] = useState<any>(null);
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState<CheckpointDetail | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
   const [view, setView] = useState<'files' | 'diff'>('files');
   const [connected, setConnected] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>({ state: 'idle' });
 
   useEffect(() => {
     loadCheckpoints();
@@ -42,12 +53,13 @@ export default function Home() {
     goTo(index);
     const cp = checkpoints[index];
     if (!cp) return;
-    const details = await client.getCheckpoint(cp.id);
+    const details = (await client.getCheckpoint(cp.id)) as CheckpointDetail;
     setSelectedCheckpoint(details);
     setSelectedFile(null);
     setFileContent(null);
     setDiff(null);
     setView('files');
+    setRestoreStatus({ state: 'idle' });
   };
 
   const handleFileSelect = async (path: string) => {
@@ -69,14 +81,30 @@ export default function Home() {
   const handleRestore = async () => {
     if (!selectedCheckpoint) return;
     if (!confirm('Restore to this checkpoint? Current changes will be backed up.')) return;
-    await client.restore(selectedCheckpoint.id);
-    alert('✓ Restored successfully');
+    setRestoreStatus({ state: 'restoring' });
+    try {
+      const result = (await client.restore(selectedCheckpoint.id)) as
+        | { success?: boolean; error?: string }
+        | undefined;
+      if (result && result.success === false) {
+        throw new Error(result.error || 'Restore failed');
+      }
+      setRestoreStatus({
+        state: 'success',
+        message: 'Restored successfully. Your previous state was backed up.',
+      });
+    } catch (e) {
+      setRestoreStatus({
+        state: 'error',
+        message: e instanceof Error ? e.message : 'Restore failed',
+      });
+    }
   };
 
-  const formatTime = (ts: number) => {
+  const formatTime = (ts: string | number) => {
     const d = new Date(ts);
     const now = Date.now();
-    const diff = now - ts;
+    const diff = now - d.getTime();
     if (diff < 60000) return 'just now';
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
@@ -122,8 +150,12 @@ export default function Home() {
                 </span>
               </div>
               <div className="flex gap-2 mt-3">
-                <button onClick={handleRestore} className="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded text-sm font-medium transition">
-                  ↩ Restore
+                <button
+                  onClick={handleRestore}
+                  disabled={restoreStatus.state === 'restoring'}
+                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 px-3 py-1.5 rounded text-sm font-medium transition"
+                >
+                  {restoreStatus.state === 'restoring' ? 'Restoring…' : '↩ Restore'}
                 </button>
                 <button onClick={handleShowDiff} disabled={currentIndex === 0} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-1.5 rounded text-sm font-medium transition">
                   ⇄ Diff
@@ -137,6 +169,24 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+              {restoreStatus.state === 'success' && (
+                <div
+                  role="status"
+                  className="mt-3 flex items-center gap-2 rounded-md border border-green-800 bg-green-950/40 px-3 py-2 text-sm text-green-300"
+                >
+                  <span aria-hidden>✓</span>
+                  {restoreStatus.message}
+                </div>
+              )}
+              {restoreStatus.state === 'error' && (
+                <div
+                  role="alert"
+                  className="mt-3 flex items-center gap-2 rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-300"
+                >
+                  <span aria-hidden>⚠</span>
+                  {restoreStatus.message}
+                </div>
+              )}
             </>
           ) : (
             <div className="text-center py-8">

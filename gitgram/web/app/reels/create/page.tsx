@@ -137,6 +137,26 @@ function getLangColour(lang: string): string {
   return LANGUAGE_COLOURS[lang.toLowerCase()] ?? '#8b949e'
 }
 
+/**
+ * Engagement controls shown in the create-time preview. Mirrors the icons in
+ * the published reel viewer (like / comment / share) so creators see the real
+ * layout before publishing. Counts are 0 until the reel goes live.
+ */
+const ENGAGEMENT_PREVIEW_ICONS: ReadonlyArray<{ label: string; d: string }> = [
+  {
+    label: 'Likes',
+    d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z',
+  },
+  {
+    label: 'Comments',
+    d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',
+  },
+  {
+    label: 'Share',
+    d: 'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z',
+  },
+]
+
 // ─── Mini code preview ────────────────────────────────────────────────────────
 
 interface MiniCodePreviewProps {
@@ -241,20 +261,23 @@ function MiniCodePreview({ code, language, title, description, hashtags }: MiniC
         )}
       </div>
 
-      {/* Right sidebar stub */}
+      {/* Engagement controls preview — mirrors the published reel viewer.
+          Counts start at 0 for a new reel; controls become interactive
+          once the reel is published. */}
       <div
         className="absolute right-2 flex flex-col items-center gap-3"
-        style={{ top: '38%' }}
+        style={{ top: '34%' }}
+        aria-label="Engagement controls preview"
       >
-        {[
-          { d: 'M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z', label: '0' },
-          { d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', label: '0' },
-        ].map((icon, i) => (
-          <div key={i} className="flex flex-col items-center gap-0.5">
-            <svg className="w-5 h-5 text-white/40" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d={icon.d} />
-            </svg>
-            <span className="text-white/30 text-[10px]">{icon.label}</span>
+        {ENGAGEMENT_PREVIEW_ICONS.map((icon) => (
+          <div key={icon.label} className="flex flex-col items-center gap-0.5">
+            <div className="p-2 rounded-full text-white/70">
+              <svg className="w-5 h-5 drop-shadow" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d={icon.d} />
+              </svg>
+            </div>
+            <span className="text-white/60 text-[10px] font-medium drop-shadow">0</span>
+            <span className="sr-only">{icon.label}</span>
           </div>
         ))}
       </div>

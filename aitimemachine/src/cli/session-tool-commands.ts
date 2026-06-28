@@ -7,7 +7,7 @@
 
 import { Command } from 'commander';
 import { TimeMachineEngine } from '../core/engine.js';
-import { C, formatSize, formatDate, timeAgo, formatDuration } from './cli-helpers.js';
+import { C, formatSize, formatDate, timeAgo, formatDuration, safeCommand } from './cli-helpers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -155,8 +155,7 @@ export function registerSessionToolCommands(program: Command): void {
     });
 
   // File-history
-  program
-    .command('file-history <path>')
+  safeCommand(program, 'file-history <path>')
     .description('Show version history of a file')
     .action(async (filePath) => {
       const { FileHistoryTracker } = await import('../core/file-history-tracker.js');
@@ -250,8 +249,7 @@ export function registerSessionToolCommands(program: Command): void {
     });
 
   // Watch
-  program
-    .command('watch <command>')
+  safeCommand(program, 'watch <command>')
     .description('Watch command and auto-checkpoint on failures')
     .option('-i, --interval <seconds>', 'Check interval (0 for single run)', '30')
     .option('--no-checkpoint', 'Disable auto-checkpointing')

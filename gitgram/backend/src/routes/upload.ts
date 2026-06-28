@@ -47,4 +47,12 @@ router.post(
   uploadController.uploadReelCover
 );
 
+// Probe metadata (duration/dimensions/format/size) for an uploaded video URL
+router.post(
+  '/video-metadata',
+  authenticate,
+  uploadLimiter,
+  uploadController.getVideoMetadataHandler
+);
+
 export default router;

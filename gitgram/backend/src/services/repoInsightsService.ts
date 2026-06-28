@@ -585,34 +585,82 @@ function colorFor(language: string): string {
 }
 
 /**
- * Language breakdown. Gitgram stores only a single primary `language` per
- * repository (no per-language byte counts), so we surface that primary
- * language at 100% when present. Returns an empty breakdown otherwise.
+ * Builds a LanguagesInsights payload from a language -> bytes map, sorted by
+ * descending byte count with computed percentages.
+ */
+function buildLanguagesInsights(byteMap: Record<string, number>): LanguagesInsights {
+  const entries = Object.entries(byteMap).filter(([, bytes]) => bytes > 0);
+  const total = entries.reduce((sum, [, bytes]) => sum + bytes, 0);
+
+  if (total === 0) {
+    return { total: 0, languages: [] };
+  }
+
+  const languages = entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, bytes]) => ({
+      name,
+      bytes,
+      percentage: Math.round((bytes / total) * 1000) / 10,
+      color: colorFor(name),
+    }));
+
+  return { total, languages };
+}
+
+/**
+ * Real per-language byte breakdown for a repository.
+ *
+ * Pulls true byte counts from the GitHub languages API (cached via
+ * GitHubService). If GitHub is unreachable or the repo has no language data,
+ * falls back to the stored primary language at 100% so the UI still renders.
  */
 export async function getLanguages(repoId: string): Promise<LanguagesInsights> {
+  let repo: { owner: string; name: string; language: string | null } | null = null;
+
   try {
-    const repo = await prisma.repository.findUnique({
+    repo = await prisma.repository.findUnique({
       where: { id: repoId },
-      select: { language: true },
+      select: { owner: true, name: true, language: true },
     });
+  } catch (error) {
+    logger.error('repoInsightsService.getLanguages db lookup failed', { error, repoId });
+    return { total: 0, languages: [] };
+  }
 
-    if (!repo?.language) {
-      return { total: 0, languages: [] };
+  if (!repo) {
+    return { total: 0, languages: [] };
+  }
+
+  try {
+    const { githubService } = await import('./githubService');
+    const byteMap = await githubService.getRepositoryLanguages(repo.owner, repo.name);
+    const insights = buildLanguagesInsights(byteMap);
+    if (insights.total > 0) {
+      return insights;
     }
+  } catch (error) {
+    logger.warn('repoInsightsService.getLanguages: GitHub languages fetch failed, falling back', {
+      repoId,
+      error,
+    });
+  }
 
+  // Fallback: surface the stored primary language at 100% when GitHub data is
+  // unavailable. Bytes are unknown here, so report 0 rather than a fake count.
+  if (repo.language) {
     return {
-      total: 1,
+      total: 0,
       languages: [
         {
           name: repo.language,
-          bytes: 1,
+          bytes: 0,
           percentage: 100,
           color: colorFor(repo.language),
         },
       ],
     };
-  } catch (error) {
-    logger.error('repoInsightsService.getLanguages failed', { error, repoId });
-    return { total: 0, languages: [] };
   }
+
+  return { total: 0, languages: [] };
 }

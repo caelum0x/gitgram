@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import axios from 'axios';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -133,8 +134,47 @@ async function generateVideoThumbnail(
     } catch {
       // Ignore
     }
-    // Return a placeholder thumbnail URL instead of empty string
-    return '/api/v1/static/placeholder-video-thumbnail.jpg';
+    // Generate and upload a real placeholder thumbnail so callers always get a
+    // working, reachable URL (the previous static path was never served).
+    return generateAndUploadPlaceholder();
+  }
+}
+
+/**
+ * Generates a branded placeholder thumbnail and uploads it via the standard
+ * media storage pipeline, returning a real, reachable URL.
+ */
+async function generateAndUploadPlaceholder(): Promise<string> {
+  const placeholderPath = path.join('/tmp', `placeholder-${uuidv4()}.jpg`);
+
+  try {
+    await generatePlaceholderThumbnail(placeholderPath);
+    const buffer = await fs.readFile(placeholderPath);
+
+    const placeholderFile = {
+      fieldname: 'thumbnail',
+      originalname: 'placeholder-video-thumbnail.jpg',
+      encoding: '7bit',
+      mimetype: 'image/jpeg',
+      destination: '/tmp',
+      filename: path.basename(placeholderPath),
+      path: placeholderPath,
+      size: buffer.length,
+      buffer,
+    } as Express.Multer.File;
+
+    return await uploadMedia(placeholderFile);
+  } catch (error) {
+    logger.error('Placeholder thumbnail generation failed:', error);
+    // Last-resort: return empty string so the caller can decide how to render.
+    // Never return a hardcoded URL that does not resolve.
+    return '';
+  } finally {
+    try {
+      await fs.unlink(placeholderPath);
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }
 
@@ -238,33 +278,176 @@ export async function transcodeVideo(
   }
 }
 
-export async function getVideoMetadata(videoUrl: string): Promise<{
+export interface VideoMetadata {
   duration?: number;
   width?: number;
   height?: number;
   format?: string;
   size?: number;
-}> {
-  try {
-    logger.info('Video metadata requested', { videoUrl });
+}
 
-    // For remote URLs, we would need to download or stream the file first
-    // For now, return basic format info
-    const extension = videoUrl.split('.').pop()?.toLowerCase();
-    const formatMap: Record<string, string> = {
-      mp4: 'mp4',
-      webm: 'webm',
-      mov: 'quicktime',
-      avi: 'avi',
-      mkv: 'matroska',
-    };
+const FORMAT_BY_EXTENSION: Record<string, string> = {
+  mp4: 'mp4',
+  webm: 'webm',
+  mov: 'quicktime',
+  avi: 'avi',
+  mkv: 'matroska',
+};
+
+/** Best-effort container format inference from a URL/path extension. */
+function inferFormatFromUrl(videoUrl: string): string {
+  const cleaned = videoUrl.split('?')[0].split('#')[0];
+  const extension = cleaned.split('.').pop()?.toLowerCase() ?? '';
+  return FORMAT_BY_EXTENSION[extension] ?? 'mp4';
+}
+
+/**
+ * Hosts we are willing to probe. Derived from the storage/CDN configuration so
+ * we never issue requests (ffprobe or HEAD) to arbitrary user-controlled hosts
+ * — that would be a server-side request forgery (SSRF) vector.
+ */
+function allowedMediaHosts(): Set<string> {
+  const hosts = new Set<string>();
+  const add = (value: string | undefined): void => {
+    if (!value) return;
+    try {
+      hosts.add(new URL(value).host.toLowerCase());
+    } catch {
+      // Some configs (e.g. bucket names) are not full URLs; ignore those.
+    }
+  };
+  add(process.env.CDN_URL);
+  add(process.env.MEDIA_BASE_URL);
+  add(process.env.PUBLIC_BASE_URL);
+  const bucket = process.env.AWS_S3_BUCKET;
+  const region = process.env.AWS_REGION || 'us-east-1';
+  if (bucket) {
+    hosts.add(`${bucket}.s3.${region}.amazonaws.com`);
+    hosts.add(`${bucket}.s3.amazonaws.com`);
+  }
+  return hosts;
+}
+
+/**
+ * Validate that the URL is a probe-able local file or an http(s) URL pointing at
+ * a configured, trusted media host. Throws on anything else.
+ */
+function assertProbeableSource(videoUrl: string): void {
+  if (!videoUrl || typeof videoUrl !== 'string') {
+    throw new Error('videoUrl is required');
+  }
+  if (path.isAbsolute(videoUrl) && !/^https?:\/\//i.test(videoUrl)) {
+    return; // Local file path (server-side temp/upload).
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(videoUrl);
+  } catch {
+    throw new Error('videoUrl must be an absolute path or an http(s) URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('videoUrl must use the http or https protocol');
+  }
+
+  const allowed = allowedMediaHosts();
+  if (allowed.size === 0) {
+    throw new Error('No trusted media host is configured for metadata probing');
+  }
+  if (!allowed.has(parsed.host.toLowerCase())) {
+    throw new Error('videoUrl host is not an allowed media host');
+  }
+}
+
+/** Fetch Content-Length via HEAD for a remote URL. Returns undefined on failure. */
+async function fetchRemoteSize(videoUrl: string): Promise<number | undefined> {
+  try {
+    const response = await axios.head(videoUrl, { timeout: 10000, maxRedirects: 5 });
+    const length = response.headers['content-length'];
+    const parsed = length ? parseInt(String(length), 10) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Local file size in bytes. Returns undefined on failure. */
+async function fetchLocalSize(filePath: string): Promise<number | undefined> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.size;
+  } catch {
+    return undefined;
+  }
+}
+
+interface FfprobeStream {
+  codec_type?: string;
+  width?: number;
+  height?: number;
+}
+
+interface FfprobeOutput {
+  format?: { duration?: string; format_name?: string; size?: string };
+  streams?: FfprobeStream[];
+}
+
+/**
+ * Extract real video metadata for a remote (http/https) or local video.
+ *
+ * ffprobe reads http(s) URLs natively, so no full download is required — it
+ * range-reads only the header/index. Duration, width and height are parsed from
+ * the probe output; size comes from the source's Content-Length (remote) or the
+ * filesystem (local), falling back to ffprobe's reported format size.
+ *
+ * When ffprobe is unavailable the function degrades to extension-inferred
+ * format plus a best-effort size, never throwing for that case.
+ */
+export async function getVideoMetadata(videoUrl: string): Promise<VideoMetadata> {
+  assertProbeableSource(videoUrl);
+  logger.info('Video metadata requested', { videoUrl });
+
+  const isHttp = /^https?:\/\//i.test(videoUrl);
+  const inferredFormat = inferFormatFromUrl(videoUrl);
+
+  const sizePromise = isHttp ? fetchRemoteSize(videoUrl) : fetchLocalSize(videoUrl);
+
+  const hasFfmpeg = await checkFfmpeg();
+  if (!hasFfmpeg) {
+    const size = await sizePromise;
+    return { format: inferredFormat, size };
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `ffprobe -v quiet -print_format json -show_format -show_streams "${videoUrl}"`,
+      { timeout: 30000, maxBuffer: 1024 * 1024 }
+    );
+
+    const data = JSON.parse(stdout) as FfprobeOutput;
+    const videoStream = data.streams?.find((s) => s.codec_type === 'video');
+
+    const duration = data.format?.duration
+      ? Math.round(parseFloat(data.format.duration))
+      : undefined;
+    const probeSize = data.format?.size ? parseInt(data.format.size, 10) : undefined;
+    const transferSize = await sizePromise;
 
     return {
-      format: formatMap[extension || ''] || 'mp4',
+      duration: Number.isFinite(duration) ? duration : undefined,
+      width: videoStream?.width,
+      height: videoStream?.height,
+      format: data.format?.format_name?.split(',')[0] || inferredFormat,
+      size: transferSize ?? (Number.isFinite(probeSize) ? probeSize : undefined),
     };
-  } catch (error: any) {
-    logger.error('Get video metadata error:', error);
-    return {};
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    logger.warn('ffprobe metadata extraction failed, returning inferred metadata', {
+      videoUrl,
+      message,
+    });
+    const size = await sizePromise;
+    return { format: inferredFormat, size };
   }
 }
 

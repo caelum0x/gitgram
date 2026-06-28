@@ -28,6 +28,43 @@ interface ApiResponse {
   repository?: Repository;
 }
 
+interface RepoPostAuthor {
+  id: string;
+  username: string;
+  avatar: string | null;
+  verified?: boolean;
+}
+
+interface RepoPost {
+  id: string;
+  content: string | null;
+  createdAt: string;
+  user: RepoPostAuthor | null;
+  _count?: { likes: number; comments: number };
+}
+
+interface GitHubUserLite {
+  id: number;
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
+interface GitHubFork {
+  id: number;
+  full_name: string;
+  html_url: string;
+  stargazers_count: number;
+  forks_count: number;
+  owner: GitHubUserLite;
+}
+
+/** Discriminated result so the UI can render error vs empty vs data distinctly. */
+type FetchResult<T> =
+  | { status: 'ok'; data: T }
+  | { status: 'empty' }
+  | { status: 'error' };
+
 const LANGUAGE_COLORS: Record<string, string> = {
   TypeScript: '#3178c6',
   JavaScript: '#f1e05a',
@@ -74,6 +111,76 @@ async function fetchRepository(owner: string, name: string): Promise<Repository 
   }
 }
 
+/** Optional GitHub auth header for higher rate limits when a token is configured. */
+function githubHeaders(): HeadersInit {
+  const token = process.env.GITHUB_TOKEN ?? process.env.GITHUB_ACCESS_TOKEN;
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function fetchRepoPosts(
+  owner: string,
+  name: string
+): Promise<FetchResult<RepoPost[]>> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
+  const url = `${apiUrl}/api/v1/repositories/github/${owner}/${name}/posts?limit=20`;
+
+  try {
+    const res = await fetch(url, { next: { revalidate: 30 } });
+    if (!res.ok) {
+      return { status: 'error' };
+    }
+    const json = (await res.json()) as { posts?: RepoPost[] };
+    const posts = Array.isArray(json.posts) ? json.posts : [];
+    return posts.length > 0 ? { status: 'ok', data: posts } : { status: 'empty' };
+  } catch {
+    return { status: 'error' };
+  }
+}
+
+async function fetchStargazers(
+  fullName: string
+): Promise<FetchResult<GitHubUserLite[]>> {
+  const url = `https://api.github.com/repos/${fullName}/stargazers?per_page=30`;
+  try {
+    const res = await fetch(url, {
+      headers: githubHeaders(),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) {
+      return { status: 'error' };
+    }
+    const json = (await res.json()) as GitHubUserLite[];
+    const users = Array.isArray(json) ? json : [];
+    return users.length > 0 ? { status: 'ok', data: users } : { status: 'empty' };
+  } catch {
+    return { status: 'error' };
+  }
+}
+
+async function fetchForks(fullName: string): Promise<FetchResult<GitHubFork[]>> {
+  const url = `https://api.github.com/repos/${fullName}/forks?per_page=30&sort=stargazers`;
+  try {
+    const res = await fetch(url, {
+      headers: githubHeaders(),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) {
+      return { status: 'error' };
+    }
+    const json = (await res.json()) as GitHubFork[];
+    const forks = Array.isArray(json) ? json : [];
+    return forks.length > 0 ? { status: 'ok', data: forks } : { status: 'empty' };
+  } catch {
+    return { status: 'error' };
+  }
+}
+
 export default async function RepoProfilePage({
   params,
 }: {
@@ -85,6 +192,14 @@ export default async function RepoProfilePage({
   if (!repository) {
     notFound();
   }
+
+  const fullName = repository.fullName || `${owner}/${name}`;
+
+  const [posts, stargazers, forks] = await Promise.all([
+    fetchRepoPosts(owner, name),
+    fetchStargazers(fullName),
+    fetchForks(fullName),
+  ]);
 
   const readmePreview = repository.readme
     ? repository.readme.slice(0, 600)
@@ -203,9 +318,127 @@ export default async function RepoProfilePage({
           name={name}
           readmePreview={readmePreview}
           hasMoreReadme={hasMoreReadme ?? false}
+          posts={posts}
+          stargazers={stargazers}
+          forks={forks}
         />
       </div>
     </div>
+  );
+}
+
+const CARD_STYLE = { backgroundColor: '#1A1A2E', border: '1px solid #2D2D50' } as const;
+
+function StateMessage({
+  kind,
+  emptyLabel,
+  errorLabel,
+}: {
+  kind: 'empty' | 'error';
+  emptyLabel: string;
+  errorLabel: string;
+}) {
+  const isError = kind === 'error';
+  return (
+    <p
+      style={{ color: isError ? '#F87171' : '#4B5563' }}
+      className="text-sm italic"
+    >
+      {isError ? errorLabel : emptyLabel}
+    </p>
+  );
+}
+
+function GitHubUserRow({ user }: { user: GitHubUserLite }) {
+  return (
+    <a
+      href={user.html_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-white/5 transition-colors"
+    >
+      <Image
+        src={user.avatar_url}
+        alt={`${user.login} avatar`}
+        width={32}
+        height={32}
+        className="rounded-full"
+      />
+      <span style={{ color: '#CBD5E1' }} className="text-sm font-medium">
+        {user.login}
+      </span>
+    </a>
+  );
+}
+
+function PostRow({ post }: { post: RepoPost }) {
+  const author = post.user;
+  const created = new Date(post.createdAt);
+  const createdLabel = Number.isNaN(created.getTime())
+    ? ''
+    : created.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  return (
+    <div
+      style={{ borderBottom: '1px solid #2D2D50' }}
+      className="py-3 last:border-b-0"
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        {author?.avatar && (
+          <Image
+            src={author.avatar}
+            alt={`${author.username} avatar`}
+            width={24}
+            height={24}
+            className="rounded-full"
+          />
+        )}
+        <span style={{ color: '#A78BFA' }} className="text-sm font-medium">
+          {author?.username ?? 'Unknown'}
+        </span>
+        {createdLabel && (
+          <span style={{ color: '#4B5563' }} className="text-xs">
+            · {createdLabel}
+          </span>
+        )}
+      </div>
+      {post.content && (
+        <p style={{ color: '#CBD5E1' }} className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+          {post.content}
+        </p>
+      )}
+      <div className="flex items-center gap-4 mt-2 text-xs" style={{ color: '#64748B' }}>
+        <span>❤ {post._count?.likes ?? 0}</span>
+        <span>💬 {post._count?.comments ?? 0}</span>
+      </div>
+    </div>
+  );
+}
+
+function ForkRow({ fork }: { fork: GitHubFork }) {
+  return (
+    <a
+      href={fork.html_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg hover:bg-white/5 transition-colors"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <Image
+          src={fork.owner.avatar_url}
+          alt={`${fork.owner.login} avatar`}
+          width={32}
+          height={32}
+          className="rounded-full flex-shrink-0"
+        />
+        <span style={{ color: '#CBD5E1' }} className="text-sm font-medium truncate">
+          {fork.full_name}
+        </span>
+      </div>
+      <span style={{ color: '#94A3B8' }} className="text-xs flex-shrink-0">
+        ⭐ {fork.stargazers_count.toLocaleString()}
+      </span>
+    </a>
   );
 }
 
@@ -214,11 +447,17 @@ function TabSection({
   name,
   readmePreview,
   hasMoreReadme,
+  posts,
+  stargazers,
+  forks,
 }: {
   owner: string;
   name: string;
   readmePreview: string | null;
   hasMoreReadme: boolean;
+  posts: FetchResult<RepoPost[]>;
+  stargazers: FetchResult<GitHubUserLite[]>;
+  forks: FetchResult<GitHubFork[]>;
 }) {
   return (
     <div>
@@ -275,48 +514,69 @@ function TabSection({
         </div>
       </div>
 
-      {/* Posts tab placeholder */}
+      {/* Posts tab */}
       <div id="posts">
-        <div
-          style={{ backgroundColor: '#1A1A2E', border: '1px solid #2D2D50' }}
-          className="rounded-xl p-6 mb-4"
-        >
+        <div style={CARD_STYLE} className="rounded-xl p-6 mb-4">
           <h2 className="text-lg font-semibold mb-3" style={{ color: '#E2E8F0' }}>
             Posts
           </h2>
-          <p style={{ color: '#4B5563' }} className="text-sm">
-            Loading posts...
-          </p>
+          {posts.status === 'ok' ? (
+            <div>
+              {posts.data.map((post) => (
+                <PostRow key={post.id} post={post} />
+              ))}
+            </div>
+          ) : (
+            <StateMessage
+              kind={posts.status}
+              emptyLabel="No posts have been shared for this repository yet."
+              errorLabel="Could not load posts right now. Please try again later."
+            />
+          )}
         </div>
       </div>
 
-      {/* Stargazers tab placeholder */}
+      {/* Stargazers tab */}
       <div id="stargazers">
-        <div
-          style={{ backgroundColor: '#1A1A2E', border: '1px solid #2D2D50' }}
-          className="rounded-xl p-6 mb-4"
-        >
+        <div style={CARD_STYLE} className="rounded-xl p-6 mb-4">
           <h2 className="text-lg font-semibold mb-3" style={{ color: '#E2E8F0' }}>
             Stargazers
           </h2>
-          <p style={{ color: '#4B5563' }} className="text-sm">
-            Stargazers list coming soon.
-          </p>
+          {stargazers.status === 'ok' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+              {stargazers.data.map((user) => (
+                <GitHubUserRow key={user.id} user={user} />
+              ))}
+            </div>
+          ) : (
+            <StateMessage
+              kind={stargazers.status}
+              emptyLabel="This repository has no stargazers yet."
+              errorLabel="Could not load stargazers from GitHub right now."
+            />
+          )}
         </div>
       </div>
 
-      {/* Forks tab placeholder */}
+      {/* Forks tab */}
       <div id="forks">
-        <div
-          style={{ backgroundColor: '#1A1A2E', border: '1px solid #2D2D50' }}
-          className="rounded-xl p-6 mb-4"
-        >
+        <div style={CARD_STYLE} className="rounded-xl p-6 mb-4">
           <h2 className="text-lg font-semibold mb-3" style={{ color: '#E2E8F0' }}>
             Forks
           </h2>
-          <p style={{ color: '#4B5563' }} className="text-sm">
-            Forks list coming soon.
-          </p>
+          {forks.status === 'ok' ? (
+            <div className="grid grid-cols-1 gap-1">
+              {forks.data.map((fork) => (
+                <ForkRow key={fork.id} fork={fork} />
+              ))}
+            </div>
+          ) : (
+            <StateMessage
+              kind={forks.status}
+              emptyLabel="This repository has not been forked yet."
+              errorLabel="Could not load forks from GitHub right now."
+            />
+          )}
         </div>
       </div>
     </div>

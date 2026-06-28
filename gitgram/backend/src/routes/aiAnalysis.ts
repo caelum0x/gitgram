@@ -6,7 +6,28 @@ const router = Router();
 
 const GITNEXUS_URL = process.env.GITNEXUS_URL || 'http://localhost:3001';
 
+// Fail fast when GitNexus is unreachable instead of hanging the request.
+const GITNEXUS_TIMEOUT_MS = parseInt(process.env.GITNEXUS_TIMEOUT_MS || '30000', 10);
+
 const GITHUB_URL_REGEX = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/.*)?$/;
+
+/**
+ * fetch wrapper that aborts after the configured timeout so a down/slow
+ * GitNexus service does not block the Express request indefinitely.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<globalThis.Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -34,11 +55,15 @@ async function sendJsonRpc(
     params,
   };
 
-  const response = await fetch(`${GITNEXUS_URL}/message`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetchWithTimeout(
+    `${GITNEXUS_URL}/message`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    GITNEXUS_TIMEOUT_MS
+  );
 
   if (!response.ok) {
     throw new Error(`GitNexus responded with status ${response.status} for method ${method}`);
@@ -138,7 +163,7 @@ router.post('/analyze', authenticate, async (req: Request, res: Response): Promi
  */
 router.get('/status', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const response = await fetch(GITNEXUS_URL, { method: 'GET' });
+    const response = await fetchWithTimeout(GITNEXUS_URL, { method: 'GET' }, 5000);
     res.json({ reachable: true, status: response.status, url: GITNEXUS_URL });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

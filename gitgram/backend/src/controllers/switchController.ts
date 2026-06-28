@@ -2,6 +2,12 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../utils/prisma';
 import { asyncHandler, Errors, ApiError } from '../middleware/errorHandler';
+import {
+  switchAccount as switchToUserAccount,
+  grantAccountSwitch,
+  revokeAccountSwitch,
+  getSwitchableAccounts,
+} from '../services/accountService';
 
 export const switchController = {
   // GET /api/switch/accounts - Get all accounts user can access
@@ -73,5 +79,58 @@ export const switchController = {
     }
 
     res.json({ account, message: 'Switched successfully' });
+  }),
+
+  // GET /api/switch/switchable - users this caller may switch into (multi-account)
+  getSwitchableAccounts: asyncHandler(async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    const userId = authReq.userId!;
+    const accounts = await getSwitchableAccounts(userId);
+    res.json({ success: true, data: accounts });
+  }),
+
+  // POST /api/switch/switch-user - mint a session for an authorized target user
+  switchToUser: asyncHandler(async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    const userId = authReq.userId!;
+    const { targetUserId } = req.body;
+
+    try {
+      const result = await switchToUserAccount(userId, targetUserId);
+      res.json({ success: true, data: result });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to switch account';
+      throw Errors.forbidden(message);
+    }
+  }),
+
+  // POST /api/switch/grant - authorize switching into another user account
+  grantSwitch: asyncHandler(async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    const userId = authReq.userId!;
+    const { targetUserId } = req.body;
+
+    try {
+      const grant = await grantAccountSwitch(userId, targetUserId);
+      res.status(201).json({ success: true, data: grant });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to grant access';
+      throw Errors.badRequest(message);
+    }
+  }),
+
+  // DELETE /api/switch/grant - revoke a previously granted switch authorization
+  revokeSwitch: asyncHandler(async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    const userId = authReq.userId!;
+    const { targetUserId } = req.body;
+
+    try {
+      const result = await revokeAccountSwitch(userId, targetUserId);
+      res.json({ success: true, data: result });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to revoke access';
+      throw Errors.notFound(message);
+    }
   }),
 };

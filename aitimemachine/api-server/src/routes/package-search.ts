@@ -1,6 +1,11 @@
 import { Router, Response } from "express";
 import { apiKeyAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { Errors, asyncHandler } from "../middleware/errors.js";
+import {
+  listPypiFiles,
+  readPypiFile,
+  readPypiSourceFiles,
+} from "../services/pypiArchive.js";
 
 const router = Router();
 
@@ -231,6 +236,19 @@ router.get(
         path: dirPath || "/",
         files,
       });
+    } else if (reg === "pypi") {
+      const { version: resolvedVersion, files } = await listPypiFiles(
+        pkg,
+        version as string,
+        (dirPath as string) || ""
+      );
+      res.json({
+        registry: reg,
+        package_name: pkg,
+        version: resolvedVersion,
+        path: dirPath || "/",
+        files,
+      });
     } else {
       res.json({
         registry: reg,
@@ -238,7 +256,7 @@ router.get(
         version: version || "latest",
         path: dirPath || "/",
         files: [],
-        message: `File listing for "${reg}" is not yet supported. Supported: npm`,
+        message: `File listing for "${reg}" is not yet supported. Supported: npm, pypi`,
       });
     }
   })
@@ -319,6 +337,42 @@ router.post(
         total_lines: lines.length,
         content: selectedLines.join("\n"),
       });
+    } else if (reg === "pypi") {
+      const { version: resolvedVersion, content } = await readPypiFile(
+        package_name,
+        version,
+        file_path
+      );
+
+      if (!content) {
+        res.json({
+          registry: reg,
+          package_name,
+          version: resolvedVersion,
+          file_path,
+          start_line,
+          end_line: endLine,
+          content: null,
+          message: `File not found: ${file_path}`,
+        });
+        return;
+      }
+
+      const lines = content.split("\n");
+      const start = Math.max(0, start_line - 1);
+      const end = Math.min(lines.length, endLine);
+      const selectedLines = lines.slice(start, end);
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        file_path,
+        start_line: start + 1,
+        end_line: end,
+        total_lines: lines.length,
+        content: selectedLines.join("\n"),
+      });
     } else {
       res.json({
         registry: reg,
@@ -328,7 +382,7 @@ router.post(
         start_line,
         end_line: endLine,
         content: null,
-        message: `File reading for "${reg}" is not yet supported. Supported: npm`,
+        message: `File reading for "${reg}" is not yet supported. Supported: npm, pypi`,
       });
     }
   })
@@ -446,6 +500,57 @@ router.post(
         total: results.length,
         files_searched: filesToSearch.length,
       });
+    } else if (reg === "pypi") {
+      if (pattern.length > 200) {
+        throw Errors.invalidParameter("pattern", "Pattern too long (max 200 chars)");
+      }
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern, "gm");
+      } catch {
+        throw Errors.invalidParameter("pattern", "Invalid regex pattern");
+      }
+
+      const { version: resolvedVersion, files } = await readPypiSourceFiles(
+        package_name,
+        version,
+        20
+      );
+
+      const results: Array<{
+        file: string;
+        line: number;
+        content: string;
+        match: string;
+      }> = [];
+
+      for (const file of files) {
+        if (results.length >= max_results) break;
+        const lines = file.content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (results.length >= max_results) break;
+          regex.lastIndex = 0;
+          const match = regex.exec(lines[i]);
+          if (match) {
+            results.push({
+              file: file.path,
+              line: i + 1,
+              content: lines[i].trim().slice(0, 200),
+              match: match[0],
+            });
+          }
+        }
+      }
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        pattern,
+        results,
+        total: results.length,
+        files_searched: files.length,
+      });
     } else {
       res.json({
         registry: reg,
@@ -454,7 +559,7 @@ router.post(
         pattern,
         results: [],
         total: 0,
-        message: `Grep for "${reg}" is not yet supported. Supported: npm`,
+        message: `Grep for "${reg}" is not yet supported. Supported: npm, pypi`,
       });
     }
   })
@@ -600,6 +705,84 @@ router.post(
         total: limited.length,
         files_searched: filesToSearch.length,
       });
+    } else if (reg === "pypi") {
+      const { version: resolvedVersion, files } = await readPypiSourceFiles(
+        package_name,
+        version,
+        15
+      );
+
+      const queryTerms = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t: string) => t.length > 2);
+
+      const results: Array<{
+        file: string;
+        symbol?: string;
+        symbol_type?: string;
+        line: number;
+        content: string;
+        score: number;
+      }> = [];
+
+      // Python symbol patterns: functions and classes.
+      const symbolPatterns: Array<{ re: RegExp; type: string }> = [
+        { re: /^\s*(?:async\s+)?def\s+(\w+)/gm, type: "function" },
+        { re: /^\s*class\s+(\w+)/gm, type: "class" },
+      ];
+
+      for (const file of files) {
+        const lines = file.content.split("\n");
+        for (const { re, type } of symbolPatterns) {
+          re.lastIndex = 0;
+          let match;
+          while ((match = re.exec(file.content)) !== null) {
+            const name = match[1];
+            if (!name) continue;
+            const nameLower = name.toLowerCase();
+            let score = 0;
+            for (const term of queryTerms) {
+              if (nameLower === term) score += 10;
+              else if (nameLower.includes(term)) score += 5;
+              else if (term.includes(nameLower)) score += 3;
+            }
+
+            const beforeMatch = file.content.slice(0, match.index);
+            const lineNum = beforeMatch.split("\n").length;
+            const contextStart = Math.max(0, lineNum - 2);
+            const contextEnd = Math.min(lines.length, lineNum + 3);
+            const context = lines.slice(contextStart, contextEnd).join("\n");
+            for (const term of queryTerms) {
+              if (context.toLowerCase().includes(term)) score += 1;
+            }
+
+            if (score > 0) {
+              results.push({
+                file: file.path,
+                symbol: name,
+                symbol_type: type,
+                line: lineNum,
+                content: context.slice(0, 300),
+                score,
+              });
+            }
+          }
+        }
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      const limited = results.slice(0, max_results);
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        query,
+        results: limited,
+        total: limited.length,
+        files_searched: files.length,
+      });
     } else {
       res.json({
         registry: reg,
@@ -608,7 +791,7 @@ router.post(
         query,
         results: [],
         total: 0,
-        message: `Semantic search for "${reg}" is not yet supported. Supported: npm`,
+        message: `Semantic search for "${reg}" is not yet supported. Supported: npm, pypi`,
       });
     }
   })
@@ -753,6 +936,95 @@ router.post(
         total: grepResults.length + semanticResults.length,
         files_searched: sourceFiles.length,
       });
+    } else if (reg === "pypi") {
+      const { version: resolvedVersion, files } = await readPypiSourceFiles(
+        package_name,
+        version,
+        15
+      );
+
+      const grepResults: Array<{
+        file: string;
+        line: number;
+        content: string;
+        pattern: string;
+        match: string;
+      }> = [];
+
+      const semanticResults: Array<{
+        file: string;
+        symbol?: string;
+        line: number;
+        content: string;
+        query: string;
+        score: number;
+      }> = [];
+
+      for (const file of files) {
+        const lines = file.content.split("\n");
+
+        for (const pat of patterns) {
+          if (grepResults.length >= max_results) break;
+          let regex: RegExp;
+          try {
+            regex = new RegExp(pat, "gm");
+          } catch {
+            continue;
+          }
+          for (let i = 0; i < lines.length; i++) {
+            if (grepResults.length >= max_results) break;
+            regex.lastIndex = 0;
+            const match = regex.exec(lines[i]);
+            if (match) {
+              grepResults.push({
+                file: file.path,
+                line: i + 1,
+                content: lines[i].trim().slice(0, 200),
+                pattern: pat,
+                match: match[0],
+              });
+            }
+          }
+        }
+
+        for (const q of semantic_queries) {
+          const terms = q
+            .toLowerCase()
+            .split(/\s+/)
+            .filter((t: string) => t.length > 2);
+          for (let i = 0; i < lines.length; i++) {
+            if (semanticResults.length >= max_results) break;
+            const lineLower = lines[i].toLowerCase();
+            let score = 0;
+            for (const term of terms) {
+              if (lineLower.includes(term)) score += 1;
+            }
+            if (score > 0) {
+              semanticResults.push({
+                file: file.path,
+                line: i + 1,
+                content: lines[i].trim().slice(0, 200),
+                query: q,
+                score,
+              });
+            }
+          }
+        }
+      }
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        patterns,
+        semantic_queries,
+        results: {
+          grep_results: grepResults,
+          semantic_results: semanticResults.sort((a, b) => b.score - a.score),
+        },
+        total: grepResults.length + semanticResults.length,
+        files_searched: files.length,
+      });
     } else {
       res.json({
         registry: reg,
@@ -765,7 +1037,7 @@ router.post(
           semantic_results: [],
         },
         total: 0,
-        message: `Hybrid search for "${reg}" is not yet supported. Supported: npm`,
+        message: `Hybrid search for "${reg}" is not yet supported. Supported: npm, pypi`,
       });
     }
   })

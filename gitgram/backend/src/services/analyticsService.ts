@@ -1,71 +1,177 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { counters, isRedisReady } from './redisService';
 
 // ============================================
-// Mock Redis (Map-based; swap for redisService when ready)
+// View counting / dedup backed by Redis.
+//
+// When Redis is connected (production / multi-instance), dedup and buffered
+// view deltas live in Redis so counts survive restarts and dedup is consistent
+// across instances. When Redis is NOT connected (local dev / tests) the service
+// transparently falls back to a single-instance in-memory implementation.
 // ============================================
 
+const DEDUPE_TTL_SECONDS = 60 * 60; // 1 hour
+const BUFFER_TTL_SECONDS = 24 * 60 * 60; // daily buckets live a day
+const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
+const FLUSH_KEY_PREFIX = 'analytics:flush:';
+const DAILY_KEY_PREFIX = 'analytics:daily:';
+const DEDUPE_KEY_PREFIX = 'analytics:dedupe:';
+
+// ---- In-memory fallback (single-instance only) ----
 interface CacheEntry {
   value: number;
   expiresAt: number;
 }
 
-const mockRedis = new Map<string, CacheEntry>();
-const pendingFlushes = new Map<string, { postId?: string; repoId?: string; delta: number }>();
+const localCounters = new Map<string, CacheEntry>();
 
-function redisIncr(key: string, ttlMs: number): number {
+function localIncr(key: string, ttlMs: number): number {
   const now = Date.now();
-  const entry = mockRedis.get(key);
+  const entry = localCounters.get(key);
   if (entry && entry.expiresAt > now) {
     entry.value += 1;
     return entry.value;
   }
-  mockRedis.set(key, { value: 1, expiresAt: now + ttlMs });
+  localCounters.set(key, { value: 1, expiresAt: now + ttlMs });
   return 1;
 }
 
-function redisGet(key: string): number {
+function localIncrBy(key: string, amount: number, ttlMs: number): void {
   const now = Date.now();
-  const entry = mockRedis.get(key);
+  const entry = localCounters.get(key);
   if (entry && entry.expiresAt > now) {
-    return entry.value;
+    entry.value += amount;
+  } else {
+    localCounters.set(key, { value: amount, expiresAt: now + ttlMs });
   }
-  mockRedis.delete(key);
+}
+
+function localGet(key: string): number {
+  const now = Date.now();
+  const entry = localCounters.get(key);
+  if (entry && entry.expiresAt > now) return entry.value;
+  localCounters.delete(key);
   return 0;
 }
 
-// Flush buffered view counts to DB every 5 minutes
-const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
+function localTakeAndReset(key: string): number {
+  const value = localGet(key);
+  localCounters.delete(key);
+  return value;
+}
 
+function localScanFlushKeys(): string[] {
+  const now = Date.now();
+  const keys: string[] = [];
+  for (const [key, entry] of localCounters) {
+    if (key.startsWith(FLUSH_KEY_PREFIX) && entry.expiresAt > now) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+// ---- Unified counter API (Redis when ready, local otherwise) ----
+
+/** Increment a dedup counter. Returns the post-increment value. */
+async function bumpDedupe(key: string): Promise<number> {
+  if (isRedisReady()) {
+    const value = await counters.incrWithTtl(key, DEDUPE_TTL_SECONDS);
+    if (value !== null) return value;
+  }
+  return localIncr(key, DEDUPE_TTL_SECONDS * 1000);
+}
+
+/** Buffer one view for a post/repo (flush + daily bucket counters). */
+async function bufferView(scope: 'post' | 'repo', id: string, day: string): Promise<void> {
+  const flushKey = `${FLUSH_KEY_PREFIX}${scope}:${id}`;
+  const dailyKey = `${DAILY_KEY_PREFIX}view:${scope}:${id}:${day}`;
+  if (isRedisReady()) {
+    const flushed = await counters.incrByWithTtl(flushKey, 1, BUFFER_TTL_SECONDS);
+    const daily = await counters.incrByWithTtl(dailyKey, 1, BUFFER_TTL_SECONDS);
+    if (flushed !== null && daily !== null) return;
+  }
+  localIncrBy(flushKey, 1, BUFFER_TTL_SECONDS * 1000);
+  localIncrBy(dailyKey, 1, BUFFER_TTL_SECONDS * 1000);
+}
+
+/** Read a buffered daily view counter (best-effort, un-flushed deltas). */
+async function readDailyBuffer(scope: 'post' | 'repo', id: string, day: string): Promise<number> {
+  const dailyKey = `${DAILY_KEY_PREFIX}view:${scope}:${id}:${day}`;
+  if (isRedisReady()) {
+    return counters.getInt(dailyKey);
+  }
+  return localGet(dailyKey);
+}
+
+interface FlushTarget {
+  scope: 'post' | 'repo';
+  id: string;
+  key: string;
+}
+
+function parseFlushKey(key: string): FlushTarget | null {
+  const rest = key.slice(FLUSH_KEY_PREFIX.length); // "<scope>:<id>"
+  const sep = rest.indexOf(':');
+  if (sep <= 0) return null;
+  const scope = rest.slice(0, sep);
+  const id = rest.slice(sep + 1);
+  if ((scope !== 'post' && scope !== 'repo') || !id) return null;
+  return { scope, id, key };
+}
+
+/**
+ * Flush buffered view deltas to the database. Each flush key is claimed
+ * atomically (GETDEL / local take) so a delta is applied to the DB exactly once
+ * even with concurrent flushers across instances.
+ */
 async function flushViewsToDB(): Promise<void> {
-  if (pendingFlushes.size === 0) return;
+  const flushKeys = isRedisReady()
+    ? await counters.scanKeys(`${FLUSH_KEY_PREFIX}*`)
+    : localScanFlushKeys();
 
-  const snapshot = new Map(pendingFlushes);
-  pendingFlushes.clear();
+  for (const key of flushKeys) {
+    const target = parseFlushKey(key);
+    if (!target) continue;
 
-  for (const [, payload] of snapshot) {
+    const delta = isRedisReady()
+      ? await counters.takeAndReset(key)
+      : localTakeAndReset(key);
+    if (delta <= 0) continue;
+
     try {
-      if (payload.postId) {
+      if (target.scope === 'post') {
         await prisma.post.update({
-          where: { id: payload.postId },
-          data: { viewsCount: { increment: payload.delta } },
+          where: { id: target.id },
+          data: { viewsCount: { increment: delta } },
+        });
+      } else {
+        await prisma.repository.update({
+          where: { id: target.id },
+          data: { viewsCount: { increment: delta } },
         });
       }
-      if (payload.repoId) {
-        // Repository does not have a viewsCount field yet; skip until schema is updated
-        logger.warn('analyticsService: repository viewCount flush skipped (field not in schema)', { repoId: payload.repoId });
-      }
     } catch (error) {
-      logger.error('analyticsService: DB flush error', { error, payload });
+      logger.error('analyticsService: DB flush error', { error, target, delta });
     }
   }
 }
 
-setInterval(() => {
+const flushTimer = setInterval(() => {
   flushViewsToDB().catch((err) =>
     logger.error('analyticsService: periodic flush failed', err)
   );
 }, FLUSH_INTERVAL_MS);
+// Do not keep the event loop alive solely for the flush timer (clean test exit).
+if (typeof flushTimer.unref === 'function') {
+  flushTimer.unref();
+}
+
+/** Force an immediate flush of buffered view deltas (used in tests / shutdown). */
+export async function flushViewBuffers(): Promise<void> {
+  await flushViewsToDB();
+}
 
 // ============================================
 // Return type interfaces
@@ -143,22 +249,18 @@ export async function trackPostView(
   viewerId: string | null
 ): Promise<void> {
   try {
-    const hourKey = new Date().toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
-    const dedupeKey = `view:post:${postId}:${viewerId ?? 'anon'}:${hourKey}`;
+    const now = new Date();
+    const hourKey = now.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+    const day = now.toISOString().slice(0, 10);
+    const dedupeKey = `${DEDUPE_KEY_PREFIX}view:post:${postId}:${viewerId ?? 'anon'}:${hourKey}`;
 
-    const count = redisIncr(dedupeKey, 60 * 60 * 1000); // 1-hour TTL
+    const count = await bumpDedupe(dedupeKey);
     if (count > 1) {
       // Already counted this viewer in the current hour window
       return;
     }
 
-    const flushKey = `flush:post:${postId}`;
-    const existing = pendingFlushes.get(flushKey);
-    if (existing) {
-      existing.delta += 1;
-    } else {
-      pendingFlushes.set(flushKey, { postId, delta: 1 });
-    }
+    await bufferView('post', postId, day);
   } catch (error) {
     logger.error('analyticsService: trackPostView error', { error, postId });
   }
@@ -173,21 +275,17 @@ export async function trackRepoView(
   viewerId: string | null
 ): Promise<void> {
   try {
-    const hourKey = new Date().toISOString().slice(0, 13);
-    const dedupeKey = `view:repo:${repoId}:${viewerId ?? 'anon'}:${hourKey}`;
+    const now = new Date();
+    const hourKey = now.toISOString().slice(0, 13);
+    const day = now.toISOString().slice(0, 10);
+    const dedupeKey = `${DEDUPE_KEY_PREFIX}view:repo:${repoId}:${viewerId ?? 'anon'}:${hourKey}`;
 
-    const count = redisIncr(dedupeKey, 60 * 60 * 1000);
+    const count = await bumpDedupe(dedupeKey);
     if (count > 1) {
       return;
     }
 
-    const flushKey = `flush:repo:${repoId}`;
-    const existing = pendingFlushes.get(flushKey);
-    if (existing) {
-      existing.delta += 1;
-    } else {
-      pendingFlushes.set(flushKey, { repoId, delta: 1 });
-    }
+    await bufferView('repo', repoId, day);
   } catch (error) {
     logger.error('analyticsService: trackRepoView error', { error, repoId });
   }
@@ -241,11 +339,10 @@ export async function getPostAnalytics(
     likesMap.set(day, (likesMap.get(day) ?? 0) + row._count.id);
   }
 
-  // Views last 7 days come from the in-memory Redis layer (best-effort)
-  const viewsLast7Days = days.map((day) => {
-    const key = `daily:view:post:${postId}:${day}`;
-    return redisGet(key);
-  });
+  // Buffered (un-flushed) per-day views from the Redis counter layer (best-effort).
+  const viewsLast7Days = await Promise.all(
+    days.map((day) => readDailyBuffer('post', postId, day))
+  );
 
   const likesLast7Days = days.map((day) => likesMap.get(day) ?? 0);
 
@@ -355,8 +452,7 @@ export async function getRepositoryAnalytics(
   repoId: string,
   userId: string
 ): Promise<RepoAnalytics> {
-  // NOTE: Repository schema does not yet have userId/viewCount/starCount/forkCount.
-  // We use claimedBy as the ownership field and stars/forks from the GitHub data.
+  // Ownership is tracked via claimedBy; views/stars/forks read from the repo row.
   const repo = await prisma.repository.findUnique({
     where: { id: repoId },
     select: {
@@ -364,6 +460,7 @@ export async function getRepositoryAnalytics(
       claimedBy: true,
       stars: true,
       forks: true,
+      viewsCount: true,
     },
   });
 
@@ -376,19 +473,55 @@ export async function getRepositoryAnalytics(
   }
 
   const days = buildLast7DaysBuckets();
+  const since = sevenDaysAgo();
 
-  const viewsLast7Days = days.map((day) => {
-    const key = `daily:view:repo:${repoId}:${day}`;
-    return redisGet(key);
-  });
+  // Live (un-flushed) view counts buffered in Redis, keyed per day.
+  const bufferedViewsLast7Days = await Promise.all(
+    days.map((day) => readDailyBuffer('repo', repoId, day))
+  );
+
+  // Persisted per-path view rows + recent stars, fetched in parallel.
+  const [pathViews, recentStars] = await Promise.all([
+    prisma.repositoryPathView.findMany({
+      where: { repositoryId: repoId, date: { gte: since } },
+      select: { views: true, date: true },
+    }),
+    prisma.star.findMany({
+      where: { repositoryId: repoId, createdAt: { gte: since } },
+      select: { createdAt: true, userId: true },
+    }),
+  ]);
+
+  // Persisted views per day-bucket merged with the in-memory buffer.
+  const persistedViewsByDay = new Map<string, number>();
+  for (const row of pathViews) {
+    const key = row.date.toISOString().slice(0, 10);
+    persistedViewsByDay.set(key, (persistedViewsByDay.get(key) ?? 0) + row.views);
+  }
+
+  const viewsLast7Days = days.map(
+    (day, i) => (persistedViewsByDay.get(day) ?? 0) + bufferedViewsLast7Days[i]
+  );
+
+  // Stars created per day over the window.
+  const starsByDay = new Map<string, number>();
+  for (const star of recentStars) {
+    const key = star.createdAt.toISOString().slice(0, 10);
+    starsByDay.set(key, (starsByDay.get(key) ?? 0) + 1);
+  }
+  const starsLast7Days = days.map((day) => starsByDay.get(day) ?? 0);
+
+  // Unique viewers approximated from distinct users who starred in the window
+  // (the only per-user repository signal currently tracked).
+  const uniqueViewers = new Set(recentStars.map((s) => s.userId)).size;
 
   return {
     repoId,
-    views: 0, // viewsCount field not yet in schema
+    views: repo.viewsCount ?? 0,
     stars: repo.stars ?? 0,
     forks: repo.forks ?? 0,
     viewsLast7Days,
-    starsLast7Days: days.map(() => 0), // star history requires Star model (not yet in schema)
-    uniqueViewers: 0, // requires Star model (not yet in schema)
+    starsLast7Days,
+    uniqueViewers,
   };
 }

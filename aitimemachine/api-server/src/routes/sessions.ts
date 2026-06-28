@@ -47,8 +47,15 @@ interface RevokeAllResponse {
 /**
  * Transform internal session info to API response format
  * Uses sync version of getLocationFromIp for immediate response
+ *
+ * @param session         The session to format.
+ * @param currentSessionId The id of the request's own session, when known, so
+ *                         it can be flagged as the current device.
  */
-function formatSession(session: SessionInfo): SessionResponse {
+function formatSession(
+  session: SessionInfo,
+  currentSessionId?: string
+): SessionResponse {
   // Import the sync version for immediate response
   const { getLocationFromIpSync } = require("../services/sessionManager.js");
   return {
@@ -59,7 +66,9 @@ function formatSession(session: SessionInfo): SessionResponse {
     last_active: session.lastActiveAt?.toISOString() || null,
     created_at: session.createdAt?.toISOString() || null,
     expires_at: session.expiresAt.toISOString(),
-    is_current: session.isCurrent || false,
+    is_current:
+      session.isCurrent ||
+      (currentSessionId !== undefined && session.id === currentSessionId),
   };
 }
 
@@ -71,12 +80,20 @@ router.get("/", apiKeyAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user!.userId;
 
-    // Note: In a full implementation, we would track the current session ID
-    // through the API key or session token. For now, we don't mark any as current.
+    // The current session is identified by the session token used to
+    // authenticate this request (set by the auth middleware as req.sessionId).
+    // Clients using a raw API key without a session token can also pass their
+    // session id explicitly via the X-Session-Id header.
+    const headerSessionId =
+      typeof req.headers["x-session-id"] === "string"
+        ? req.headers["x-session-id"]
+        : undefined;
+    const currentSessionId = req.sessionId ?? headerSessionId;
+
     const sessions = await getUserSessions(userId);
 
     const response: ListSessionsResponse = {
-      sessions: sessions.map(formatSession),
+      sessions: sessions.map((s) => formatSession(s, currentSessionId)),
       total: sessions.length,
     };
 

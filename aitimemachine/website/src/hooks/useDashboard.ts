@@ -277,6 +277,32 @@ export function useSubscription() {
   };
 }
 
+export interface Invoice {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  status: string;
+  productName: string;
+}
+
+export function useInvoices(enabled: boolean = true) {
+  const { data, error, isLoading, mutate } = useSWR<{ invoices: Invoice[] }>(
+    enabled ? '/api/billing/invoices' : null,
+    fetcher,
+    {
+      revalidateOnFocus: true,
+    }
+  );
+
+  return {
+    invoices: data?.invoices || [],
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
 export interface Session {
   id: string;
   device: string;

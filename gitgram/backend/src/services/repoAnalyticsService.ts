@@ -1,41 +1,27 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import {
+  counterIncr,
+  counterGet,
+  counterSetAdd,
+  counterSetSize,
+} from '../utils/viewCounter';
 
 // ============================================
-// Mock Redis (Map-based; swap for redisService when ready)
-// Mirrors the same pattern used in analyticsService.ts
+// View buffering & periodic DB flush
 // ============================================
+//
+// View counts are buffered in Redis (shared, restart-safe) and periodically
+// flushed to Postgres: Repository.viewsCount (lifetime total) and
+// RepositoryPathView (per-path daily rollup for the "popular content" panel).
 
-interface CacheEntry {
-  value: number;
-  expiresAt: number;
-}
-
-const mockRedis = new Map<string, CacheEntry>();
-const pendingViewFlushes = new Map<string, { repoId: string; delta: number }>();
-
-function redisIncr(key: string, ttlMs: number): number {
-  const now = Date.now();
-  const entry = mockRedis.get(key);
-  if (entry && entry.expiresAt > now) {
-    entry.value += 1;
-    return entry.value;
-  }
-  mockRedis.set(key, { value: 1, expiresAt: now + ttlMs });
-  return 1;
-}
-
-function redisGet(key: string): number {
-  const now = Date.now();
-  const entry = mockRedis.get(key);
-  if (entry && entry.expiresAt > now) {
-    return entry.value;
-  }
-  mockRedis.delete(key);
-  return 0;
-}
-
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEDUPE_TTL_MS = 60 * 60 * 1000; // 1 hour per-viewer dedupe window
+const DAILY_TTL_MS = (25 * DAY_MS) / 24; // bucket survives a full calendar day
+const UNIQUE_TTL_MS = 90 * DAY_MS; // unique-viewer sets retained for 90 days
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
+
+const pendingViewFlushes = new Map<string, { repoId: string; delta: number }>();
 
 async function flushViewsToDB(): Promise<void> {
   if (pendingViewFlushes.size === 0) return;
@@ -43,10 +29,30 @@ async function flushViewsToDB(): Promise<void> {
   const snapshot = new Map(pendingViewFlushes);
   pendingViewFlushes.clear();
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayStr = today.toISOString().slice(0, 10);
+
   for (const [, payload] of snapshot) {
     try {
-      // NOTE: viewsCount/viewCount field not yet in Repository schema; log and skip
-      logger.warn('repoAnalyticsService: repository viewCount flush skipped (field not in schema)', { repoId: payload.repoId });
+      await prisma.$transaction([
+        prisma.repository.update({
+          where: { id: payload.repoId },
+          data: { viewsCount: { increment: payload.delta } },
+        }),
+        prisma.repositoryPathView.upsert({
+          // Aggregate repo-level views under a synthetic "/" path per day.
+          where: { id: `${payload.repoId}:/:${dayStr}` },
+          create: {
+            id: `${payload.repoId}:/:${dayStr}`,
+            repositoryId: payload.repoId,
+            path: '/',
+            views: payload.delta,
+            date: today,
+          },
+          update: { views: { increment: payload.delta } },
+        }),
+      ]);
     } catch (error) {
       logger.error('repoAnalyticsService: DB flush error', { error, payload });
     }
@@ -140,10 +146,15 @@ function daysAgo(n: number): Date {
 async function resolveRepo(
   owner: string,
   name: string
-): Promise<{ id: string; claimedBy: string | null; stars: number; forks: number } | null> {
+): Promise<{
+  id: string;
+  claimedBy: string | null;
+  stars: number;
+  forks: number;
+  viewsCount: number;
+} | null> {
   // Repository.owner is the GitHub owner string — match on owner + name directly.
-  // NOTE: Repository does not have a userId/viewCount/starCount/forkCount field in the
-  // current schema; use owner/name lookup and claimedBy for ownership checks.
+  // claimedBy is used for ownership checks.
   return prisma.repository.findFirst({
     where: { owner, name },
     select: {
@@ -151,6 +162,7 @@ async function resolveRepo(
       claimedBy: true,
       stars: true,
       forks: true,
+      viewsCount: true,
     },
   });
 }
@@ -174,7 +186,7 @@ export async function trackRepositoryView(
     const viewerKey = userId ?? 'anon';
     const dedupeKey = `view:repo:${repoId}:${viewerKey}:${hourKey}`;
 
-    const count = redisIncr(dedupeKey, 60 * 60 * 1000); // 1-hour TTL
+    const count = await counterIncr(dedupeKey, DEDUPE_TTL_MS);
     if (count > 1) {
       return;
     }
@@ -182,9 +194,13 @@ export async function trackRepositoryView(
     // Increment the daily bucket for traffic queries
     const day = new Date().toISOString().slice(0, 10);
     const dailyKey = `daily:view:repo:${repoId}:${day}`;
-    redisIncr(dailyKey, 25 * 60 * 60 * 1000); // 25-hour TTL so the bucket survives the full day
+    await counterIncr(dailyKey, DAILY_TTL_MS);
 
-    // Buffer for DB flush
+    // Track unique viewers per day and over the rolling 90-day window.
+    await counterSetAdd(`unique:view:repo:${repoId}:${day}`, viewerKey, DAILY_TTL_MS);
+    await counterSetAdd(`unique:view:repo:${repoId}:lifetime`, viewerKey, UNIQUE_TTL_MS);
+
+    // Buffer for DB flush (lifetime viewsCount + per-day path rollup)
     const flushKey = `flush:repo:${repoId}`;
     const existing = pendingViewFlushes.get(flushKey);
     if (existing) {
@@ -207,6 +223,43 @@ export async function trackRepositoryView(
     }
   } catch (error) {
     logger.error('repoAnalyticsService: trackRepositoryView error', { error, repoId });
+  }
+}
+
+/**
+ * Record a clone event for the given repository.
+ * Deduplicates per cloner per day; persists a daily clone rollup row.
+ */
+export async function trackRepositoryClone(
+  repoId: string,
+  clonerId: string | null
+): Promise<void> {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const clonerKey = clonerId ?? 'anon';
+
+    const dedupeKey = `clone:repo:${repoId}:${clonerKey}:${day}`;
+    const count = await counterIncr(dedupeKey, DAY_MS);
+    const isUnique = count === 1;
+
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+
+    await prisma.repositoryClone.upsert({
+      where: { repoId_date: { repositoryId: repoId, date } },
+      create: {
+        repositoryId: repoId,
+        date,
+        count: 1,
+        uniqueCount: isUnique ? 1 : 0,
+      },
+      update: {
+        count: { increment: 1 },
+        ...(isUnique ? { uniqueCount: { increment: 1 } } : {}),
+      },
+    });
+  } catch (error) {
+    logger.error('repoAnalyticsService: trackRepositoryClone error', { error, repoId });
   }
 }
 
@@ -234,19 +287,40 @@ export async function getRepositoryAnalyticsOverview(
   }
 
   const days7 = buildDayBuckets(7);
+  const since = daysAgo(7);
 
-  const traffic: TrafficBucket[] = days7.map((day) => ({
+  // Buffered (un-flushed) daily counts + persisted historical path-view totals.
+  const [bufferedCounts, persistedRows, cloneAgg, uniqueViewers] = await Promise.all([
+    Promise.all(days7.map((day) => counterGet(`daily:view:repo:${repo.id}:${day}`))),
+    prisma.repositoryPathView.findMany({
+      where: { repositoryId: repo.id, date: { gte: since } },
+      select: { views: true, date: true },
+    }),
+    prisma.repositoryClone.aggregate({
+      where: { repositoryId: repo.id },
+      _sum: { count: true },
+    }),
+    counterSetSize(`unique:view:repo:${repo.id}:lifetime`),
+  ]);
+
+  const persistedByDay = new Map<string, number>();
+  for (const row of persistedRows) {
+    const key = row.date.toISOString().slice(0, 10);
+    persistedByDay.set(key, (persistedByDay.get(key) ?? 0) + row.views);
+  }
+
+  const traffic: TrafficBucket[] = days7.map((day, i) => ({
     period: day,
-    count: redisGet(`daily:view:repo:${repo.id}:${day}`),
+    count: (persistedByDay.get(day) ?? 0) + bufferedCounts[i],
   }));
 
   return {
     repoId: repo.id,
-    views: 0, // viewsCount field not yet in Repository schema
-    clones: 0, // placeholder — requires a dedicated clone-tracking table
+    views: repo.viewsCount ?? 0,
+    clones: cloneAgg._sum.count ?? 0,
     stars: repo.stars ?? 0,
     forks: repo.forks ?? 0,
-    uniqueViewers: 0,
+    uniqueViewers,
     traffic,
   };
 }
@@ -272,13 +346,29 @@ export async function getTrafficData(
   }
 
   const period = parsePeriod(periodRaw);
-  const days = buildDayBuckets(periodToDays(period));
+  const numDays = periodToDays(period);
+  const days = buildDayBuckets(numDays);
+  const since = daysAgo(numDays);
 
-  const daily: DailyTraffic[] = days.map((date) => {
-    const total = redisGet(`daily:view:repo:${repo.id}:${date}`);
-    // Unique per-day approximated as 70% of total (replace with a proper unique-view log when available)
-    const unique = Math.round(total * 0.7);
-    return { date, views: total, unique };
+  const [bufferedTotals, bufferedUniques, persistedRows] = await Promise.all([
+    Promise.all(days.map((date) => counterGet(`daily:view:repo:${repo.id}:${date}`))),
+    Promise.all(days.map((date) => counterSetSize(`unique:view:repo:${repo.id}:${date}`))),
+    prisma.repositoryPathView.findMany({
+      where: { repositoryId: repo.id, date: { gte: since } },
+      select: { views: true, date: true },
+    }),
+  ]);
+
+  const persistedByDay = new Map<string, number>();
+  for (const row of persistedRows) {
+    const key = row.date.toISOString().slice(0, 10);
+    persistedByDay.set(key, (persistedByDay.get(key) ?? 0) + row.views);
+  }
+
+  const daily: DailyTraffic[] = days.map((date, i) => {
+    const views = (persistedByDay.get(date) ?? 0) + bufferedTotals[i];
+    const unique = Math.min(bufferedUniques[i], views);
+    return { date, views, unique };
   });
 
   return { daily };

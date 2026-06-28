@@ -187,6 +187,29 @@ export class GitHubService {
     }
 
     /**
+     * Get the per-language byte breakdown for a repository.
+     * Returns a map of language name -> bytes, as reported by the GitHub API.
+     */
+    async getRepositoryLanguages(owner: string, repo: string): Promise<Record<string, number>> {
+        const cacheKey = `github:languages:${owner}/${repo}`;
+
+        if (this.redis) {
+            const cached = await this.redis.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        }
+
+        const { data } = await this.octokit.repos.listLanguages({ owner, repo });
+
+        if (this.redis) {
+            await this.redis.setex(cacheKey, CACHE_TTL.REPOSITORY, JSON.stringify(data));
+        }
+
+        return data;
+    }
+
+    /**
      * Get repositories by language
      */
     async getRepositoriesByLanguage(language: string, limit: number = 30) {

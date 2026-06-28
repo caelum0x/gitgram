@@ -71,6 +71,40 @@ const PLAN_FEATURES = {
   team: ['50 GB per user', '500K API requests/mo', 'Team collaboration', 'SSO & SAML'],
 };
 
+interface UsageMetric {
+  used: number;
+  limit: number;
+}
+
+interface UsageState {
+  apiRequests: UsageMetric;
+  storage: UsageMetric;
+  projects: UsageMetric;
+  checkpoints: UsageMetric;
+}
+
+// Shape returned by GET /api/usage
+interface UsageApiResponse {
+  apiRequests: { used: number; limit: number };
+  storage: { used: number; limit: number; unit: string };
+  checkpoints: { used: number; limit: number | null };
+  projects: { used: number; limit: number | null };
+}
+
+// Convert a storage value in the reported unit (GB/MB) to raw bytes so the
+// component can render it with formatBytes consistently.
+function storageToBytes(value: number, unit: string): number {
+  const normalized = unit.toUpperCase();
+  if (normalized === 'GB') return value * 1024 * 1024 * 1024;
+  if (normalized === 'MB') return value * 1024 * 1024;
+  if (normalized === 'KB') return value * 1024;
+  return value;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unexpected error';
+}
+
 interface SubscriptionStatusProps {
   variant?: 'compact' | 'full';
   showUsage?: boolean;
@@ -85,18 +119,14 @@ export default function SubscriptionStatus({
   const [error, setError] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-
-  // Mock usage data - in production, fetch from API
-  const [usage] = useState({
-    apiRequests: { used: 67000, limit: 100000 },
-    storage: { used: 2.4 * 1024 * 1024 * 1024, limit: 10 * 1024 * 1024 * 1024 },
-    projects: { used: 3, limit: -1 },
-    checkpoints: { used: 847, limit: -1 },
-  });
+  const [usage, setUsage] = useState<UsageState | null>(null);
 
   useEffect(() => {
     fetchSubscription();
-  }, []);
+    if (showUsage) {
+      fetchUsage();
+    }
+  }, [showUsage]);
 
   const fetchSubscription = async () => {
     try {
@@ -106,10 +136,33 @@ export default function SubscriptionStatus({
       }
       const subscriptionData = await response.json();
       setData(subscriptionData);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUsage = async () => {
+    try {
+      const response = await fetch('/api/usage');
+      if (!response.ok) {
+        throw new Error('Failed to fetch usage');
+      }
+      const u: UsageApiResponse = await response.json();
+      setUsage({
+        apiRequests: { used: u.apiRequests.used, limit: u.apiRequests.limit },
+        storage: {
+          used: storageToBytes(u.storage.used, u.storage.unit),
+          limit: storageToBytes(u.storage.limit, u.storage.unit),
+        },
+        projects: { used: u.projects.used, limit: u.projects.limit ?? -1 },
+        checkpoints: { used: u.checkpoints.used, limit: u.checkpoints.limit ?? -1 },
+      });
+    } catch {
+      // Usage is non-critical: leave it null and the usage block renders a
+      // graceful empty state rather than blocking the subscription view.
+      setUsage(null);
     }
   };
 
@@ -125,8 +178,8 @@ export default function SubscriptionStatus({
       }
       const { portalUrl } = await response.json();
       window.location.href = portalUrl;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
       setPortalLoading(false);
     }
   };
@@ -145,10 +198,15 @@ export default function SubscriptionStatus({
       }
       const { checkoutUrl } = await response.json();
       window.location.href = checkoutUrl;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
       setCheckoutLoading(null);
     }
+  };
+
+  const usagePercent = (metric: UsageMetric): number => {
+    if (metric.limit <= 0) return 0;
+    return Math.min((metric.used / metric.limit) * 100, 100);
   };
 
   if (loading) {
@@ -308,7 +366,7 @@ export default function SubscriptionStatus({
       )}
 
       {/* Usage stats (for paid plans) */}
-      {showUsage && plan !== 'free' && (
+      {showUsage && plan !== 'free' && usage && (
         <div className="space-y-4">
           <h3 className="text-sm font-medium text-gray-300">Usage this month</h3>
           <div className="grid gap-4">
@@ -320,10 +378,7 @@ export default function SubscriptionStatus({
                   {formatNumber(usage.apiRequests.used)} / {formatNumber(usage.apiRequests.limit)}
                 </span>
               </div>
-              <Progress
-                value={(usage.apiRequests.used / usage.apiRequests.limit) * 100}
-                className="h-1.5"
-              />
+              <Progress value={usagePercent(usage.apiRequests)} className="h-1.5" />
             </div>
 
             {/* Storage */}
@@ -334,10 +389,7 @@ export default function SubscriptionStatus({
                   {formatBytes(usage.storage.used)} / {formatBytes(usage.storage.limit)}
                 </span>
               </div>
-              <Progress
-                value={(usage.storage.used / usage.storage.limit) * 100}
-                className="h-1.5"
-              />
+              <Progress value={usagePercent(usage.storage)} className="h-1.5" />
             </div>
 
             {/* Projects & Checkpoints (for unlimited plans) */}

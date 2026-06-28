@@ -96,13 +96,81 @@ export default function SettingsPage() {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Load persisted notifications + preferences on mount.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('load failed'))))
+      .then((data: {
+        autoSync?: boolean;
+        compress?: boolean;
+        retainDays?: number;
+        timezone?: string;
+        weeklySummary?: boolean;
+        notifications?: Record<string, boolean>;
+      }) => {
+        if (cancelled) return;
+        setPreferences((prev) => ({
+          autoSync: data.autoSync ?? prev.autoSync,
+          compressCheckpoints: data.compress ?? prev.compressCheckpoints,
+          retainDays: data.retainDays ?? prev.retainDays,
+          timezone: data.timezone || prev.timezone,
+        }));
+        const stored = data.notifications;
+        if (stored && typeof stored === 'object') {
+          setNotifications((prev) =>
+            prev.map((n) =>
+              typeof stored[n.id] === 'boolean' ? { ...n, enabled: stored[n.id] } : n,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        // Backend unavailable: keep defaults; surfaced only on save.
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
-      // API call would go here
-      await new Promise(r => setTimeout(r, 500));
+      const notificationMap = notifications.reduce<Record<string, boolean>>(
+        (acc, n) => {
+          acc[n.id] = n.enabled;
+          return acc;
+        },
+        {},
+      );
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autoSync: preferences.autoSync,
+          compress: preferences.compressCheckpoints,
+          retainDays: preferences.retainDays,
+          timezone: preferences.timezone,
+          weeklySummary: notificationMap['weekly_summary'] ?? false,
+          emailNotifications: notificationMap['sync_error'] ?? false,
+          notifications: notificationMap,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Server error ${res.status}`);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -771,7 +839,13 @@ export default function SettingsPage() {
             Settings saved
           </span>
         )}
-        <Button onClick={handleSave} disabled={saving}>
+        {saveError && (
+          <span className="flex items-center gap-2 text-red-400 text-sm">
+            <AlertTriangle className="w-4 h-4" />
+            {saveError}
+          </span>
+        )}
+        <Button onClick={handleSave} disabled={saving || settingsLoading}>
           {saving ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

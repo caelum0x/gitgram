@@ -27,10 +27,15 @@ class FeatureFlagManager {
         await this.client.waitForInitialization();
         this.initialized = true;
         logger.info('LaunchDarkly initialized');
-        
-        // Set up flag change listener
+
+        // Populate the local cache immediately from LaunchDarkly state.
+        await this.syncFlags();
+
+        // Re-sync whenever LaunchDarkly pushes a flag change.
         this.client.on('update', () => {
-          this.syncFlags();
+          this.syncFlags().catch((error: unknown) =>
+            logger.error('featureFlags: update-triggered sync failed', error)
+          );
         });
       } catch (error) {
         logger.warn('LaunchDarkly initialization failed:', error);
@@ -55,11 +60,40 @@ class FeatureFlagManager {
     logger.info('Feature flags initialized (local)');
   }
 
+  /**
+   * Mirrors the current LaunchDarkly flag state into the local cache so that
+   * getAllFlags() and the local fallback path reflect LaunchDarkly values.
+   *
+   * Uses an anonymous context to read the default variations; per-user
+   * variations are still resolved live via client.variation() in isEnabled().
+   */
   private async syncFlags() {
     if (!this.client) return;
 
-    // Sync flags from LaunchDarkly
-    // This would be implemented based on LaunchDarkly API
+    try {
+      // allFlagsState returns the evaluated flag values for the given context.
+      const anonymousContext = { kind: 'user', key: 'anonymous', anonymous: true };
+      const state = await this.client.allFlagsState(anonymousContext);
+
+      if (!state || typeof state.allValues !== 'function') {
+        logger.warn('featureFlags: LaunchDarkly state unavailable during sync');
+        return;
+      }
+
+      const values = state.allValues() as Record<string, unknown>;
+
+      for (const [key, value] of Object.entries(values)) {
+        this.flags.set(key, {
+          key,
+          enabled: value === true,
+          value,
+        });
+      }
+
+      logger.info(`featureFlags: synced ${Object.keys(values).length} flag(s) from LaunchDarkly`);
+    } catch (error) {
+      logger.error('featureFlags: LaunchDarkly sync failed', error);
+    }
   }
 
   // Check if feature is enabled

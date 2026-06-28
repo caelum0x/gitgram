@@ -125,34 +125,10 @@ const TRIGGER_LABELS: Record<TriggerKind, string> = {
   manual: 'Manual',
 }
 
-const SIMULATED_LOG_LINES: Record<string, string[]> = {}
-
-function getSimulatedLogs(jobId: string, jobName: string): string[] {
-  if (SIMULATED_LOG_LINES[jobId]) return SIMULATED_LOG_LINES[jobId]
-
-  const lines = [
-    `[00:00] Starting job: ${jobName}`,
-    '[00:01] Setting up environment...',
-    '[00:02] Pulling Docker image...',
-    '[00:04] Image ready.',
-    '[00:05] Restoring dependency cache...',
-    '[00:07] Cache hit: node_modules',
-    '[00:08] Running: npm ci',
-    '[00:12] Added 842 packages.',
-    '[00:13] Running: npm run lint',
-    '[00:15] Lint passed: 0 errors, 0 warnings',
-    '[00:16] Running: npm run typecheck',
-    '[00:18] TypeScript: no errors found',
-    '[00:19] Running: npm test',
-    '[00:22] Test Suites: 12 passed, 12 total',
-    '[00:22] Tests:       87 passed, 87 total',
-    '[00:22] Snapshots:   0 total',
-    '[00:23] All checks passed.',
-    `[00:23] Job ${jobName} finished successfully.`,
-  ]
-
-  SIMULATED_LOG_LINES[jobId] = lines
-  return lines
+interface JobLogsApiResponse {
+  data: {
+    lines: string[]
+  }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -197,147 +173,25 @@ function sortRuns(runs: PipelineRun[], sort: SortState): PipelineRun[] {
   })
 }
 
-// ─── Fallback data (when API unavailable) ─────────────────────────────────────
-
-function buildFallbackRuns(owner: string, name: string): PipelineRun[] {
-  return [
-    {
-      id: 'run-001',
-      status: 'running',
-      branch: 'main',
-      commitHash: 'a3f9b2c1d4e5f678',
-      commitMessage: 'feat: add pipeline dashboard page',
-      trigger: 'push',
-      durationSeconds: null,
-      startedAt: new Date(Date.now() - 3 * 60 * 1_000).toISOString(),
-      finishedAt: null,
-      actor: { login: owner, avatarUrl: null },
-    },
-    {
-      id: 'run-002',
-      status: 'passing',
-      branch: 'main',
-      commitHash: 'b7c3e1a2f4d59012',
-      commitMessage: 'fix: resolve type errors in repoService',
-      trigger: 'push',
-      durationSeconds: 142,
-      startedAt: new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString(),
-      finishedAt: new Date(Date.now() - 2 * 60 * 60 * 1_000 + 142_000).toISOString(),
-      actor: { login: owner, avatarUrl: null },
-    },
-    {
-      id: 'run-003',
-      status: 'failing',
-      branch: 'feature/dark-mode',
-      commitHash: 'c8d4f2b3a5e67890',
-      commitMessage: 'wip: dark mode toggle component',
-      trigger: 'push',
-      durationSeconds: 87,
-      startedAt: new Date(Date.now() - 4 * 60 * 60 * 1_000).toISOString(),
-      finishedAt: new Date(Date.now() - 4 * 60 * 60 * 1_000 + 87_000).toISOString(),
-      actor: { login: `${name}-bot`, avatarUrl: null },
-    },
-    {
-      id: 'run-004',
-      status: 'passing',
-      branch: 'develop',
-      commitHash: 'd1e5a3c4b6f78901',
-      commitMessage: 'chore: update dependencies',
-      trigger: 'schedule',
-      durationSeconds: 195,
-      startedAt: new Date(Date.now() - 6 * 60 * 60 * 1_000).toISOString(),
-      finishedAt: new Date(Date.now() - 6 * 60 * 60 * 1_000 + 195_000).toISOString(),
-      actor: { login: 'github-actions', avatarUrl: null },
-    },
-    {
-      id: 'run-005',
-      status: 'cancelled',
-      branch: 'feature/notifications',
-      commitHash: 'e2f6b4d5a7c89012',
-      commitMessage: 'feat: real-time notification bell',
-      trigger: 'manual',
-      durationSeconds: 34,
-      startedAt: new Date(Date.now() - 8 * 60 * 60 * 1_000).toISOString(),
-      finishedAt: new Date(Date.now() - 8 * 60 * 60 * 1_000 + 34_000).toISOString(),
-      actor: { login: owner, avatarUrl: null },
-    },
-  ]
-}
-
-function buildFallbackBranchStatuses(): BranchStatus[] {
-  return [
-    {
-      branch: 'main',
-      status: 'passing',
-      lastRunAt: new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString(),
-      runId: 'run-002',
-    },
-    {
-      branch: 'develop',
-      status: 'running',
-      lastRunAt: new Date(Date.now() - 3 * 60 * 1_000).toISOString(),
-      runId: 'run-001',
-    },
-    {
-      branch: 'feature/dark-mode',
-      status: 'failing',
-      lastRunAt: new Date(Date.now() - 4 * 60 * 60 * 1_000).toISOString(),
-      runId: 'run-003',
-    },
-  ]
-}
-
-function buildFallbackJobs(runId: string): PipelineJob[] {
-  const sets: Record<string, PipelineJob[]> = {
-    'run-001': [
-      { id: 'job-001-1', name: 'lint', status: 'passing', durationSeconds: 15, order: 1, parallel: false },
-      { id: 'job-001-2', name: 'typecheck', status: 'passing', durationSeconds: 22, order: 2, parallel: false },
-      { id: 'job-001-3', name: 'test', status: 'running', durationSeconds: null, order: 3, parallel: false },
-      { id: 'job-001-4', name: 'build', status: 'pending', durationSeconds: null, order: 4, parallel: false },
-    ],
-    'run-003': [
-      { id: 'job-003-1', name: 'lint', status: 'passing', durationSeconds: 12, order: 1, parallel: false },
-      { id: 'job-003-2', name: 'typecheck', status: 'failing', durationSeconds: 18, order: 2, parallel: false },
-      { id: 'job-003-3', name: 'test', status: 'cancelled', durationSeconds: null, order: 3, parallel: false },
-      { id: 'job-003-4', name: 'build', status: 'cancelled', durationSeconds: null, order: 4, parallel: false },
-    ],
-  }
-
-  return (
-    sets[runId] ?? [
-      { id: `${runId}-1`, name: 'lint', status: 'passing', durationSeconds: 14, order: 1, parallel: false },
-      { id: `${runId}-2`, name: 'typecheck', status: 'passing', durationSeconds: 20, order: 2, parallel: false },
-      { id: `${runId}-3`, name: 'test', status: 'passing', durationSeconds: 65, order: 3, parallel: false },
-      { id: `${runId}-4`, name: 'build', status: 'passing', durationSeconds: 38, order: 4, parallel: false },
-    ]
-  )
-}
-
 // ─── API functions ─────────────────────────────────────────────────────────────
+//
+// These call the backend pipelines API.  On failure they throw so React Query
+// surfaces a real error state — the page never fabricates pipeline data.
 
 async function fetchPipelines(
   owner: string,
   name: string,
   cursor: string | null
 ): Promise<{ runs: PipelineRun[]; branchStatuses: BranchStatus[]; cursor: string | null; hasMore: boolean }> {
-  try {
-    const params: Record<string, string | number> = { limit: PAGE_SIZE }
-    if (cursor) params.cursor = cursor
+  const params: Record<string, string | number> = { limit: PAGE_SIZE }
+  if (cursor) params.cursor = cursor
 
-    const response = await api.get<PipelinesApiResponse>(
-      `/v1/repositories/${owner}/${name}/pipelines`,
-      { params }
-    )
+  const response = await api.get<PipelinesApiResponse>(
+    `/v1/repositories/${owner}/${name}/pipelines`,
+    { params }
+  )
 
-    return response.data.data
-  } catch {
-    return {
-      runs: buildFallbackRuns(owner, name),
-      branchStatuses: buildFallbackBranchStatuses(),
-      cursor: null,
-      hasMore: false,
-    }
-  }
+  return response.data.data
 }
 
 async function fetchJobs(
@@ -345,14 +199,22 @@ async function fetchJobs(
   name: string,
   runId: string
 ): Promise<PipelineJob[]> {
-  try {
-    const response = await api.get<JobsApiResponse>(
-      `/v1/repositories/${owner}/${name}/pipelines/${runId}/jobs`
-    )
-    return response.data.data.jobs
-  } catch {
-    return buildFallbackJobs(runId)
-  }
+  const response = await api.get<JobsApiResponse>(
+    `/v1/repositories/${owner}/${name}/pipelines/${runId}/jobs`
+  )
+  return response.data.data.jobs
+}
+
+async function fetchJobLogs(
+  owner: string,
+  name: string,
+  runId: string,
+  jobId: string
+): Promise<string[]> {
+  const response = await api.get<JobLogsApiResponse>(
+    `/v1/repositories/${owner}/${name}/pipelines/${runId}/jobs/${jobId}/logs`
+  )
+  return response.data.data.lines
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -428,11 +290,22 @@ function JobBadge({ status }: JobBadgeProps) {
 interface LogModalProps {
   jobName: string
   jobId: string
+  owner: string
+  repoName: string
+  runId: string
   onClose: () => void
 }
 
-function LogModal({ jobName, jobId, onClose }: LogModalProps) {
-  const lines = getSimulatedLogs(jobId, jobName)
+function LogModal({ jobName, jobId, owner, repoName, runId, onClose }: LogModalProps) {
+  const {
+    data: lines,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ['pipeline-job-logs', owner, repoName, runId, jobId],
+    queryFn: () => fetchJobLogs(owner, repoName, runId, jobId),
+    staleTime: 30_000,
+  })
 
   return (
     <div
@@ -512,7 +385,18 @@ function LogModal({ jobName, jobId, onClose }: LogModalProps) {
             backgroundColor: '#0d1117',
           }}
         >
-          {lines.map((line, i) => (
+          {isLoading && (
+            <p style={{ color: '#8b949e' }}>Loading logs…</p>
+          )}
+          {isError && (
+            <p style={{ color: '#f85149' }}>
+              Could not load logs for this job. The CI backend may be unavailable.
+            </p>
+          )}
+          {!isLoading && !isError && (lines?.length ?? 0) === 0 && (
+            <p style={{ color: '#8b949e' }}>No logs are available for this job.</p>
+          )}
+          {!isLoading && !isError && (lines ?? []).map((line, i) => (
             <div key={i} style={{ display: 'flex', gap: 12 }}>
               <span style={{ color: '#6e7681', userSelect: 'none', flexShrink: 0, width: 28, textAlign: 'right' }}>
                 {i + 1}
@@ -539,7 +423,7 @@ interface JobBreakdownProps {
 function JobBreakdown({ owner, repoName, runId }: JobBreakdownProps) {
   const [logModal, setLogModal] = useState<{ jobId: string; jobName: string } | null>(null)
 
-  const { data: jobs, isLoading } = useQuery({
+  const { data: jobs, isLoading, isError } = useQuery({
     queryKey: ['pipeline-jobs', owner, repoName, runId],
     queryFn: () => fetchJobs(owner, repoName, runId),
     staleTime: 15_000,
@@ -559,6 +443,16 @@ function JobBreakdown({ owner, repoName, runId }: JobBreakdownProps) {
           }}
         />
         <span style={{ color: '#8b949e', fontSize: 13 }}>Loading jobs…</span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div style={{ padding: '12px 16px', backgroundColor: '#0d1117', borderTop: '1px solid #21262d' }}>
+        <span style={{ color: '#f85149', fontSize: 13 }}>
+          Could not load jobs for this run.
+        </span>
       </div>
     )
   }
@@ -641,6 +535,9 @@ function JobBreakdown({ owner, repoName, runId }: JobBreakdownProps) {
         <LogModal
           jobId={logModal.jobId}
           jobName={logModal.jobName}
+          owner={owner}
+          repoName={repoName}
+          runId={runId}
           onClose={() => setLogModal(null)}
         />
       )}
@@ -807,6 +704,12 @@ function BranchSidebar({ statuses, owner, repoName }: BranchSidebarProps) {
       <h2 style={{ color: '#c9d1d9', fontSize: 13, fontWeight: 700, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         Branches
       </h2>
+
+      {statuses.length === 0 && (
+        <p style={{ color: '#6e7681', fontSize: 12, margin: 0 }}>
+          No branch activity yet.
+        </p>
+      )}
 
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {statuses.map((bs) => {
@@ -1033,7 +936,7 @@ export default function PipelinesPage() {
   const [isFetchingMore, setIsFetchingMore] = useState(false)
   const [sort, setSort] = useState<SortState>({ key: 'startedAt', dir: 'desc' })
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['pipelines', owner, repoName],
     queryFn: () => fetchPipelines(owner, repoName, null),
     staleTime: 15_000,
@@ -1083,7 +986,7 @@ export default function PipelinesPage() {
   const latestRuns = allRuns.slice(0, 5)
   const displayedActiveRuns = activeRuns.length > 0 ? activeRuns : latestRuns
 
-  const branchStatuses = data?.branchStatuses ?? buildFallbackBranchStatuses()
+  const branchStatuses = data?.branchStatuses ?? []
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -1103,6 +1006,68 @@ export default function PipelinesPage() {
           }}
           aria-label="Loading pipelines"
         />
+      </div>
+    )
+  }
+
+  // ── Error state ──────────────────────────────────────────────────────────
+  // The CI backend is unavailable.  Show a real error with retry instead of
+  // fabricating pipeline runs.
+
+  if (isError && allRuns.length === 0) {
+    return (
+      <div
+        style={{ backgroundColor: '#0a0c10', minHeight: '100vh', color: '#c9d1d9', padding: '24px 16px' }}
+      >
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+            <Link
+              href={`/${owner}/${repoName}`}
+              style={{ color: '#58a6ff', fontSize: 14, textDecoration: 'none' }}
+            >
+              {owner}/{repoName}
+            </Link>
+            <span style={{ color: '#6e7681' }}>/</span>
+            <span style={{ color: '#c9d1d9', fontSize: 14, fontWeight: 600 }}>Pipelines</span>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#161b22',
+              border: '1px solid #21262d',
+              borderRadius: 12,
+              padding: '40px 24px',
+              textAlign: 'center',
+            }}
+            role="alert"
+          >
+            <p style={{ fontSize: 32, margin: '0 0 12px' }} aria-hidden="true">⚠️</p>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3', margin: '0 0 8px' }}>
+              Pipelines are unavailable
+            </h1>
+            <p style={{ color: '#8b949e', fontSize: 14, margin: '0 0 20px', maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}>
+              We couldn&apos;t load CI/CD pipeline data for this repository.
+              The service may be offline or no pipelines have been configured.
+            </p>
+            <button
+              onClick={() => { void refetch() }}
+              disabled={isRefetching}
+              style={{
+                backgroundColor: '#238636',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '8px 20px',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: isRefetching ? 'not-allowed' : 'pointer',
+                opacity: isRefetching ? 0.6 : 1,
+              }}
+            >
+              {isRefetching ? 'Retrying…' : 'Retry'}
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

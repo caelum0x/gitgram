@@ -35,7 +35,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { formatNumber, formatBytes } from '@/lib/utils';
-import { useSubscription, useUsage } from '@/hooks/useDashboard';
+import { useSubscription, useUsage, useInvoices } from '@/hooks/useDashboard';
 
 // Plan definitions
 const PLANS = [
@@ -126,6 +126,28 @@ export default function BillingPage() {
   const isLoading = subscriptionLoading || usageLoading;
   const currentPlan = PLANS.find(p => p.id === subscription?.plan) || PLANS[0];
   const isFreePlan = !subscription || subscription.plan === 'free';
+
+  // Only fetch invoices for paid plans (free plans never have billing history).
+  const { invoices, isLoading: invoicesLoading } = useInvoices(!isFreePlan);
+
+  const formatInvoiceAmount = (amount: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency.toUpperCase(),
+      }).format(amount);
+    } catch {
+      return `${amount.toFixed(2)} ${currency.toUpperCase()}`;
+    }
+  };
+
+  const formatInvoiceDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+
+  const invoiceStatusLabel = (status: string) =>
+    status === 'paid'
+      ? 'Paid'
+      : status.charAt(0).toUpperCase() + status.slice(1);
 
   const handleUpgrade = async (planId: string) => {
     setUpgrading(planId);
@@ -539,19 +561,47 @@ export default function BillingPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="space-y-3">
-                  {/* Sample invoice entries - in production these would come from the API */}
-                  <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Clock className="w-4 h-4 text-gray-400" />
-                      <div>
-                        <p className="text-sm font-medium text-white">January 2026</p>
-                        <p className="text-xs text-gray-400">{currentPlan.name} Plan - ${currentPlan.price}.00</p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">Paid</Badge>
+                {invoicesLoading ? (
+                  <div className="flex items-center justify-center py-6 text-gray-500">
+                    <Loader2 className="w-5 h-5 animate-spin" />
                   </div>
-                </div>
+                ) : invoices.length === 0 ? (
+                  <div className="text-center py-6">
+                    <Clock className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-500">No invoices yet</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Invoices will appear here after your first payment
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {invoices.map((invoice) => (
+                      <div
+                        key={invoice.id}
+                        className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <div>
+                            <p className="text-sm font-medium text-white">
+                              {formatInvoiceDate(invoice.date)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {invoice.productName} -{' '}
+                              {formatInvoiceAmount(invoice.amount, invoice.currency)}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={invoice.status === 'paid' ? 'secondary' : 'warning'}
+                          className="text-xs"
+                        >
+                          {invoiceStatusLabel(invoice.status)}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <Button variant="outline" className="w-full" onClick={handleManageBilling} disabled={portalLoading}>
                   {portalLoading ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

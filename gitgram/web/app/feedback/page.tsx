@@ -74,17 +74,18 @@ export default function FeedbackPage() {
     setSubmitState({ status: 'submitting' })
 
     try {
-      // Note: Screenshot upload would typically require a separate upload endpoint
-      // or be included as base64 in the content. For now, we'll add a note if screenshot exists.
-      let feedbackContent = content
+      // Upload the screenshot first (if any) so the feedback record can
+      // reference the hosted image URL rather than just a filename note.
+      let screenshotUrl: string | undefined
       if (screenshot) {
-        feedbackContent += `\n\n[Screenshot attached: ${screenshot.name}]`
+        screenshotUrl = await feedbackService.uploadScreenshot(screenshot)
       }
 
       await feedbackService.createFeedback({
         type,
         title: title.trim(),
-        content: feedbackContent.trim(),
+        content: content.trim(),
+        screenshotUrl,
       })
 
       setSubmitState({

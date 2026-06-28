@@ -23,6 +23,10 @@ module.exports = {
     '**/__tests__/**/*.(ts|tsx|js)',
     '**/*.(test|spec).(ts|tsx|js)',
   ],
+  // proximity/ is a separate standalone app (its own package.json/node_modules/tsconfig);
+  // it is type-checked and tested under its own config, not the canonical app's.
+  testPathIgnorePatterns: ['/node_modules/', '/proximity/', '/dist/'],
+  modulePathIgnorePatterns: ['<rootDir>/proximity/', '<rootDir>/dist/'],
   coverageThreshold: {
     global: {
       branches: 70,

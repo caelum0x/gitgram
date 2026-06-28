@@ -1,5 +1,4 @@
 import { sendEmail } from '../src/services/emailService';
-import { paymentService } from '../src/services/paymentService';
 import { geocodingService } from '../src/services/geocodingService';
 import { generateSecret, verifyTOTP } from '../src/services/twoFactorService';
 import speakeasy from 'speakeasy';
@@ -32,41 +31,6 @@ describe('Service Layer Tests', () => {
 
       // Should not throw when API key is missing (development mode)
       await expect(sendEmail(options)).resolves.not.toThrow();
-    });
-  });
-
-  describe('Payment Service', () => {
-    it('should create mock payment when credentials not configured', async () => {
-      const originalKey = process.env.DODOPAY_API_KEY;
-      delete process.env.DODOPAY_API_KEY;
-
-      const payment = await paymentService.createPayment({
-        amount: 100,
-        currency: 'USD',
-        description: 'Test payment',
-      });
-
-      expect(payment).toHaveProperty('paymentId');
-      expect(payment).toHaveProperty('status');
-      expect(payment.status).toBe('not_configured');
-
-      if (originalKey) {
-        process.env.DODOPAY_API_KEY = originalKey;
-      }
-    });
-
-    it('should verify payment signature', async () => {
-      const originalKey = process.env.DODOPAY_SECRET_KEY;
-      delete process.env.DODOPAY_SECRET_KEY;
-
-      // Mock verification should work without credentials
-      const verification = await paymentService.verifyPayment('test');
-
-      expect(verification).toHaveProperty('isValid');
-
-      if (originalKey) {
-        process.env.DODOPAY_SECRET_KEY = originalKey;
-      }
     });
   });
 

@@ -1,17 +1,88 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useUser } from '@clerk/nextjs';
 import SubscriptionStatus from '@/components/SubscriptionStatus';
 
+interface AccountSettings {
+  displayName: string;
+  autoSync: boolean;
+  emailNotifications: boolean;
+  weeklySummary: boolean;
+}
+
+const DEFAULT_SETTINGS: AccountSettings = {
+  displayName: '',
+  autoSync: true,
+  emailNotifications: false,
+  weeklySummary: true,
+};
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 export default function SettingsPage() {
-  const [saving, setSaving] = useState(false);
+  const { user } = useUser();
+  const [settings, setSettings] = useState<AccountSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  const email = user?.primaryEmailAddress?.emailAddress ?? '';
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('load failed'))))
+      .then((data: Partial<AccountSettings>) => {
+        if (cancelled) return;
+        setSettings((prev) => ({
+          displayName: data.displayName ?? user?.fullName ?? prev.displayName,
+          autoSync: data.autoSync ?? prev.autoSync,
+          emailNotifications: data.emailNotifications ?? prev.emailNotifications,
+          weeklySummary: data.weeklySummary ?? prev.weeklySummary,
+        }));
+      })
+      .catch(() => {
+        // Backend unavailable: keep defaults; surface only on save.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.fullName]);
+
+  const update = useCallback(
+    <K extends keyof AccountSettings>(key: K, value: AccountSettings[K]) => {
+      setSettings((prev) => ({ ...prev, [key]: value }));
+      setSaveState('idle');
+    },
+    [],
+  );
 
   const handleSave = async () => {
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 500));
-    setSaving(false);
+    setSaveState('saving');
+    setError(null);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Server error ${res.status}`);
+      }
+      setSaveState('saved');
+    } catch (err: unknown) {
+      setSaveState('error');
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
+    }
   };
+
+  const saving = saveState === 'saving';
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -43,16 +114,24 @@ export default function SettingsPage() {
               <input
                 type="email"
                 placeholder="user@example.com"
+                value={email}
+                readOnly
                 disabled
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-gray-400"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Managed by your authentication provider.
+              </p>
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-1">Display Name</label>
               <input
                 type="text"
                 placeholder="Your name"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:border-blue-500 outline-none"
+                value={settings.displayName}
+                onChange={(e) => update('displayName', e.target.value)}
+                disabled={loading}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:border-blue-500 outline-none disabled:opacity-50"
               />
             </div>
           </div>
@@ -64,15 +143,33 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <label className="flex items-center justify-between">
               <span className="text-sm">Auto-sync checkpoints to cloud</span>
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded" />
+              <input
+                type="checkbox"
+                checked={settings.autoSync}
+                onChange={(e) => update('autoSync', e.target.checked)}
+                disabled={loading}
+                className="w-5 h-5 rounded"
+              />
             </label>
             <label className="flex items-center justify-between">
               <span className="text-sm">Email notifications for sync errors</span>
-              <input type="checkbox" className="w-5 h-5 rounded" />
+              <input
+                type="checkbox"
+                checked={settings.emailNotifications}
+                onChange={(e) => update('emailNotifications', e.target.checked)}
+                disabled={loading}
+                className="w-5 h-5 rounded"
+              />
             </label>
             <label className="flex items-center justify-between">
               <span className="text-sm">Weekly usage summary</span>
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded" />
+              <input
+                type="checkbox"
+                checked={settings.weeklySummary}
+                onChange={(e) => update('weeklySummary', e.target.checked)}
+                disabled={loading}
+                className="w-5 h-5 rounded"
+              />
             </label>
           </div>
         </section>
@@ -127,10 +224,16 @@ export default function SettingsPage() {
         </section>
 
         {/* Save */}
-        <div className="mt-8 flex justify-end">
+        <div className="mt-8 flex items-center justify-end gap-4">
+          {saveState === 'saved' && (
+            <span className="text-sm text-green-400">Settings saved.</span>
+          )}
+          {saveState === 'error' && error && (
+            <span className="text-sm text-red-400">{error}</span>
+          )}
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loading}
             className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-medium disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Changes'}

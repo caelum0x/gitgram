@@ -205,6 +205,129 @@ async function extractPdfText(pdfUrl: string): Promise<string | null> {
 }
 
 /**
+ * Maximum age (ms) a paper can stay in "indexing" before the recovery worker
+ * considers it stuck and re-attempts. Guards against a process crash that left
+ * a paper mid-indexing.
+ */
+const STUCK_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Run content indexing for a single paper: mark it indexing, fetch and extract
+ * the PDF, then mark completed (falling back to the abstract on extraction
+ * failure) or failed. Idempotent and safe to re-run for recovery.
+ *
+ * This is intentionally self-contained (catches its own errors) so it can be
+ * driven from a fire-and-forget request path AND from the recovery worker.
+ */
+export async function indexPaperContent(params: {
+  paperId: string;
+  arxivId: string;
+  pdfUrl: string;
+  fallbackAbstract: string;
+}): Promise<"completed" | "failed"> {
+  const { paperId, arxivId, pdfUrl, fallbackAbstract } = params;
+  try {
+    await db
+      .update(schema.researchPapers)
+      .set({ indexStatus: "indexing", updatedAt: new Date() })
+      .where(eq(schema.researchPapers.id, paperId));
+
+    const resolvedUrl = pdfUrl || `https://arxiv.org/pdf/${arxivId}.pdf`;
+    const extractedText = await extractPdfText(resolvedUrl);
+    const content = extractedText || fallbackAbstract;
+    const wordCount = content.split(/\s+/).length;
+
+    await db
+      .update(schema.researchPapers)
+      .set({
+        content,
+        wordCount,
+        indexStatus: "completed",
+        contentHash: crypto.createHash("sha256").update(content).digest("hex"),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.researchPapers.id, paperId));
+    return "completed";
+  } catch (error) {
+    // Fall back to abstract so the paper is still usable; only mark failed if
+    // even the fallback write fails.
+    try {
+      await db
+        .update(schema.researchPapers)
+        .set({
+          content: fallbackAbstract,
+          contentHash: crypto.createHash("sha256").update(fallbackAbstract).digest("hex"),
+          indexStatus: "completed",
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.researchPapers.id, paperId));
+      return "completed";
+    } catch {
+      await db
+        .update(schema.researchPapers)
+        .set({
+          indexStatus: "failed",
+          indexError: error instanceof Error ? error.message : String(error),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.researchPapers.id, paperId));
+      return "failed";
+    }
+  }
+}
+
+/**
+ * Recover papers whose indexing never completed — either because the process
+ * crashed mid-request (leaving them "pending"), or because an "indexing" run
+ * was abandoned (older than {@link STUCK_INDEXING_THRESHOLD_MS}).
+ *
+ * Returns the number of papers re-processed. Designed to be called by a
+ * background worker on an interval.
+ */
+export async function recoverStuckPaperIndexing(limit = 25): Promise<number> {
+  const staleBefore = new Date(Date.now() - STUCK_INDEXING_THRESHOLD_MS);
+
+  const candidates = await db
+    .select({
+      id: schema.researchPapers.id,
+      arxivId: schema.researchPapers.arxivId,
+      abstract: schema.researchPapers.abstract,
+      metadata: schema.researchPapers.metadata,
+      indexStatus: schema.researchPapers.indexStatus,
+      updatedAt: schema.researchPapers.updatedAt,
+    })
+    .from(schema.researchPapers)
+    .where(
+      or(
+        eq(schema.researchPapers.indexStatus, "pending"),
+        and(
+          eq(schema.researchPapers.indexStatus, "indexing"),
+          sql`${schema.researchPapers.updatedAt} < ${staleBefore}`
+        )
+      )
+    )
+    .limit(limit);
+
+  let recovered = 0;
+  for (const paper of candidates) {
+    const metadata = (paper.metadata ?? {}) as { pdfUrl?: string };
+    const pdfUrl = metadata.pdfUrl || `https://arxiv.org/pdf/${paper.arxivId}.pdf`;
+    await indexPaperContent({
+      paperId: paper.id,
+      arxivId: paper.arxivId,
+      pdfUrl,
+      fallbackAbstract: paper.abstract ?? "",
+    });
+    recovered += 1;
+  }
+
+  if (recovered > 0) {
+    logger.info("Recovered stuck research-paper indexing", { recovered });
+  }
+  return recovered;
+}
+
+/**
  * GET /v1/research-papers
  * List indexed research papers with pagination
  */
@@ -375,54 +498,23 @@ router.post(
       })
       .returning();
 
-    // Start async content indexing (fetch PDF and extract text)
-    (async () => {
-      try {
-        await db
-          .update(schema.researchPapers)
-          .set({ indexStatus: "indexing", updatedAt: new Date() })
-          .where(eq(schema.researchPapers.id, paperId));
-
-        const pdfUrl = arxivData.metadata.pdfUrl || `https://arxiv.org/pdf/${parsed.arxivId}.pdf`;
-        const extractedText = await extractPdfText(pdfUrl);
-
-        // Use extracted text, or fall back to abstract if extraction fails
-        const content = extractedText || arxivData.abstract;
-        const wordCount = content.split(/\s+/).length;
-
-        await db
-          .update(schema.researchPapers)
-          .set({
-            content,
-            wordCount,
-            indexStatus: "completed",
-            contentHash: crypto.createHash("sha256").update(content).digest("hex"),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.researchPapers.id, paperId));
-      } catch (error) {
-        // Fall back to abstract on any error
-        try {
-          await db
-            .update(schema.researchPapers)
-            .set({
-              content: arxivData.abstract,
-              indexStatus: "completed",
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.researchPapers.id, paperId));
-        } catch {
-          await db
-            .update(schema.researchPapers)
-            .set({
-              indexStatus: "failed",
-              indexError: (error as Error).message,
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.researchPapers.id, paperId));
-        }
-      }
-    })();
+    // Kick off content indexing immediately (fire-and-forget for fast response).
+    // If the process crashes mid-index, recoverStuckPaperIndexing() — run by the
+    // background "paper-indexing" worker — will re-process this paper, so a paper
+    // can never be permanently stranded in "pending"/"indexing".
+    const pdfUrl = arxivData.metadata.pdfUrl || `https://arxiv.org/pdf/${parsed.arxivId}.pdf`;
+    void indexPaperContent({
+      paperId,
+      arxivId: parsed.arxivId,
+      pdfUrl,
+      fallbackAbstract: arxivData.abstract,
+    }).catch((error: unknown) => {
+      logger.error(
+        "research-paper indexing failed",
+        error instanceof Error ? error : undefined,
+        { paperId, details: String(error) }
+      );
+    });
 
     res.status(201).json({
       id: paper.id,

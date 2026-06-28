@@ -24,6 +24,8 @@ export const repositoryService = {
           language: data.language,
           topics: data.topics || [],
           htmlUrl: data.html_url,
+          isPrivate: data.private ?? false,
+          ownerAvatar: data.owner?.avatar_url ?? null,
           lastFetched: new Date(),
         },
         update: {
@@ -32,6 +34,8 @@ export const repositoryService = {
           forks: data.forks_count,
           language: data.language,
           topics: data.topics || [],
+          isPrivate: data.private ?? false,
+          ownerAvatar: data.owner?.avatar_url ?? null,
           lastFetched: new Date(),
         },
       });

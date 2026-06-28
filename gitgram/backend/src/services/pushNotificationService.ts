@@ -1,5 +1,32 @@
+import webpush from 'web-push';
 import { prisma } from '../utils/prisma';
 import logger from '../utils/logger';
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+const EXPO_PUSH_URL = process.env.EXPO_PUSH_URL || 'https://exp.host/--/api/v2/push/send';
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:support@gitgram.dev';
+
+let webPushConfigured = false;
+
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    webPushConfigured = true;
+    logger.info('[pushNotificationService] Web Push (VAPID) configured');
+  } catch (error) {
+    logger.error('[pushNotificationService] Invalid VAPID configuration', error);
+  }
+} else {
+  logger.warn(
+    '[pushNotificationService] VAPID keys not configured — web push notifications are disabled',
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,15 +76,13 @@ export async function registerWebPushToken(
       pushToken: subscription.endpoint,
       platform: 'WEB',
       active: true,
-      // Store full subscription JSON in deviceName field as a fallback.
-      // In production, use a dedicated webPushSubscription column.
-      deviceName: serialized,
+      webPushSubscription: serialized,
     },
     update: {
       userId,
       active: true,
       lastUsed: new Date(),
-      deviceName: serialized,
+      webPushSubscription: serialized,
     },
   });
 
@@ -101,14 +126,14 @@ export async function registerExpoPushToken(
 async function resolveTargets(userId: string): Promise<NotificationTarget[]> {
   const devices = await prisma.pushDevice.findMany({
     where: { userId, active: true },
-    select: { id: true, pushToken: true, platform: true, deviceName: true },
+    select: { id: true, pushToken: true, platform: true, webPushSubscription: true },
   });
 
   return devices.map((device): NotificationTarget => {
     if (device.platform === 'WEB') {
       let subscription: PushSubscription;
       try {
-        subscription = JSON.parse(device.deviceName ?? '{}') as PushSubscription;
+        subscription = JSON.parse(device.webPushSubscription ?? '{}') as PushSubscription;
       } catch {
         subscription = { endpoint: device.pushToken, keys: { p256dh: '', auth: '' } };
       }
@@ -118,38 +143,111 @@ async function resolveTargets(userId: string): Promise<NotificationTarget[]> {
   });
 }
 
+interface ExpoPushTicket {
+  status: 'ok' | 'error';
+  message?: string;
+  details?: { error?: string };
+}
+
 /**
- * Simulates sending an Expo push notification.
- * Replace the log statement with a real fetch to EXPO_PUSH_URL in production.
+ * Sends an Expo push notification via the Expo Push API.
+ * Returns 'gone' when the device token is no longer registered so the caller
+ * can deactivate it.
  */
 async function dispatchExpo(
   token: string,
   payload: PushNotificationPayload,
 ): Promise<'ok' | 'gone'> {
-  logger.info('[pushNotificationService] EXPO dispatch (simulated)', {
-    to: token.slice(0, 30) + '…',
-    title: payload.title,
-    body: payload.body,
-    data: payload.data,
-  });
-  return 'ok';
+  try {
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: token,
+        title: payload.title,
+        body: payload.body,
+        data: payload.data,
+        sound: 'default',
+        channelId: 'default',
+      }),
+    });
+
+    if (!response.ok) {
+      logger.error('[pushNotificationService] Expo push HTTP error', {
+        status: response.status,
+      });
+      return 'ok';
+    }
+
+    const result = (await response.json()) as { data?: ExpoPushTicket };
+    const ticket = result.data;
+
+    if (ticket?.status === 'error') {
+      if (ticket.details?.error === 'DeviceNotRegistered') {
+        return 'gone';
+      }
+      logger.error('[pushNotificationService] Expo push ticket error', {
+        message: ticket.message,
+      });
+    }
+
+    return 'ok';
+  } catch (error) {
+    logger.error('[pushNotificationService] Expo dispatch failed', error);
+    return 'ok';
+  }
 }
 
 /**
- * Simulates sending a Web Push notification.
- * Replace the log statement with web-push.sendNotification() in production.
+ * Sends a Web Push notification using the VAPID-authenticated web-push library.
+ * Returns 'gone' when the subscription has expired (HTTP 404/410) so the caller
+ * can deactivate the device.
  */
 async function dispatchWebPush(
   subscription: PushSubscription,
   payload: PushNotificationPayload,
 ): Promise<'ok' | 'gone'> {
-  logger.info('[pushNotificationService] WEB PUSH dispatch (simulated)', {
-    endpoint: subscription.endpoint.slice(0, 60) + '…',
-    title: payload.title,
-    body: payload.body,
-    data: payload.data,
-  });
-  return 'ok';
+  if (!webPushConfigured) {
+    logger.warn(
+      '[pushNotificationService] Skipping web push — VAPID not configured',
+    );
+    return 'ok';
+  }
+
+  if (!subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    logger.warn('[pushNotificationService] Skipping web push — incomplete subscription');
+    return 'ok';
+  }
+
+  try {
+    await webpush.sendNotification(
+      subscription,
+      JSON.stringify({
+        title: payload.title,
+        body: payload.body,
+        icon: payload.icon,
+        badge: payload.badge,
+        data: payload.data,
+      }),
+    );
+    return 'ok';
+  } catch (error) {
+    const statusCode =
+      typeof error === 'object' && error !== null && 'statusCode' in error
+        ? (error as { statusCode?: number }).statusCode
+        : undefined;
+
+    if (statusCode === 404 || statusCode === 410) {
+      return 'gone';
+    }
+
+    logger.error('[pushNotificationService] Web push dispatch failed', error);
+    return 'ok';
+  }
 }
 
 /**

@@ -17,20 +17,53 @@ export class DockerCapsuleManager {
   }
 
   async ensureImage(imageRef: string): Promise<{ imageDigest: string }> {
-    // Pull if needed
-    // Note: production: resolve to digest via registry inspect; for now pull and inspect.
+    // Deterministic / offline-friendly resolution:
+    //   1. If the image is already present locally, resolve its digest without
+    //      hitting the registry. This pins to the exact local image and works
+    //      offline (e.g. air-gapped restores).
+    //   2. Otherwise pull, then inspect to obtain the registry digest.
+    // If imageRef already pins a digest (repo@sha256:...), the local inspect in
+    // step 1 returns that digest directly, so we never re-pull a pinned image
+    // that is already cached.
+    const localDigest = await this.resolveLocalDigest(imageRef);
+    if (localDigest) {
+      return { imageDigest: localDigest };
+    }
+
+    await this.pullImage(imageRef);
+
+    const digest = await this.resolveLocalDigest(imageRef);
+    if (!digest) {
+      throw new TmError("TM_CAPSULE_IMAGE_DIGEST_FAILED", "Could not resolve image digest after pull", { imageRef });
+    }
+    return { imageDigest: digest };
+  }
+
+  /**
+   * Resolve an image's digest from the local Docker image store. Returns null
+   * when the image is not present locally (so the caller can pull it).
+   */
+  private async resolveLocalDigest(imageRef: string): Promise<string | null> {
+    try {
+      const info = await this.docker.getImage(imageRef).inspect();
+      // RepoDigests look like ["node@sha256:...."]; fall back to the image Id.
+      return (info.RepoDigests && info.RepoDigests[0]?.split("@")[1]) || info.Id || null;
+    } catch {
+      // Image not present locally.
+      return null;
+    }
+  }
+
+  /** Pull an image, resolving once the pull stream completes. */
+  private async pullImage(imageRef: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      this.docker.pull(imageRef, (err: any, stream: any) => {
-        if (err) return reject(err);
-        this.docker.modem.followProgress(stream, (e: any) => (e ? reject(e) : resolve()));
+      this.docker.pull(imageRef, (err: unknown, stream: NodeJS.ReadableStream) => {
+        if (err) return reject(err instanceof Error ? err : new Error(String(err)));
+        this.docker.modem.followProgress(stream, (e: unknown) =>
+          e ? reject(e instanceof Error ? e : new Error(String(e))) : resolve(),
+        );
       });
     });
-
-    const img = this.docker.getImage(imageRef);
-    const info = await img.inspect();
-    // RepoDigests like ["node@sha256:...."]
-    const digest = (info.RepoDigests && info.RepoDigests[0]?.split("@")[1]) || info.Id;
-    return { imageDigest: digest };
   }
 
   async upsert(params: {

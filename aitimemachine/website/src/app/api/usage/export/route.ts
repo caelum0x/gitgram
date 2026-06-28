@@ -155,7 +155,12 @@ function generateEndpointsCSV(data: UsageData): string {
     endpoint: ep.endpoint,
     count: ep.count,
     percentage: `${ep.percentage.toFixed(1)}%`,
-    avgResponseTime: (Math.random() * 200 + 50).toFixed(0), // Mock avg response time
+    // Only emit a latency value when the backend actually measured one. Never
+    // fabricate a number — an absent metric is reported as "N/A".
+    avgResponseTime:
+      typeof ep.avgResponseTimeMs === 'number'
+        ? ep.avgResponseTimeMs.toFixed(0)
+        : 'N/A',
   }));
 
   return generateCSV(rows, endpointColumns);
@@ -163,7 +168,12 @@ function generateEndpointsCSV(data: UsageData): string {
 
 interface UsageData {
   chartData?: Array<{ date: string; requests: number }>;
-  endpointBreakdown?: Array<{ endpoint: string; count: number; percentage: number }>;
+  endpointBreakdown?: Array<{
+    endpoint: string;
+    count: number;
+    percentage: number;
+    avgResponseTimeMs?: number;
+  }>;
   storageByProject?: Array<{ project: string; size: number; percentage: number }>;
 }
 

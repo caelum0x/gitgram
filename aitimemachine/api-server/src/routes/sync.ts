@@ -22,6 +22,15 @@ import { buildAndStoreTrees } from "../services/treeService.js";
 import type { FileInput } from "../services/treeService.js";
 import { checkConsent } from "../services/consent.js";
 import { logger } from "../lib/monitoring.js";
+import {
+  createSyncCheckpoint,
+  getSyncStatus,
+  pushProjectState,
+  pullProjectState,
+  listDevices,
+  resolveConflict,
+  type ConflictResolution,
+} from "../services/syncService.js";
 
 const router = Router();
 
@@ -872,6 +881,166 @@ router.post("/quota/recalculate", async (req: AuthenticatedRequest, res) => {
   } catch (error) {
     logger.error("Quota recalculation error", error instanceof Error ? error : undefined, { details: String(error) });
     res.status(500).json({ error: "Failed to recalculate storage usage" });
+  }
+});
+
+// ============================================
+// MULTI-DEVICE SYNC
+// ============================================
+
+const deviceStateSchema = z.object({
+  projectPath: z.string().min(1),
+  deviceId: z.string().min(1).max(256).default("default"),
+  gitHash: z.string().max(128).optional(),
+  fileHashes: z.record(z.string(), z.string()).optional(),
+  envVarNames: z.array(z.string()).optional(),
+  branch: z.string().max(256).optional(),
+});
+
+const CONFLICT_RESOLUTIONS = ["keep_local", "keep_remote", "merge"] as const;
+
+const resolveConflictSchema = z.object({
+  checkpointId: z.string().min(1),
+  resolution: z.enum(CONFLICT_RESOLUTIONS),
+});
+
+/**
+ * Create a device sync checkpoint (snapshot of local project state).
+ */
+router.post("/devices/checkpoint", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const parsed = deviceStateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+    const { projectPath, deviceId, gitHash, fileHashes, envVarNames, branch } = parsed.data;
+    const checkpoint = await createSyncCheckpoint(projectPath, userId, deviceId, {
+      gitHash,
+      fileHashes,
+      envVarNames,
+      branch,
+    });
+    res.json({ success: true, checkpoint });
+  } catch (error) {
+    logger.error("Device sync checkpoint error", error instanceof Error ? error : undefined, { details: String(error) });
+    res.status(500).json({ error: "Failed to create sync checkpoint" });
+  }
+});
+
+/**
+ * Get sync status for a device relative to all other devices on a project.
+ */
+router.get("/devices/status", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const projectPath = typeof req.query.projectPath === "string" ? req.query.projectPath : "";
+    const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : "default";
+    if (!projectPath) {
+      return res.status(400).json({ error: "projectPath query parameter is required" });
+    }
+    const status = await getSyncStatus(projectPath, userId, deviceId);
+    res.json({ success: true, status });
+  } catch (error) {
+    logger.error("Device sync status error", error instanceof Error ? error : undefined, { details: String(error) });
+    res.status(500).json({ error: "Failed to fetch sync status" });
+  }
+});
+
+/**
+ * Push local project state to the remote sync record.
+ */
+router.post("/devices/push", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const parsed = deviceStateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+    const { projectPath, deviceId, gitHash, fileHashes, envVarNames, branch } = parsed.data;
+    await pushProjectState(projectPath, userId, deviceId, {
+      gitHash,
+      fileHashes,
+      envVarNames,
+      branch,
+    });
+    res.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Surface conflict errors to the client with a 409
+    if (message.toLowerCase().includes("conflict")) {
+      return res.status(409).json({ error: message });
+    }
+    logger.error("Device sync push error", error instanceof Error ? error : undefined, { details: message });
+    res.status(500).json({ error: "Failed to push project state" });
+  }
+});
+
+/**
+ * Pull the latest remote project state from any other device.
+ */
+router.get("/devices/pull", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const projectPath = typeof req.query.projectPath === "string" ? req.query.projectPath : "";
+    const deviceId = typeof req.query.deviceId === "string" ? req.query.deviceId : "default";
+    if (!projectPath) {
+      return res.status(400).json({ error: "projectPath query parameter is required" });
+    }
+    const state = await pullProjectState(projectPath, userId, deviceId);
+    res.json({ success: true, state });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("not found") || message.includes("No remote state")) {
+      return res.status(404).json({ error: message });
+    }
+    logger.error("Device sync pull error", error instanceof Error ? error : undefined, { details: message });
+    res.status(500).json({ error: "Failed to pull project state" });
+  }
+});
+
+/**
+ * List all devices that have synced (optionally scoped to one project).
+ */
+router.get("/devices", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const projectPath = typeof req.query.projectPath === "string" ? req.query.projectPath : undefined;
+    const devices = await listDevices(userId, projectPath);
+    res.json({ success: true, devices });
+  } catch (error) {
+    logger.error("List devices error", error instanceof Error ? error : undefined, { details: String(error) });
+    res.status(500).json({ error: "Failed to list devices" });
+  }
+});
+
+/**
+ * Resolve a sync conflict on a checkpoint owned by the requesting user.
+ */
+router.post("/devices/resolve-conflict", async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const parsed = resolveConflictSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+    const { checkpointId, resolution } = parsed.data;
+
+    // Verify the checkpoint belongs to the requesting user before mutating it
+    const [owned] = await db
+      .select({ id: schema.checkpoints.id })
+      .from(schema.checkpoints)
+      .where(and(eq(schema.checkpoints.id, checkpointId), eq(schema.checkpoints.userId, userId)))
+      .limit(1);
+    if (!owned) {
+      return res.status(404).json({ error: "Checkpoint not found" });
+    }
+
+    await resolveConflict(checkpointId, resolution as ConflictResolution);
+    res.json({ success: true });
+  } catch (error) {
+    logger.error("Resolve conflict error", error instanceof Error ? error : undefined, { details: String(error) });
+    res.status(500).json({ error: "Failed to resolve conflict" });
   }
 });
 

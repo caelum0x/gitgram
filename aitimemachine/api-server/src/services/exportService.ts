@@ -203,6 +203,67 @@ export async function exportSessionsAsJSON(userId: string): Promise<SessionExpor
   };
 }
 
+/** Current schema version for serialized session backups. */
+export const SESSION_BACKUP_VERSION = 1;
+
+/**
+ * Backup payload for a single session — mirrors {@link SessionExportItem}
+ * with backup-specific metadata. Defined inline to avoid a circular import
+ * with backupService.
+ */
+export interface SessionBackupData {
+  sessionId: string;
+  userId: string;
+  projectId: string;
+  projectPath: string | null;
+  tool: string;
+  createdAt: string;
+  duration: number | null;
+  filesChanged: string[];
+  checkpoints: CheckpointSummary[];
+  backupVersion: number;
+}
+
+/**
+ * Build a complete backup payload for a single session owned by `userId`.
+ * Returns null when the session does not exist or is not owned by the user.
+ */
+export async function buildSessionBackupData(
+  userId: string,
+  sessionId: string
+): Promise<SessionBackupData | null> {
+  const rows = await db
+    .select({
+      session: schema.chatSessions,
+      rootPath: schema.projects.rootPath,
+    })
+    .from(schema.chatSessions)
+    .leftJoin(schema.projects, eq(schema.chatSessions.projectId, schema.projects.id))
+    .where(and(eq(schema.chatSessions.id, sessionId), eq(schema.chatSessions.userId, userId)))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const item = await buildSessionExportItem({
+    session: row.session,
+    rootPath: row.rootPath ?? null,
+  });
+
+  return {
+    sessionId: item.id,
+    userId,
+    projectId: item.projectId,
+    projectPath: item.projectPath,
+    tool: item.tool,
+    createdAt: item.createdAt,
+    duration: item.duration,
+    filesChanged: item.filesChanged,
+    checkpoints: item.checkpoints,
+    backupVersion: SESSION_BACKUP_VERSION,
+  };
+}
+
 /**
  * Returns a Markdown changelog grouped by date, one section per session.
  */

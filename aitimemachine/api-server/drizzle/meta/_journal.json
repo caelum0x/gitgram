@@ -36,6 +36,13 @@
       "when": 1771180120000,
       "tag": "0005_add_saved_context_source",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771180180000,
+      "tag": "0006_add_user_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,42 @@
 import api from './api';
 
+// ---------------------------------------------------------------------------
+// Reading-list types (GET /v1/users/reading-list, DELETE /v1/users/reading-list/:id)
+// ---------------------------------------------------------------------------
+
+export type ReadingStatus = 'unread' | 'reading' | 'read' | 'archived';
+export type ReadingSourceType = 'post' | 'snippet' | 'repository';
+export type ReadingFilter = 'unread' | 'all' | 'archived';
+
+/** A single reading-list entry returned from the API. */
+export interface ReadingItem {
+  /** Id of the reading-list record (used for status updates and removal). */
+  id: string;
+  /** Id of the underlying entity (post/snippet/repository). */
+  entityId: string;
+  sourceType: ReadingSourceType;
+  title: string;
+  author: string | null;
+  /** Estimated reading time in minutes. */
+  estimatedMinutes: number | null;
+  /** ISO timestamp the item was saved. */
+  savedAt: string | null;
+  /** Read progress 0–1. */
+  progress: number;
+  status: ReadingStatus;
+}
+
+export interface ReadingListResponse {
+  items: ReadingItem[];
+  nextPage: number | null;
+}
+
+export interface GetReadingListParams {
+  filter?: ReadingFilter;
+  page?: number;
+  limit?: number;
+}
+
 export const userService = {
   getUser: async (userId: string) => {
     const response = await api.get(`/v1/users/${userId}`);
@@ -191,6 +228,30 @@ export const userService = {
       params: { days },
     });
     return response.data;
+  },
+
+  // ---------------------------------------------------------------------------
+  // Reading list (save-for-later queue)
+  // ---------------------------------------------------------------------------
+
+  getReadingList: async (params: GetReadingListParams = {}): Promise<ReadingListResponse> => {
+    const { filter = 'unread', page = 1, limit = 20 } = params;
+    const response = await api.get<ReadingListResponse>('/v1/users/reading-list', {
+      params: { filter, page, limit },
+    });
+    const data = response.data;
+    return {
+      items: Array.isArray(data?.items) ? data.items : [],
+      nextPage: typeof data?.nextPage === 'number' ? data.nextPage : null,
+    };
+  },
+
+  updateReadingItem: async (id: string, status: ReadingStatus): Promise<void> => {
+    await api.patch(`/v1/users/reading-list/${id}`, { status });
+  },
+
+  removeFromReadingList: async (id: string): Promise<void> => {
+    await api.delete(`/v1/users/reading-list/${id}`);
   },
 };
 

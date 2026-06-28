@@ -37,21 +37,23 @@ export async function scheduleAccountDeletion(
     const scheduledAt = new Date();
     const deletionDate = new Date(scheduledAt.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
-    // Store deletion schedule in metadata (we'll use a separate model or JSON field)
-    // For now, we'll create a moderation log entry to track this
-    await prisma.moderationLog.create({
-      data: {
-        moderatorId: userId, // Self-moderation
-        action: 'ACCOUNT_DELETION_SCHEDULED',
-        targetType: 'USER',
-        targetId: userId,
-        reason: reason || 'User requested account deletion',
-      },
-    });
-
-    // Update user to mark as pending deletion
-    // We'll add this to the user metadata in future schema update
-    // For now, use a convention with bio field or separate tracking
+    // Persist the schedule as the source of truth on the User record, and write
+    // an audit-trail entry to the moderation log.
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { scheduledDeletion: scheduledAt },
+      }),
+      prisma.moderationLog.create({
+        data: {
+          moderatorId: userId, // Self-moderation
+          action: 'ACCOUNT_DELETION_SCHEDULED',
+          targetType: 'USER',
+          targetId: userId,
+          reason: reason || 'User requested account deletion',
+        },
+      }),
+    ]);
 
     // Send confirmation email
     try {
@@ -99,37 +101,33 @@ export async function cancelAccountDeletion(userId: string): Promise<{ success: 
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, username: true },
+      select: { email: true, username: true, scheduledDeletion: true },
     });
 
     if (!user) {
       throw new Error('User not found');
     }
 
-    // Find and delete the deletion schedule
-    const deletionLog = await prisma.moderationLog.findFirst({
-      where: {
-        targetType: 'USER',
-        targetId: userId,
-        action: 'ACCOUNT_DELETION_SCHEDULED',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!deletionLog) {
+    if (!user.scheduledDeletion) {
       throw new Error('No scheduled deletion found for this account');
     }
 
-    // Create cancellation log
-    await prisma.moderationLog.create({
-      data: {
-        moderatorId: userId,
-        action: 'ACCOUNT_DELETION_CANCELLED',
-        targetType: 'USER',
-        targetId: userId,
-        reason: 'User cancelled account deletion',
-      },
-    });
+    // Clear the schedule on the user record and write a cancellation audit entry.
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { scheduledDeletion: null },
+      }),
+      prisma.moderationLog.create({
+        data: {
+          moderatorId: userId,
+          action: 'ACCOUNT_DELETION_CANCELLED',
+          targetType: 'USER',
+          targetId: userId,
+          reason: 'User cancelled account deletion',
+        },
+      }),
+    ]);
 
     // Send confirmation email
     try {
@@ -167,46 +165,26 @@ export async function cancelAccountDeletion(userId: string): Promise<{ success: 
  */
 export async function getAccountDeletionStatus(userId: string): Promise<AccountDeletionStatus> {
   try {
-    // Check for scheduled deletion
-    const deletionLog = await prisma.moderationLog.findFirst({
-      where: {
-        targetType: 'USER',
-        targetId: userId,
-        action: 'ACCOUNT_DELETION_SCHEDULED',
-      },
-      orderBy: { createdAt: 'desc' },
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { scheduledDeletion: true },
     });
 
-    if (!deletionLog) {
+    if (!user || !user.scheduledDeletion) {
       return {
         isScheduled: false,
         canReactivate: false,
       };
     }
 
-    // Check if it was cancelled after being scheduled
-    const cancellationLog = await prisma.moderationLog.findFirst({
-      where: {
-        targetType: 'USER',
-        targetId: userId,
-        action: 'ACCOUNT_DELETION_CANCELLED',
-        createdAt: { gt: deletionLog.createdAt },
-      },
-    });
-
-    if (cancellationLog) {
-      return {
-        isScheduled: false,
-        canReactivate: false,
-      };
-    }
-
-    const deletionDate = new Date(deletionLog.createdAt.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    const deletionDate = new Date(
+      user.scheduledDeletion.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+    );
     const now = new Date();
 
     return {
       isScheduled: true,
-      scheduledAt: deletionLog.createdAt,
+      scheduledAt: user.scheduledDeletion,
       deletionDate,
       canReactivate: now < deletionDate,
     };
@@ -289,31 +267,30 @@ export async function permanentlyDeleteAccount(userId: string): Promise<{ succes
  */
 export async function processScheduledDeletions(): Promise<{ processed: number; deleted: number }> {
   try {
-    // Find all accounts scheduled for deletion where grace period has passed
+    // Find all users whose deletion grace period has elapsed.
     const cutoffDate = new Date(Date.now() - GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
-    const scheduledDeletions = await prisma.moderationLog.findMany({
+    const usersToDelete = await prisma.user.findMany({
       where: {
-        action: 'ACCOUNT_DELETION_SCHEDULED',
-        createdAt: { lte: cutoffDate },
+        scheduledDeletion: { not: null, lte: cutoffDate },
       },
+      select: { id: true },
     });
 
     let processed = 0;
     let deleted = 0;
 
-    for (const log of scheduledDeletions) {
+    for (const user of usersToDelete) {
       processed++;
 
       try {
-        // Check if not cancelled
-        const status = await getAccountDeletionStatus(log.targetId);
+        const status = await getAccountDeletionStatus(user.id);
         if (status.isScheduled && status.deletionDate && new Date() >= status.deletionDate) {
-          await permanentlyDeleteAccount(log.targetId);
+          await permanentlyDeleteAccount(user.id);
           deleted++;
         }
       } catch (err) {
-        logger.error(`Failed to process deletion for user ${log.targetId}:`, err);
+        logger.error(`Failed to process deletion for user ${user.id}:`, err);
       }
     }
 

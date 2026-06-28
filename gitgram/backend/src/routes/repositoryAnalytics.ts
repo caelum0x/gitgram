@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth';
 import {
   trackRepositoryView,
+  trackRepositoryClone,
   getRepositoryAnalyticsOverview,
   getTrafficData,
   getReferrers,
@@ -230,6 +231,51 @@ router.post(
       res.status(204).send();
     } catch (error) {
       logger.error('repositoryAnalytics: POST /view track error', { error, repoId });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+);
+
+// ----------------------------------------
+// POST /repositories/:owner/:name/analytics/clone
+// Record a repository clone event.
+// Public endpoint — clonerId is optional (resolved from auth when present).
+// ----------------------------------------
+router.post(
+  '/clone',
+  optionalAuth,
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const params = extractOwnerName(req);
+    if (!params) {
+      res.status(400).json({ success: false, error: 'owner and name are required' });
+      return;
+    }
+
+    let repoId: string;
+    try {
+      const { default: prisma } = await import('../utils/prisma');
+      const repo = await prisma.repository.findFirst({
+        where: { owner: params.owner, name: params.name },
+        select: { id: true },
+      });
+      if (!repo) {
+        res.status(404).json({ success: false, error: 'Repository not found' });
+        return;
+      }
+      repoId = repo.id;
+    } catch (error) {
+      logger.error('repositoryAnalytics: POST /clone lookup error', { error });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+      return;
+    }
+
+    const clonerId: string | null = req.userId ?? null;
+
+    try {
+      await trackRepositoryClone(repoId, clonerId);
+      res.status(204).send();
+    } catch (error) {
+      logger.error('repositoryAnalytics: POST /clone track error', { error, repoId });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

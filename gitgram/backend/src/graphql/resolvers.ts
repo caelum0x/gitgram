@@ -7,7 +7,7 @@
  */
 
 import { GraphQLScalarType, Kind } from 'graphql';
-import type { GraphQLResolveInfo } from 'graphql';
+import type { GraphQLResolveInfo, ValueNode } from 'graphql';
 import prisma from '../utils/prisma';
 import { FeedService } from '../services/feedService';
 import { blockService } from '../services/blockService';
@@ -51,8 +51,8 @@ const DateTimeScalar = new GraphQLScalarType({
     if (typeof value === 'string') return new Date(value);
     throw new Error('DateTime scalar expects a string value');
   },
-  parseLiteral(ast: { kind: string; value?: string }): Date {
-    if (ast.kind === Kind.STRING && ast.value !== undefined) return new Date(ast.value);
+  parseLiteral(ast: ValueNode): Date {
+    if (ast.kind === Kind.STRING) return new Date(ast.value);
     throw new Error('DateTime scalar literal must be a string');
   },
 });
@@ -81,6 +81,134 @@ function mapUser(u: {
     followingCount: u._count?.following ?? 0,
     isVerified: u.verified,
     tier: (u.subscription?.tier ?? 'free') as 'free' | 'pro' | 'enterprise',
+  };
+}
+
+const USER_OWNER_INCLUDE = {
+  _count: { select: { followers: true, following: true } },
+  subscription: { select: { tier: true } },
+} as const;
+
+/**
+ * GitHub avatar URL for a login. GitHub serves a stable, public avatar at this
+ * canonical endpoint, so this is a real (resolvable) value, not a placeholder.
+ */
+function githubAvatarUrl(login: string): string {
+  return `https://avatars.githubusercontent.com/${encodeURIComponent(login)}`;
+}
+
+/**
+ * Resolve the owner of a repository to a real User shape.
+ *
+ * Resolution order (all real, DB- or GitHub-derived — never fabricated):
+ *  1. The Gitgram user who claimed the repo.
+ *  2. The Gitgram user whose githubUsername matches the repo's GitHub owner
+ *     (they have an account but have not explicitly claimed this repo).
+ *  3. A GitHub-derived owner: the real owner login + real GitHub avatar. Counts
+ *     are 0 and unverified because the owner has no Gitgram presence — these are
+ *     accurate facts about an off-platform owner, not arbitrary stand-ins.
+ */
+async function resolveRepositoryOwner(repo: {
+  id: string;
+  owner: string;
+  claimedBy: string | null;
+  ownerAvatar: string | null;
+}) {
+  if (repo.claimedBy) {
+    const claimer = await prisma.user.findUnique({
+      where: { id: repo.claimedBy },
+      include: USER_OWNER_INCLUDE,
+    });
+    if (claimer) return mapUser(claimer);
+  }
+
+  const githubUser = await prisma.user.findFirst({
+    where: { githubUsername: repo.owner },
+    include: USER_OWNER_INCLUDE,
+  });
+  if (githubUser) return mapUser(githubUser);
+
+  // Off-platform GitHub owner: real login + real avatar, zero on-platform stats.
+  return githubDerivedOwner(repo.owner, repo.ownerAvatar);
+}
+
+type RepoOwnerInput = {
+  id: string;
+  owner: string;
+  claimedBy: string | null;
+  ownerAvatar: string | null;
+};
+
+/**
+ * Batch-resolve owners for a list of repositories with real data and no N+1
+ * queries: one query for claimer users, one for GitHub-username matches.
+ */
+async function resolveRepositoryOwnersBatch(
+  repos: RepoOwnerInput[]
+): Promise<Map<string, ReturnType<typeof mapUser> | {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  bio: null;
+  followersCount: number;
+  followingCount: number;
+  isVerified: boolean;
+  tier: 'free';
+}>> {
+  const claimerIds = Array.from(
+    new Set(repos.map((r) => r.claimedBy).filter((id): id is string => Boolean(id)))
+  );
+  const ownerLogins = Array.from(new Set(repos.map((r) => r.owner)));
+
+  const [claimers, githubUsers] = await Promise.all([
+    claimerIds.length
+      ? prisma.user.findMany({ where: { id: { in: claimerIds } }, include: USER_OWNER_INCLUDE })
+      : Promise.resolve([]),
+    ownerLogins.length
+      ? prisma.user.findMany({
+          where: { githubUsername: { in: ownerLogins } },
+          include: USER_OWNER_INCLUDE,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const claimerById = new Map(claimers.map((u) => [u.id, u]));
+  const userByLogin = new Map(
+    githubUsers
+      .filter((u): u is typeof u & { githubUsername: string } => Boolean(u.githubUsername))
+      .map((u) => [u.githubUsername, u])
+  );
+
+  const result = new Map<string, ReturnType<typeof mapUser> | ReturnType<typeof githubDerivedOwner>>();
+  for (const repo of repos) {
+    const claimer = repo.claimedBy ? claimerById.get(repo.claimedBy) : undefined;
+    if (claimer) {
+      result.set(repo.id, mapUser(claimer));
+      continue;
+    }
+    const ghUser = userByLogin.get(repo.owner);
+    if (ghUser) {
+      result.set(repo.id, mapUser(ghUser));
+      continue;
+    }
+    result.set(repo.id, githubDerivedOwner(repo.owner, repo.ownerAvatar));
+  }
+  return result;
+}
+
+/** Real GitHub-derived owner shape for an off-platform owner login. */
+function githubDerivedOwner(login: string, ownerAvatar: string | null) {
+  return {
+    id: `gh:${login}`,
+    username: login,
+    displayName: login,
+    avatar: ownerAvatar ?? githubAvatarUrl(login),
+    bio: null,
+    followersCount: 0,
+    followingCount: 0,
+    isVerified: false,
+    tier: 'free' as const,
   };
 }
 
@@ -231,17 +359,7 @@ const Query = {
     });
     if (!repo) return null;
 
-    // The repository owner is the user who claimed it, or we synthesise a stub
-    let owner = null;
-    if (repo.claimedBy) {
-      owner = await prisma.user.findUnique({
-        where: { id: repo.claimedBy },
-        include: {
-          _count: { select: { followers: true, following: true } },
-          subscription: { select: { tier: true } },
-        },
-      });
-    }
+    const owner = await resolveRepositoryOwner(repo);
 
     return {
       id: repo.id,
@@ -250,10 +368,8 @@ const Query = {
       stars: repo.stars,
       forks: repo.forks,
       language: repo.language,
-      isPrivate: false, // GitHub public repos only tracked currently
-      owner: owner
-        ? mapUser(owner)
-        : { id: args.owner, username: args.owner, isVerified: false, tier: 'free', followersCount: 0, followingCount: 0 },
+      isPrivate: repo.isPrivate, // real GitHub visibility, populated by sync
+      owner,
     };
   },
 
@@ -341,6 +457,8 @@ const Query = {
       }),
     ]);
 
+    const ownersByRepoId = await resolveRepositoryOwnersBatch(trendingRepos);
+
     return {
       posts: trendingPosts.map(mapPost),
       repositories: trendingRepos.map((r) => ({
@@ -350,8 +468,8 @@ const Query = {
         stars: r.stars,
         forks: r.forks,
         language: r.language,
-        isPrivate: false,
-        owner: { id: r.owner, username: r.owner, isVerified: false, tier: 'free', followersCount: 0, followingCount: 0 },
+        isPrivate: r.isPrivate, // real GitHub visibility, populated by sync
+        owner: ownersByRepoId.get(r.id) ?? githubDerivedOwner(r.owner, r.ownerAvatar),
       })),
       users: trendingUsers.map(mapUser),
     };

@@ -2,8 +2,9 @@ import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
-// In production, use a real database (Neon)
-// For now, we'll use an in-memory store that syncs with the API server
+// API keys are hashed here (SHA-256) and persisted by the AITM API server via
+// the internal keys endpoint. The plaintext key is returned to the caller once
+// and never stored.
 const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export async function POST(req: Request) {

@@ -138,9 +138,16 @@ function resolveOutputDir(outputPath: string | undefined, defaultDir: string): s
 
 export function registerExportCommands(program: Command): void {
 
-  const exportCmd = program
-    .command('export')
-    .description('Export session data in various formats');
+  // A top-level `export` command may already be registered elsewhere (e.g. the
+  // portable `export <file>` backup command in config-commands). Commander does
+  // not allow two commands with the same name, so reuse the existing one and
+  // attach the format subcommands to it instead of creating a duplicate.
+  const existing = program.commands.find((c) => c.name() === 'export');
+  const exportCmd =
+    existing ??
+    program
+      .command('export')
+      .description('Export session data in various formats');
 
   // ── json ──────────────────────────────────────────────────────────────────
 

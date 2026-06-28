@@ -108,6 +108,8 @@ jest.mock('../src/controllers/reelsController', () => ({
   shareReel: ok,
   reportReel: ok,
   getUserReels: ok,
+  listReels: ok,
+  getFeaturedReel: ok,
 }));
 
 jest.mock('../src/controllers/archiveController', () => ({

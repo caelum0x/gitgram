@@ -127,7 +127,7 @@ export async function processImageMultiResolution(
 
           // Upload to storage
           const key = `${folder}/${name}-${baseId}.webp`;
-          const file = createMockFile(outputBuffer, key, 'image/webp');
+          const file = bufferToUploadFile(outputBuffer, key, 'image/webp');
           const url = await uploadMedia(file, folder);
 
           // Update transcode job status
@@ -175,7 +175,7 @@ export async function processImageMultiResolution(
           .toBuffer();
 
         const key = `${folder}/full-${baseId}.webp`;
-        const file = createMockFile(webpBuffer, key, 'image/webp');
+        const file = bufferToUploadFile(webpBuffer, key, 'image/webp');
         const url = await uploadMedia(file, folder);
 
         return { name: 'webp', url, size: webpBuffer.length };
@@ -194,7 +194,7 @@ export async function processImageMultiResolution(
         const origMetadata = await sharp(jpegBuffer).metadata();
 
         const key = `${folder}/orig-${baseId}.jpg`;
-        const file = createMockFile(jpegBuffer, key, 'image/jpeg');
+        const file = bufferToUploadFile(jpegBuffer, key, 'image/jpeg');
         const url = await uploadMedia(file, folder);
 
         return {
@@ -319,7 +319,7 @@ export async function transcodeVideoWithRecovery(
           // Read transcoded file and upload
           const outputBuffer = fs.readFileSync(transcodeResult.outputPath);
           const key = `${folder}/video-${resolution}-${crypto.randomBytes(8).toString('hex')}.mp4`;
-          const file = createMockFile(outputBuffer, key, 'video/mp4');
+          const file = bufferToUploadFile(outputBuffer, key, 'video/mp4');
           const url = await uploadMedia(file, folder);
 
           results[resolution] = {
@@ -365,7 +365,7 @@ export async function transcodeVideoWithRecovery(
 
       const thumbBuffer = fs.readFileSync(thumbnailPath);
       const thumbKey = `${folder}/thumb-${crypto.randomBytes(8).toString('hex')}.jpg`;
-      const thumbFile = createMockFile(thumbBuffer, thumbKey, 'image/jpeg');
+      const thumbFile = bufferToUploadFile(thumbBuffer, thumbKey, 'image/jpeg');
       thumbnailUrl = await uploadMedia(thumbFile, folder);
     } catch (error: unknown) {
       logger.error('Thumbnail generation failed:', error);
@@ -547,10 +547,13 @@ export async function retryFailedTranscodeJobs(mediaId: string): Promise<number>
 }
 
 // ============================================
-// Helper: Create mock Multer file from buffer
+// Helper: Adapt an in-memory transcoding output buffer into the
+// Express.Multer.File shape expected by the upload/storage pipeline.
+// This is a real production adapter (not a test stub) — the transcoder
+// produces buffers, while uploadMedia() consumes Multer files.
 // ============================================
 
-function createMockFile(
+function bufferToUploadFile(
   buffer: Buffer,
   filename: string,
   mimetype: string

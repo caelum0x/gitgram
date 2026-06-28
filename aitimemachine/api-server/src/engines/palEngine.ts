@@ -17,11 +17,10 @@
  * Paths default to a bundled engine location so no external URL is required.
  */
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { palVenvDir, resolvePalPython } from "../services/engineManager.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,36 +72,21 @@ export interface PalEngineOptions {
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
 
 /**
- * Resolve the bundled engine root: `aitimemachine/engines/pal`.
- *
- * This file lives at `api-server/src/engines/palEngine.ts` (or its compiled
- * `dist/engines/palEngine.js`), so the aitimemachine root is three levels up
- * from the engines directory, regardless of src vs dist.
+ * Resolve the bundled PAL venv directory via the central engineManager
+ * (single source of truth for all engine paths).
  */
 function resolveBundledVenvDir(): string {
-  const here = fileURLToPath(new URL(".", import.meta.url));
-  // here = .../api-server/{src|dist}/engines/
-  // aitimemachine root = here/../../../
-  const aitmRoot = join(here, "..", "..", "..");
-  return join(aitmRoot, "engines", "pal");
+  return palVenvDir();
 }
 
 /**
- * Resolve the Python interpreter inside a venv directory, handling both
- * POSIX (`bin/python`) and Windows (`Scripts/python.exe`) layouts.
+ * Resolve the Python interpreter for the bundled PAL venv via engineManager,
+ * handling both POSIX (`bin/python`) and Windows (`Scripts/python.exe`)
+ * layouts. Falls back to the conventional POSIX path when unresolved; spawn
+ * will surface a clear ENOENT and health() will report `down`.
  */
 function resolveVenvPython(venvDir: string): string {
-  const posix = join(venvDir, "bin", "python");
-  if (existsSync(posix)) {
-    return posix;
-  }
-  const win = join(venvDir, "Scripts", "python.exe");
-  if (existsSync(win)) {
-    return win;
-  }
-  // Fall back to the conventional POSIX path; spawn will surface a clear
-  // ENOENT if it is missing and health() will report `down`.
-  return posix;
+  return resolvePalPython().path ?? join(venvDir, "bin", "python");
 }
 
 // ---------------------------------------------------------------------------

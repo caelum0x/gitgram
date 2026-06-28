@@ -12,16 +12,29 @@
 // Module-level mocks — must appear before any imports that load the module
 // ---------------------------------------------------------------------------
 
-jest.mock('../../src/services/feedService', () => ({
-  __esModule: true,
-  default: {
+jest.mock('../../src/services/feedService', () => {
+  const stub = {
     getPersonalizedFeed: jest.fn(),
     getPersonalizedFeedCursor: jest.fn(),
     getExploreFeed: jest.fn(),
     getUnifiedFeed: jest.fn(),
     getTrendingPosts: jest.fn(),
-  },
-}));
+  };
+  // resolvers.ts imports the named `FeedService` class and does `new FeedService()`,
+  // so the mock must expose a constructor in addition to the default instance.
+  class FeedService {
+    getPersonalizedFeed = stub.getPersonalizedFeed;
+    getPersonalizedFeedCursor = stub.getPersonalizedFeedCursor;
+    getExploreFeed = stub.getExploreFeed;
+    getUnifiedFeed = stub.getUnifiedFeed;
+    getTrendingPosts = stub.getTrendingPosts;
+  }
+  return {
+    __esModule: true,
+    FeedService,
+    default: stub,
+  };
+});
 
 jest.mock('../../src/services/feedTuner', () => ({
   tuneFeed: jest.fn((items: unknown[]) => items),

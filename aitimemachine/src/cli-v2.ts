@@ -38,6 +38,7 @@ import { registerWatchCommands } from './cli/watch-commands.js';
 import { registerGitLikeExtraCommands } from './cli/git-like-extra-commands.js';
 import { registerSessionToolCommands } from './cli/session-tool-commands.js';
 import { registerDoctorCommands } from './cli/doctor-commands.js';
+import { registerNaturalLanguageCommands } from './cli/natural-language-commands.js';
 import { runInteractiveMode } from './cli/interactive-mode.js';
 
 // ─── Program setup ──────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ registerWatchCommands(program);          // watch + daemon start|stop|status (au
 registerGitLikeExtraCommands(program);   // extra git-like porcelain commands
 registerSessionToolCommands(program);    // session tool commands
 registerDoctorCommands(program);         // doctor (environment diagnostics with --json / --fix)
+registerNaturalLanguageCommands(program);// ask, nl, find-cp, when, what-changed, back-to, back, fix, diagnose (natural-language checkpoint search + restore)
 
 // ─── Inline top-level commands ───────────────────────────────────────────────
 // Small commands that don't justify their own module live here.

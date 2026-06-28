@@ -284,40 +284,110 @@ function buildToc(sections: ArticleSection[]): TocEntry[] {
   return sections.map((s) => ({ id: s.id, text: s.heading, level: s.level }))
 }
 
-function getFallbackArticle(slug: string): ArticleData {
-  const title = slug
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
+/** Articles surfaced as suggestions when a requested slug does not exist. */
+function getSuggestedArticles(): Array<{ slug: string; title: string; readTime: string }> {
+  return Object.entries(articleDatabase).map(([slug, data]) => ({
+    slug,
+    title: data.title,
+    readTime: data.readTime,
+  }))
+}
 
-  return {
-    title,
-    category: 'Help',
-    categorySlug: 'getting-started',
-    lastUpdated: 'June 2026',
-    readTime: '2 min read',
-    sections: [
-      {
-        id: 'overview',
-        heading: 'Overview',
-        level: 2,
-        body: ['This article is coming soon. Check back later or contact support for immediate help.'],
-      },
-    ],
-    relatedArticles: [
-      { slug: 'create-your-account', title: 'Creating your Gitgram account', readTime: '2 min read' },
-    ],
-  }
+function ArticleNotFound({ slug }: { slug: string }) {
+  const suggestions = getSuggestedArticles()
+
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--background)' }}>
+      <div className="max-w-2xl mx-auto px-4 py-16">
+        <nav
+          className="flex items-center gap-2 text-sm mb-8 flex-wrap"
+          style={{ color: 'var(--foreground-secondary)' }}
+        >
+          <Link href="/help" className="hover:underline transition-colors" style={{ color: 'var(--primary)' }}>
+            Help
+          </Link>
+          <ChevronRightIcon />
+          <span style={{ color: 'var(--foreground)' }}>Article not found</span>
+        </nav>
+
+        <div
+          className="p-8 rounded-xl text-center"
+          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <h1 className="text-2xl font-bold mb-3" style={{ color: 'var(--foreground)' }}>
+            We couldn&apos;t find that article
+          </h1>
+          <p className="text-sm mb-6" style={{ color: 'var(--foreground-secondary)' }}>
+            The help article{slug ? ` “${slug}”` : ''} doesn&apos;t exist or may have been moved.
+            Browse the help center or contact support and we&apos;ll point you in the right direction.
+          </p>
+
+          {suggestions.length > 0 && (
+            <div className="text-left mb-6">
+              <h2
+                className="text-xs font-semibold uppercase tracking-wider mb-3"
+                style={{ color: 'var(--foreground-secondary)' }}
+              >
+                Popular articles
+              </h2>
+              <div className="space-y-2">
+                {suggestions.map((s) => (
+                  <Link
+                    key={s.slug}
+                    href={`/help/article/${s.slug}`}
+                    className="block p-3 rounded-lg transition-colors hover:bg-[var(--surface-secondary)]"
+                    style={{ border: '1px solid var(--border)' }}
+                  >
+                    <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {s.title}
+                    </p>
+                    <span
+                      className="flex items-center gap-1 text-xs mt-0.5"
+                      style={{ color: 'var(--foreground-secondary)' }}
+                    >
+                      <ClockIcon />
+                      {s.readTime}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            <Link
+              href="/help"
+              className="text-sm font-medium hover:underline transition-colors"
+              style={{ color: 'var(--primary)' }}
+            >
+              Back to Help Center
+            </Link>
+            <a
+              href="mailto:support@gitgram.dev"
+              className="py-2 px-4 rounded-lg text-sm font-semibold transition-opacity"
+              style={{ backgroundColor: 'var(--primary)', color: '#ffffff' }}
+            >
+              Contact Support
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function HelpArticlePage() {
   const params = useParams()
   const slug = typeof params.slug === 'string' ? params.slug : ''
 
-  const article: ArticleData = articleDatabase[slug] ?? getFallbackArticle(slug)
-  const toc: TocEntry[] = buildToc(article.sections)
+  const article: ArticleData | undefined = articleDatabase[slug]
+  const toc: TocEntry[] = article ? buildToc(article.sections) : []
   const [feedback, setFeedback] = useState<FeedbackState>('idle')
   const [activeSection, setActiveSection] = useState<string>(toc[0]?.id ?? '')
+
+  if (!article) {
+    return <ArticleNotFound slug={slug} />
+  }
 
   function handleScrollToSection(id: string) {
     const el = document.getElementById(id)

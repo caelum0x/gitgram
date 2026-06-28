@@ -309,26 +309,6 @@ export const ENV_CONTRACT: EnvVarDef[] = [
     tier: 'optional',
   },
 
-  // ── DodoPay (alternative payment) ──
-  {
-    name: 'DODO_PAYMENTS_API_KEY',
-    description: 'DodoPay API key',
-    tier: 'optional',
-    secret: true,
-  },
-  {
-    name: 'DODO_PAYMENTS_SECRET_KEY',
-    description: 'DodoPay secret key',
-    tier: 'optional',
-    secret: true,
-  },
-  {
-    name: 'DODO_WEBHOOK_SECRET',
-    description: 'DodoPay webhook signing secret',
-    tier: 'optional',
-    secret: true,
-  },
-
   // ── Email ──
   {
     name: 'RESEND_API_KEY',

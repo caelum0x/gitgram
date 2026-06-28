@@ -86,7 +86,41 @@ export function createTmMcpServer(opts: {
   const blobsDir = path.join(opts.dataDir, "blobs");
   const cas = new CasStore(blobsDir);
   const capsuleMgr = new DockerCapsuleManager();
-  
+
+  // ── Active project context ──────────────────────────────────────────────
+  // tm_set_project persists the active project here so subsequent tool calls
+  // (and future server restarts) can resolve a "current project" without the
+  // caller re-specifying it. Persisted to a small JSON file in dataDir.
+  const activeProjectPath = path.join(opts.dataDir, "active-project.json");
+
+  interface ActiveProjectState {
+    projectId: string;
+    name: string;
+    rootPath: string;
+    setAt: string;
+  }
+
+  function readActiveProject(): ActiveProjectState | null {
+    try {
+      if (!fs.existsSync(activeProjectPath)) return null;
+      const parsed = JSON.parse(fs.readFileSync(activeProjectPath, "utf8")) as Partial<ActiveProjectState>;
+      if (!parsed.projectId || !parsed.rootPath) return null;
+      return {
+        projectId: parsed.projectId,
+        name: parsed.name ?? parsed.projectId,
+        rootPath: parsed.rootPath,
+        setAt: parsed.setAt ?? new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function writeActiveProject(state: ActiveProjectState): void {
+    fs.mkdirSync(path.dirname(activeProjectPath), { recursive: true });
+    fs.writeFileSync(activeProjectPath, JSON.stringify(state, null, 2), "utf8");
+  }
+
   // Create engine for new GC
   const engine = new TimeMachineEngine(process.cwd());
   
@@ -418,7 +452,7 @@ export function createTmMcpServer(opts: {
       },
       {
         name: "tm_set_project",
-        description: "Set the current working project",
+        description: "Set the current working project. Persists the active project so later tools can resolve it.",
         inputSchema: {
           type: "object",
           required: ["projectPath"],
@@ -426,6 +460,11 @@ export function createTmMcpServer(opts: {
             projectPath: { type: "string", minLength: 1 }
           }
         }
+      },
+      {
+        name: "tm_get_project",
+        description: "Get the currently active project set via tm_set_project.",
+        inputSchema: { type: "object", properties: {} }
       },
       {
         name: "tm_rewind_to_last_green",
@@ -3102,102 +3141,52 @@ export function createTmMcpServer(opts: {
 
         case "tm_index_project": {
           const projectPath = (args as any)?.projectPath || process.cwd();
-          const includePatterns = (args as any)?.includePatterns || ["**/*.ts", "**/*.js", "**/*.py", "**/*.go", "**/*.rs", "**/*.java"];
           const excludePatterns = (args as any)?.excludePatterns || ["**/node_modules/**", "**/dist/**", "**/.git/**", "**/venv/**"];
-          const extractSymbols = (args as any)?.extractSymbols !== false;
-          const extractComments = (args as any)?.extractComments !== false;
 
-          // Simple indexing - count files and extract basic structure
-          const { globSync } = await import("glob");
+          // Use the full AST-aware CodeIndexer (services/code-indexer) which
+          // persists structured symbols to SQLite, instead of an inline
+          // simplified-regex scan. Requires a registered project + a SQLite repo.
+          const db = opts.repo.getDatabase?.();
+          const project = opts.repo.listProjects().find(p => p.rootPath === projectPath);
 
-          interface IndexedFile {
-            path: string;
-            size: number;
-            symbols: string[];
-            imports: string[];
+          if (!db || !project) {
+            throw new TmError(
+              "TM_PROJECT_NOT_FOUND",
+              "tm_index_project requires an initialized project (run tm_init / aitm init) backed by a local SQLite store.",
+              { projectPath, registered: Boolean(project), persistentStore: Boolean(db) },
+            );
           }
 
-          const indexedFiles: IndexedFile[] = [];
-          let totalSymbols = 0;
-          let totalImports = 0;
+          const { CodeIndexer } = await import("../services/code-indexer.js");
+          const indexer = new CodeIndexer(db);
+          // Convert glob-style excludes into the directory/path fragments the
+          // indexer's matcher understands.
+          const ignoreGlobs = (excludePatterns as string[]).map(
+            (p) => p.replace(/^\*\*\//, "").replace(/\/\*\*$/, ""),
+          );
 
-          for (const pattern of includePatterns) {
-            try {
-              const files = globSync(pattern, {
-                cwd: projectPath,
-                ignore: excludePatterns,
-                nodir: true
-              });
-
-              for (const file of files.slice(0, 500)) { // Limit to 500 files
-                const fullPath = path.join(projectPath, file);
-                try {
-                  const stat = fs.statSync(fullPath);
-                  const content = fs.readFileSync(fullPath, 'utf8');
-
-                  const symbols: string[] = [];
-                  const imports: string[] = [];
-
-                  if (extractSymbols) {
-                    // Extract function/class definitions (simplified regex)
-                    const funcMatch = content.match(/(?:function|async function|const|let|var)\s+(\w+)\s*[=(]/g) || [];
-                    const classMatch = content.match(/class\s+(\w+)/g) || [];
-                    const exportMatch = content.match(/export\s+(?:default\s+)?(?:function|class|const|let|var)\s+(\w+)/g) || [];
-
-                    funcMatch.forEach(m => {
-                      const name = m.match(/(\w+)\s*[=(]/)?.[1];
-                      if (name && !['if', 'for', 'while', 'switch'].includes(name)) symbols.push(name);
-                    });
-                    classMatch.forEach(m => {
-                      const name = m.match(/class\s+(\w+)/)?.[1];
-                      if (name) symbols.push(`class:${name}`);
-                    });
-                  }
-
-                  // Extract imports
-                  const importMatch = content.match(/(?:import|require)\s*\(?['"](.*?)['"]/g) || [];
-                  importMatch.forEach(m => {
-                    const mod = m.match(/['"](.+?)['"]/)?.[1];
-                    if (mod) imports.push(mod);
-                  });
-
-                  totalSymbols += symbols.length;
-                  totalImports += imports.length;
-
-                  indexedFiles.push({
-                    path: file,
-                    size: stat.size,
-                    symbols,
-                    imports
-                  });
-                } catch (e) {
-                  // Skip files that can't be read
-                }
-              }
-            } catch (e) {
-              // Skip patterns that fail
-            }
-          }
-
-          // Store index in memory (in a real implementation, this would go to a database)
-          const indexId = `idx_${Date.now()}_${cryptoRandomId()}`;
+          const result = indexer.indexProject(project.projectId, projectPath, ignoreGlobs);
+          const stats = indexer.getStats(project.projectId);
+          const byType = Object.entries(stats.byType)
+            .sort((a, b) => b[1] - a[1])
+            .map(([type, count]) => `  ${type}: ${count}`)
+            .join("\n");
 
           return {
             content: [{
               type: "text",
               text: `📚 PROJECT INDEXED\n\n` +
-                    `Project: ${projectPath}\n` +
-                    `Index ID: ${indexId}\n\n` +
+                    `Project: ${project.name} (${projectPath})\n` +
+                    `Project ID: ${project.projectId}\n\n` +
                     `📊 Statistics:\n` +
-                    `  Files indexed: ${indexedFiles.length}\n` +
-                    `  Symbols found: ${totalSymbols}\n` +
-                    `  Imports found: ${totalImports}\n\n` +
-                    `📁 File Types:\n` +
-                    `  TypeScript: ${indexedFiles.filter(f => f.path.endsWith('.ts')).length}\n` +
-                    `  JavaScript: ${indexedFiles.filter(f => f.path.endsWith('.js')).length}\n` +
-                    `  Python: ${indexedFiles.filter(f => f.path.endsWith('.py')).length}\n` +
-                    `  Other: ${indexedFiles.filter(f => !f.path.match(/\.(ts|js|py)$/)).length}\n\n` +
-                    `Ready for search! Use tm_search_code to find code.`
+                    `  Files scanned:  ${result.filesScanned}\n` +
+                    `  Files indexed:  ${result.filesIndexed}\n` +
+                    `  Symbols found:  ${result.symbolsFound}\n` +
+                    `  Total symbols:  ${stats.totalSymbols}\n` +
+                    `  Duration:       ${result.duration}ms\n` +
+                    (result.errors.length > 0 ? `  Errors:         ${result.errors.length}\n` : "") +
+                    `\n🔣 Symbols by type:\n${byType || "  (none)"}\n\n` +
+                    `Persisted to SQLite. Use tm_search_code / tm_find_definition / tm_find_usages.`
             }]
           };
         }
@@ -3209,6 +3198,36 @@ export function createTmMcpServer(opts: {
           const symbolType = (args as any)?.symbolType || "all";
           const maxResults = (args as any)?.maxResults || 10;
           const includeContext = (args as any)?.includeContext !== false;
+
+          // Prefer the persisted CodeIndexer symbol index when this project has
+          // been indexed via tm_index_project. This returns structured symbol
+          // matches (name/type/line) instead of a raw line grep.
+          const searchDb = opts.repo.getDatabase?.();
+          const searchProject = opts.repo.listProjects().find(p => p.rootPath === projectPath);
+          if (searchDb && searchProject && query) {
+            const { CodeIndexer } = await import("../services/code-indexer.js");
+            const indexer = new CodeIndexer(searchDb);
+            if (indexer.getStats(searchProject.projectId).totalSymbols > 0) {
+              const type = symbolType !== "all" ? symbolType : undefined;
+              const hits = indexer.searchSymbols(searchProject.projectId, query, {
+                type: type as import("../services/code-indexer.js").SymbolType | undefined,
+                limit: maxResults,
+              });
+              if (hits.length > 0) {
+                const text = hits
+                  .map((h, i) =>
+                    `${i + 1}. [${h.symbol.symbolType.toUpperCase()}] ${h.symbol.symbolName} — ${h.symbol.filePath}:${h.symbol.lineStart}\n   ${(h.symbol.signature || "").slice(0, 120)}`,
+                  )
+                  .join("\n\n");
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔎 SEARCH CODE RESULTS (indexed)\n\nQuery: "${query}"\nFound: ${hits.length} symbol(s)\n\n${text}`,
+                  }],
+                };
+              }
+            }
+          }
 
           const { globSync } = await import("glob");
 
@@ -5681,9 +5700,10 @@ export function createTmMcpServer(opts: {
 
         case "tm_set_project": {
           const projectPath = (args as any)?.projectPath;
+          if (typeof projectPath !== "string" || projectPath.trim() === "") {
+            throw new TmError("TM_INVALID_ARGUMENT", "projectPath is required", { projectPath });
+          }
 
-          // In a real implementation, this would set context state
-          // For now, just verify project exists
           const projects = opts.repo.listProjects();
           const project = projects.find(p => p.rootPath === projectPath);
 
@@ -5691,13 +5711,59 @@ export function createTmMcpServer(opts: {
             throw new TmError("TM_PROJECT_NOT_FOUND", "Project not found", { projectPath });
           }
 
+          // Persist the active project so subsequent tool calls (and future
+          // server restarts) can resolve the current project context.
+          const state: ActiveProjectState = {
+            projectId: project.projectId,
+            name: project.name,
+            rootPath: project.rootPath,
+            setAt: new Date().toISOString(),
+          };
+          writeActiveProject(state);
+
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
+                projectId: state.projectId,
+                name: state.name,
+                rootPath: state.rootPath,
+                active: true,
+                setAt: state.setAt,
+              }, null, 2)
+            }]
+          };
+        }
+
+        case "tm_get_project": {
+          const active = readActiveProject();
+          if (!active) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ active: false, message: "No active project set. Use tm_set_project first." }, null, 2)
+              }]
+            };
+          }
+          // Validate the persisted project still exists in the repo.
+          const project = opts.repo.getProject(active.projectId);
+          if (!project) {
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ active: false, message: "Active project no longer exists.", projectId: active.projectId }, null, 2)
+              }]
+            };
+          }
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                active: true,
                 projectId: project.projectId,
                 name: project.name,
                 rootPath: project.rootPath,
+                setAt: active.setAt,
               }, null, 2)
             }]
           };

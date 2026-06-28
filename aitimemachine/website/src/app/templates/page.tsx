@@ -414,7 +414,9 @@ export default function TemplatesPage() {
         throw new Error(body.error ?? `Server error ${res.status}`);
       }
       const { sessionId } = (await res.json()) as { sessionId: string };
-      router.push(`/sessions/${sessionId}`);
+      // Land on the new project's replay timeline (there is no bare
+      // /sessions/[id] route — replay is the project's session view).
+      router.push(`/sessions/${sessionId}/replay`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
       setLoadingId(null);

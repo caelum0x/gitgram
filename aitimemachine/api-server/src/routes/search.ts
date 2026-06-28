@@ -258,8 +258,12 @@ router.post(
       conditions.push(eq(schema.codeEmbeddings.symbolType, symbol_type));
     }
 
-    // Text-based search (for now, until vector search is enabled)
-    const embeddings = await db
+    const minSimilarity =
+      typeof req.body.min_similarity === "number" ? req.body.min_similarity : 0.3;
+
+    // Pull candidate rows that have a stored embedding vector. We rank these by
+    // cosine similarity against the query embedding (true semantic search).
+    const candidateRows = await db
       .select({
         id: schema.codeEmbeddings.id,
         filePath: schema.codeEmbeddings.filePath,
@@ -270,45 +274,96 @@ router.post(
         lineEnd: schema.codeEmbeddings.lineEnd,
         language: schema.codeEmbeddings.language,
         projectId: schema.codeEmbeddings.projectId,
+        embeddingJson: schema.codeEmbeddings.embeddingJson,
       })
       .from(schema.codeEmbeddings)
-      .where(
-        and(
-          ...conditions,
-          like(schema.codeEmbeddings.content, `%${query}%`)
-        )
-      )
+      .where(and(...conditions, isNotNull(schema.codeEmbeddings.embeddingJson)))
+      .orderBy(desc(schema.codeEmbeddings.createdAt))
+      .limit(1000); // Cap candidate pool for in-process ranking
+
+    type CodeRow = (typeof candidateRows)[number];
+
+    const applyFileTypeFilter = (rows: CodeRow[]): CodeRow[] => {
+      if (!file_types || !Array.isArray(file_types)) return rows;
+      const extensions = file_types.map((t: string) => (t.startsWith(".") ? t : `.${t}`));
+      return rows.filter((e) => extensions.some((ext: string) => e.filePath.endsWith(ext)));
+    };
+
+    const formatRow = (e: CodeRow, similarity?: number) => ({
+      id: e.id,
+      file_path: e.filePath,
+      symbol: e.symbol,
+      symbol_type: e.symbolType,
+      content_preview: e.content?.slice(0, 300),
+      line_start: e.lineStart,
+      line_end: e.lineEnd,
+      language: e.language,
+      project_id: e.projectId,
+      ...(similarity !== undefined ? { similarity: Math.round(similarity * 1000) / 1000 } : {}),
+    });
+
+    const embeddable = applyFileTypeFilter(candidateRows).filter((e) =>
+      Array.isArray(e.embeddingJson)
+    );
+
+    if (embeddable.length > 0) {
+      const embeddingService = getEmbedding();
+      const queryResult = await embeddingService.generateEmbedding(query);
+
+      const rowMap = new Map(embeddable.map((e) => [e.id, e]));
+      const ranked = embeddingService.findSimilar(
+        queryResult.embedding,
+        embeddable.map((e) => ({ id: e.id, embedding: e.embeddingJson as number[] })),
+        max_results
+      );
+
+      const results = ranked
+        .filter((r) => r.similarity >= minSimilarity)
+        .map((r) => formatRow(rowMap.get(r.id) as CodeRow, r.similarity));
+
+      return res.json({
+        query,
+        project_id: project_id || "all",
+        file_types: file_types || "all",
+        symbol_type: symbol_type || "all",
+        mode: "semantic",
+        model: queryResult.model,
+        results,
+        total: results.length,
+        indexed: true,
+      });
+    }
+
+    // Fallback: no embeddings indexed yet — fall back to substring matching so
+    // the endpoint still returns useful results before indexing completes.
+    const textRows = await db
+      .select({
+        id: schema.codeEmbeddings.id,
+        filePath: schema.codeEmbeddings.filePath,
+        symbol: schema.codeEmbeddings.symbol,
+        symbolType: schema.codeEmbeddings.symbolType,
+        content: schema.codeEmbeddings.content,
+        lineStart: schema.codeEmbeddings.lineStart,
+        lineEnd: schema.codeEmbeddings.lineEnd,
+        language: schema.codeEmbeddings.language,
+        projectId: schema.codeEmbeddings.projectId,
+        embeddingJson: schema.codeEmbeddings.embeddingJson,
+      })
+      .from(schema.codeEmbeddings)
+      .where(and(...conditions, like(schema.codeEmbeddings.content, `%${query}%`)))
       .orderBy(desc(schema.codeEmbeddings.createdAt))
       .limit(max_results);
 
-    // Filter by file types if specified
-    let filteredResults = embeddings;
-    if (file_types && Array.isArray(file_types)) {
-      const extensions = file_types.map((t: string) =>
-        t.startsWith(".") ? t : `.${t}`
-      );
-      filteredResults = embeddings.filter((e) =>
-        extensions.some((ext: string) => e.filePath.endsWith(ext))
-      );
-    }
+    const fallbackResults = applyFileTypeFilter(textRows).map((e) => formatRow(e));
 
     res.json({
       query,
       project_id: project_id || "all",
       file_types: file_types || "all",
       symbol_type: symbol_type || "all",
-      results: filteredResults.map((e) => ({
-        id: e.id,
-        file_path: e.filePath,
-        symbol: e.symbol,
-        symbol_type: e.symbolType,
-        content_preview: e.content?.slice(0, 300),
-        line_start: e.lineStart,
-        line_end: e.lineEnd,
-        language: e.language,
-        project_id: e.projectId,
-      })),
-      total: filteredResults.length,
+      mode: "text",
+      results: fallbackResults,
+      total: fallbackResults.length,
       indexed: true,
     });
   })

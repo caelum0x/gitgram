@@ -12,6 +12,10 @@
 
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
+import type {
+  GraphQLRequestContext,
+  GraphQLRequestListener,
+} from '@apollo/server';
 import type { Express, Request } from 'express';
 import DataLoader from 'dataloader';
 import { typeDefs } from './schema';
@@ -105,14 +109,16 @@ const server = new ApolloServer<GraphQLContext>({
   introspection: process.env.NODE_ENV !== 'production',
   plugins: [
     {
-      async requestDidStart(requestContext: { request: { operationName?: string | null } }) {
+      async requestDidStart(
+        requestContext: GraphQLRequestContext<GraphQLContext>,
+      ): Promise<GraphQLRequestListener<GraphQLContext>> {
         const operationName = requestContext.request.operationName ?? '(anonymous)';
         const start = Date.now();
         return {
           async willSendResponse() {
             logger.info(`GraphQL ${operationName} completed in ${Date.now() - start}ms`);
           },
-          async didEncounterErrors(errContext: { errors: Array<{ message: string }> }) {
+          async didEncounterErrors(errContext) {
             for (const err of errContext.errors) {
               logger.error(`GraphQL error in ${operationName}: ${err.message}`);
             }

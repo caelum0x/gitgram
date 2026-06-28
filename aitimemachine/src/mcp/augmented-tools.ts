@@ -12,6 +12,7 @@ import { glob } from "glob";
 import type { Repo } from "../store/repo.js";
 import { TimeMachineEngine } from "../core/engine.js";
 import type { UnifiedKnowledgeBaseSearchResponse } from "../cloud/sync-client.js";
+import { CodeIndexer, type SymbolType, type CodeSymbol } from "../services/code-indexer.js";
 
 // Types
 interface IndexedSymbol {
@@ -109,12 +110,126 @@ const LANGUAGE_EXTENSIONS: Record<string, string> = {
   ".rs": "rust",
 };
 
+/**
+ * Map a persisted CodeSymbol (from the SQLite CodeIndexer) into the in-memory
+ * IndexedSymbol shape used by the MCP augmented-tools responses.
+ */
+function toIndexedSymbol(s: CodeSymbol): IndexedSymbol {
+  const typeMap: Record<string, IndexedSymbol["type"]> = {
+    function: "function",
+    class: "class",
+    method: "method",
+    interface: "interface",
+    type: "type",
+    enum: "type",
+    variable: "variable",
+    property: "variable",
+    export: "constant",
+    import: "constant",
+  };
+  return {
+    name: s.symbolName,
+    type: typeMap[s.symbolType] ?? "function",
+    filePath: s.filePath,
+    lineStart: s.lineStart,
+    lineEnd: s.lineEnd,
+    content: s.signature || s.docComment,
+    contentHash: s.contentHash,
+    language: LANGUAGE_EXTENSIONS[path.extname(s.filePath)] ?? "unknown",
+  };
+}
+
+/**
+ * Normalize a GitHub repository reference into a clonable HTTPS URL.
+ * Accepts full https://github.com/owner/repo[.git] URLs, git@github.com:owner/repo
+ * SSH URLs, and owner/repo shorthand. Returns null for anything that is not a
+ * recognized GitHub reference (so it is treated as a local path).
+ */
+function normalizeGitHubUrl(input: string): string | null {
+  const trimmed = input.trim();
+
+  // owner/repo shorthand (no slashes beyond one, valid GitHub name chars).
+  if (/^[\w.-]+\/[\w.-]+$/.test(trimmed) && !trimmed.includes("://") && !trimmed.startsWith(".")) {
+    return `https://github.com/${trimmed.replace(/\.git$/, "")}.git`;
+  }
+
+  // git@github.com:owner/repo(.git)
+  const ssh = trimmed.match(/^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+  if (ssh) {
+    return `https://github.com/${ssh[1]}/${ssh[2]}.git`;
+  }
+
+  // https://github.com/owner/repo(.git)
+  const https = trimmed.match(/^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/);
+  if (https) {
+    return `https://github.com/${https[1]}/${https[2]}.git`;
+  }
+
+  return null;
+}
+
+/**
+ * Shallow-clone a repository into a fresh temp directory. Uses execFile (no
+ * shell) with an explicit argument list to avoid command injection, and only
+ * after the URL has been validated by normalizeGitHubUrl.
+ */
+async function cloneRepositoryToTemp(
+  cloneUrl: string,
+  branch?: string,
+): Promise<{ ok: true; dir: string } | { ok: false; message: string }> {
+  const os = await import("node:os");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+
+  // Guard branch input: git ref names cannot contain whitespace or shell metas,
+  // and we pass it as a discrete arg, but validate defensively anyway.
+  if (branch && !/^[\w./-]+$/.test(branch)) {
+    return { ok: false, message: `Invalid branch name: ${branch}` };
+  }
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aitm-clone-"));
+  const cloneArgs = [
+    "clone",
+    "--depth",
+    "1",
+    "--single-branch",
+    ...(branch ? ["--branch", branch] : []),
+    cloneUrl,
+    tmpDir,
+  ];
+
+  try {
+    await execFileAsync("git", cloneArgs, {
+      timeout: 120_000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    return { ok: true, dir: tmpDir };
+  } catch (error: unknown) {
+    await removeDirSafe(tmpDir);
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: `Failed to clone ${cloneUrl}: ${message}` };
+  }
+}
+
+/** Recursively remove a directory, swallowing errors (best-effort cleanup). */
+async function removeDirSafe(dir: string): Promise<void> {
+  try {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  } catch {
+    /* best-effort cleanup */
+  }
+}
+
 export class AugmentedTools {
   private engine: TimeMachineEngine;
   private repo: Repo;
   private indexCache: Map<string, IndexedSymbol[]> = new Map();
   private repositoryIndexes: Map<string, RepositoryIndex> = new Map();
   private savedContexts: Map<string, SavedContext> = new Map();
+  private codeIndexer: CodeIndexer | null = null;
+  private codeIndexerResolved = false;
 
   constructor(engine: TimeMachineEngine, repo: Repo) {
     this.engine = engine;
@@ -128,6 +243,38 @@ export class AugmentedTools {
     const projects = this.repo.listProjects();
     const project = projects.find(p => p.rootPath === projectPath);
     return project?.projectId || null;
+  }
+
+  /**
+   * Lazily build the SQLite-backed CodeIndexer. Returns null when the repo
+   * does not expose an underlying database (e.g. non-SQLite test doubles),
+   * in which case callers fall back to the in-memory regex cache.
+   */
+  private getCodeIndexer(): CodeIndexer | null {
+    if (this.codeIndexerResolved) return this.codeIndexer;
+    this.codeIndexerResolved = true;
+    try {
+      const db = this.repo.getDatabase?.();
+      this.codeIndexer = db ? new CodeIndexer(db) : null;
+    } catch {
+      this.codeIndexer = null;
+    }
+    return this.codeIndexer;
+  }
+
+  /**
+   * Resolve the persisted CodeIndexer + projectId for a project path, but only
+   * when that project has already been indexed into SQLite. Returns null when
+   * the persistent path is unavailable so callers use the in-memory cache.
+   */
+  private resolvePersistedIndex(projectPath?: string): { indexer: CodeIndexer; projectId: string } | null {
+    if (!projectPath) return null;
+    const indexer = this.getCodeIndexer();
+    if (!indexer) return null;
+    const projectId = this.getProjectIdFromPath(projectPath);
+    if (!projectId) return null;
+    if (indexer.getStats(projectId).totalSymbols === 0) return null;
+    return { indexer, projectId };
   }
 
   /**
@@ -472,6 +619,23 @@ export class AugmentedTools {
         }
       }
 
+      // Persist symbols to SQLite via the full CodeIndexer when the project is
+      // registered and the repo exposes a database. This powers durable,
+      // cross-session search/definition/usage lookups (the in-memory cache only
+      // lives for the current process).
+      const indexer = this.getCodeIndexer();
+      const projectId = this.getProjectIdFromPath(args.projectPath);
+      if (indexer && projectId) {
+        try {
+          const ignoreGlobs = excludePatterns.map((p) => p.replace(/^\*\*\//, "").replace(/\/\*\*$/, ""));
+          const persisted = indexer.indexProject(projectId, args.projectPath, ignoreGlobs);
+          result.errors.push(...persisted.errors);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`Persistent index failed: ${message}`);
+        }
+      }
+
       result.duration = Date.now() - startTime;
       return result;
     } catch (error: unknown) {
@@ -592,7 +756,26 @@ export class AugmentedTools {
     const query = args.query.toLowerCase();
     const results: Array<{ file: string; symbol: string; content: string; lineStart: number; lineEnd: number; score: number }> = [];
 
-    // Search through indexed symbols
+    // Prefer the persisted SQLite index when the project has been indexed.
+    const persisted = this.resolvePersistedIndex(args.projectPath);
+    if (persisted) {
+      const symbolType =
+        args.symbolType && args.symbolType !== "all" ? (args.symbolType as SymbolType) : undefined;
+      const hits = persisted.indexer.searchSymbols(persisted.projectId, args.query, {
+        type: symbolType,
+        limit: maxResults,
+      });
+      return hits.map((h) => ({
+        file: h.symbol.filePath,
+        symbol: h.symbol.symbolName,
+        content: (h.symbol.signature || h.symbol.docComment).slice(0, 500),
+        lineStart: h.symbol.lineStart,
+        lineEnd: h.symbol.lineEnd,
+        score: h.score,
+      }));
+    }
+
+    // Fallback: search through the in-memory regex cache.
     for (const [filePath, symbols] of this.indexCache) {
       for (const symbol of symbols) {
         // Filter by type if specified
@@ -645,6 +828,21 @@ export class AugmentedTools {
     const exactMatches: IndexedSymbol[] = [];
     const partialMatches: IndexedSymbol[] = [];
 
+    // Prefer the persisted SQLite index when available.
+    const persistedDef = this.resolvePersistedIndex(args.projectPath);
+    if (persistedDef) {
+      const defs = persistedDef.indexer
+        .findDefinition(persistedDef.projectId, args.symbol)
+        .map(toIndexedSymbol);
+      if (defs.length > 0) {
+        return { found: true, definition: defs[0], alternatives: defs.slice(1) };
+      }
+      const fuzzy = persistedDef.indexer
+        .searchSymbols(persistedDef.projectId, args.symbol, { limit: 5 })
+        .map((h) => toIndexedSymbol(h.symbol));
+      return fuzzy.length > 0 ? { found: false, alternatives: fuzzy } : { found: false };
+    }
+
     for (const [, symbols] of this.indexCache) {
       for (const symbol of symbols) {
         if (symbol.name.toLowerCase() === symbolLower) {
@@ -683,7 +881,18 @@ export class AugmentedTools {
     const usages: Array<{ filePath: string; line: number; context: string }> = [];
     const searchTerm = args.symbol;
 
-    // Search through all indexed content
+    // Prefer the persisted SQLite index when available.
+    const persistedUsages = this.resolvePersistedIndex(args.projectPath);
+    if (persistedUsages) {
+      const found = persistedUsages.indexer.findUsages(persistedUsages.projectId, args.symbol);
+      return found.slice(0, maxResults).map((s) => ({
+        filePath: s.filePath,
+        line: s.lineStart,
+        context: (s.signature || s.symbolName).trim().slice(0, 100),
+      }));
+    }
+
+    // Search through all indexed content (in-memory fallback)
     for (const [filePath, symbols] of this.indexCache) {
       for (const symbol of symbols) {
         if (symbol.content.includes(searchTerm)) {
@@ -1052,17 +1261,38 @@ export class AugmentedTools {
     const repositoryId = crypto.createHash("sha256").update(repoPath).digest("hex").slice(0, 16);
     const name = args.name || path.basename(repoPath);
 
-    // Check if it's a GitHub URL or local path
-    const isGitHubUrl = repoPath.includes("github.com") || /^[\w-]+\/[\w-]+$/.test(repoPath);
+    // Check if it's a GitHub URL/shorthand or a local path.
+    const cloneUrl = normalizeGitHubUrl(repoPath);
 
-    if (isGitHubUrl) {
-      // For GitHub URLs, we would clone to a temp directory
-      // For now, return a message indicating this needs git clone
-      return {
-        repositoryId,
-        status: "pending",
-        message: `GitHub repository indexing requires cloning. Path: ${repoPath}. Use a local path after cloning.`,
-      };
+    if (cloneUrl) {
+      // Clone the remote repository into a temp directory, index it, then clean up.
+      const cloned = await cloneRepositoryToTemp(cloneUrl, args.branch);
+      if (!cloned.ok) {
+        return { repositoryId, status: "error", message: cloned.message };
+      }
+      try {
+        const result = await this.indexProject({
+          projectPath: cloned.dir,
+          patterns: ["**/*.ts", "**/*.js", "**/*.py", "**/*.go", "**/*.rs", "**/*.java"],
+          excludePatterns: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/target/**"],
+        });
+        this.repositoryIndexes.set(repositoryId, {
+          repositoryId,
+          name,
+          path: cloneUrl,
+          branch: args.branch,
+          indexedAt: new Date().toISOString(),
+          fileCount: result.filesIndexed,
+          symbolCount: result.symbolsFound,
+        });
+        return {
+          repositoryId,
+          status: result.errors.length > 0 ? "partial" : "success",
+          message: `Cloned and indexed ${cloneUrl}: ${result.filesIndexed} files, ${result.symbolsFound} symbols in ${result.duration}ms.${result.errors.length > 0 ? ` Errors: ${result.errors.length}` : ""}`,
+        };
+      } finally {
+        await removeDirSafe(cloned.dir);
+      }
     }
 
     // Index local repository

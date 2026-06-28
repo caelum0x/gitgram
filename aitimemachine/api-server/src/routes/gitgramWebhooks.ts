@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { logger } from "../lib/monitoring.js";
+import { apiKeyAuth } from "../middleware/auth.js";
 import {
   postCommitToGitgram,
   postReleaseToGitgram,
@@ -8,6 +9,11 @@ import {
 } from "../services/gitgramBridgeService.js";
 
 const router = Router();
+
+// These endpoints forward AITM commit/release/restore events to Gitgram. They
+// are not signature-verified inbound webhooks, so the entire router requires an
+// authenticated user to prevent forged events being relayed to Gitgram.
+router.use(apiKeyAuth);
 
 // ============================================================================
 // Validation schemas

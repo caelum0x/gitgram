@@ -14,179 +14,7 @@ import {
 } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
-import { cn } from '@/lib/utils';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface KBDocFull {
-  id: string;
-  title: string;
-  tags: string[];
-  category: string;
-  updatedAt: string;
-  content: string; // Markdown string
-}
-
-interface RelatedDoc {
-  id: string;
-  title: string;
-  category: string;
-  excerpt: string;
-}
-
-// ---------------------------------------------------------------------------
-// Static mock data — swap for API fetch when the KB endpoint is live
-// ---------------------------------------------------------------------------
-
-const DOCS: Record<string, KBDocFull> = {
-  'install-cli': {
-    id: 'install-cli',
-    title: 'Installing the AITM CLI',
-    tags: ['cli', 'npm', 'installation'],
-    category: 'Installation',
-    updatedAt: 'June 18, 2026',
-    content: `## Prerequisites
-
-You need **Node.js 18 or later**. Check your version:
-
-\`\`\`bash
-node --version
-\`\`\`
-
-## Install globally
-
-\`\`\`bash
-npm install -g aitm
-# or
-pnpm add -g aitm
-\`\`\`
-
-## Verify installation
-
-\`\`\`bash
-aitm --version
-\`\`\`
-
-## Login
-
-Authenticate with your AITM account:
-
-\`\`\`bash
-aitm login
-\`\`\`
-
-This opens a browser window for OAuth. Once authenticated, a token is stored in \`~/.aitm/credentials.json\`.
-
-## First checkpoint
-
-\`\`\`bash
-cd your-project
-aitm checkpoint "initial state"
-\`\`\`
-
-You're all set. Run \`aitm --help\` for a full command reference.`,
-  },
-  'cmd-checkpoint': {
-    id: 'cmd-checkpoint',
-    title: 'aitm checkpoint',
-    tags: ['cli', 'checkpoint', 'commands'],
-    category: 'Commands',
-    updatedAt: 'June 20, 2026',
-    content: `## Synopsis
-
-\`\`\`
-aitm checkpoint [label] [options]
-\`\`\`
-
-## Description
-
-Creates a named save point for the current working tree. Both tracked and untracked files are captured. Binary files are stored with content-addressed hashing; text files are stored as diffs relative to the previous checkpoint.
-
-## Options
-
-| Flag | Description |
-|------|-------------|
-| \`--message, -m\` | Checkpoint label (required if not provided as argument) |
-| \`--include-ignored\` | Also capture files matched by \`.gitignore\` |
-| \`--quiet, -q\` | Suppress output |
-
-## Examples
-
-\`\`\`bash
-aitm checkpoint "before refactor"
-aitm checkpoint -m "fixed auth bug"
-aitm checkpoint --include-ignored "full snapshot"
-\`\`\`
-
-## Exit codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | No changes since last checkpoint |
-| 2 | Authentication error |`,
-  },
-};
-
-const RELATED: Record<string, RelatedDoc[]> = {
-  'install-cli': [
-    {
-      id: 'install-vscode',
-      title: 'VS Code Extension Setup',
-      category: 'Installation',
-      excerpt: 'Install the AITM VS Code extension from the marketplace…',
-    },
-    {
-      id: 'cmd-checkpoint',
-      title: 'aitm checkpoint',
-      category: 'Commands',
-      excerpt: 'Create a named save point for the current working tree…',
-    },
-    {
-      id: 'trouble-auth-token',
-      title: 'Authentication token expired',
-      category: 'Troubleshooting',
-      excerpt: 'When the CLI reports "token expired", run aitm login…',
-    },
-  ],
-  'cmd-checkpoint': [
-    {
-      id: 'cmd-restore',
-      title: 'aitm restore',
-      category: 'Commands',
-      excerpt: 'Restore the working tree to a previous checkpoint…',
-    },
-    {
-      id: 'cmd-diff',
-      title: 'aitm diff',
-      category: 'Commands',
-      excerpt: 'Show the diff between the current state and a checkpoint…',
-    },
-    {
-      id: 'install-cli',
-      title: 'Installing the AITM CLI',
-      category: 'Installation',
-      excerpt: 'Install the AITimeMachine CLI globally with npm or pnpm…',
-    },
-  ],
-};
-
-const DEFAULT_RELATED: RelatedDoc[] = [
-  {
-    id: 'install-cli',
-    title: 'Installing the AITM CLI',
-    category: 'Installation',
-    excerpt: 'Install the AITimeMachine CLI globally with npm or pnpm…',
-  },
-  {
-    id: 'api-rest-overview',
-    title: 'REST API Overview',
-    category: 'API',
-    excerpt: 'The AITM API follows REST conventions. All endpoints require…',
-  },
-];
+import { getDocById, getRelatedDocs } from '../data';
 
 // ---------------------------------------------------------------------------
 // Minimal Markdown renderer (headings, code blocks, paragraphs, tables)
@@ -315,8 +143,8 @@ type FeedbackState = 'idle' | 'yes' | 'no';
 
 export default function KnowledgeDocPage() {
   const { id } = useParams<{ id: string }>();
-  const doc = DOCS[id] ?? null;
-  const related = RELATED[id] ?? DEFAULT_RELATED;
+  const doc = getDocById(id);
+  const related = getRelatedDocs(id);
   const [feedback, setFeedback] = useState<FeedbackState>('idle');
 
   // Scroll to top on doc change
@@ -390,7 +218,12 @@ export default function KnowledgeDocPage() {
                 {/* Last updated */}
                 <span className="flex items-center gap-1.5 text-xs text-white/25">
                   <Clock className="h-3 w-3" />
-                  Updated {doc.updatedAt}
+                  Updated{' '}
+                  {new Date(doc.updatedAt).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
                 </span>
               </div>
             </header>

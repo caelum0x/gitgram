@@ -9,6 +9,7 @@
   },
   "exclude": [
     "node_modules",
+    "proximity",
     "__tests__",
     "**/*.test.ts",
     "**/*.test.tsx",

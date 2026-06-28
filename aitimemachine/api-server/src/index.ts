@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import syncRoutes from "./routes/sync.js";
 import restoreRoutes from "./routes/restore.js";
+import backupRoutes from "./routes/backup.js";
 import internalRoutes from "./routes/internal.js";
 import authRoutes from "./routes/auth.js";
 import dashboardRoutes from "./routes/dashboard.js";
@@ -123,6 +124,7 @@ app.get("/v1", (req, res) => {
       audit: "/v1/audit",
       sync: "/v1/sync",
       restore: "/v1/restore",
+      backup: "/v1/backup",
       dashboard: "/v1/dashboard",
       webhooks: "/v1/webhooks",
       repositories: "/v1/repositories",
@@ -179,6 +181,7 @@ app.use("/v1/sessions", sessionsRoutes);
 app.use("/v1/audit", auditRoutes);
 app.use("/v1/sync", syncRoutes);
 app.use("/v1/restore", restoreRoutes);
+app.use("/v1/backup", backupRoutes);
 app.use("/v1/dashboard", dashboardRoutes);
 app.use("/v1/webhooks", webhookRoutes);
 app.use("/v1/repositories", repositoriesRoutes);

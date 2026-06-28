@@ -11,12 +11,16 @@ const footerLinks = {
   ],
   resources: [
     { name: 'Documentation', href: '/docs' },
+    { name: 'Knowledge Base', href: '/knowledge' },
     { name: 'API Reference', href: '/docs#api' },
     { name: 'CLI Guide', href: '/docs#cli' },
     { name: 'MCP Protocol', href: '/docs#mcp' },
   ],
   company: [
     { name: 'About', href: '/about' },
+    { name: 'Roadmap', href: '/roadmap' },
+    { name: 'Team', href: '/team' },
+    { name: 'Investors', href: '/investors' },
     { name: 'Blog', href: '/blog' },
     { name: 'Contact', href: 'mailto:support@gitgram.app' },
   ],

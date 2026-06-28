@@ -830,12 +830,20 @@ export default function AgentsDashboardPage() {
       setUsingMock(false);
       setLastUpdated(new Date());
     } catch (err: unknown) {
-      // Graceful fallback to mock data when endpoints are unreachable (dev).
+      // In development, fall back to mock fixtures so the page stays explorable
+      // when the API is down. In production, never serve fixtures — show the
+      // real empty/error state so users aren't misled by fabricated data.
       setApiReachable(false);
-      setUsingMock(true);
-      setTasks(MOCK_TASKS);
-      setAgents(MOCK_AGENTS);
       setFetchError(err instanceof Error ? err.message : 'Failed to fetch agent data');
+      if (process.env.NODE_ENV !== 'production') {
+        setUsingMock(true);
+        setTasks(MOCK_TASKS);
+        setAgents(MOCK_AGENTS);
+      } else {
+        setUsingMock(false);
+        setTasks([]);
+        setAgents([]);
+      }
     } finally {
       setLoading(false);
     }

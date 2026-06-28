@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { toPng } from 'html-to-image'
+import { toast } from 'react-hot-toast'
 import { EmbedModal } from './EmbedModal'
 
 interface ShareMenuProps {
@@ -18,12 +20,24 @@ type ShareItem = {
   dividerBefore?: boolean
 }
 
+/** Build a filesystem-safe filename from arbitrary text. */
+function toFileSlug(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  return slug || 'gitgram-share'
+}
+
 export function ShareMenu({ url, title, description, postId }: ShareMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [embedOpen, setEmbedOpen] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const captureRef = useRef<HTMLDivElement>(null)
 
   // Close on outside click
   useEffect(() => {
@@ -95,10 +109,31 @@ export function ShareMenu({ url, title, description, postId }: ShareMenuProps) {
     setEmbedOpen(true)
   }
 
-  const handleDownloadImage = () => {
-    // Future feature — coming soon toast
-    setIsOpen(false)
-    alert('Download as image is coming soon!')
+  const handleDownloadImage = async () => {
+    if (!captureRef.current || isDownloading) return
+
+    setIsDownloading(true)
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: '#0d1117',
+      })
+
+      const link = document.createElement('a')
+      link.download = `${toFileSlug(title)}.png`
+      link.href = dataUrl
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success('Image downloaded')
+      setIsOpen(false)
+    } catch {
+      toast.error('Could not generate image. Please try again.')
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   const menuItems: ShareItem[] = [
@@ -149,13 +184,13 @@ export function ShareMenu({ url, title, description, postId }: ShareMenuProps) {
     },
     {
       id: 'download',
-      label: 'Download as image',
+      label: isDownloading ? 'Generating image…' : 'Download as image',
       icon: (
-        <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
         </svg>
       ),
-      onClick: handleDownloadImage,
+      onClick: () => { void handleDownloadImage() },
     },
   ]
 
@@ -204,23 +239,19 @@ export function ShareMenu({ url, title, description, postId }: ShareMenuProps) {
                 <button
                   role="menuitem"
                   onClick={item.onClick}
+                  disabled={item.id === 'download' && isDownloading}
                   className={[
                     'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors',
                     item.id === 'copy-link' && copied
                       ? 'text-[var(--accent)]'
                       : 'text-[var(--foreground-secondary)] hover:text-[var(--foreground)] hover:bg-[var(--surface-secondary)]',
-                    item.id === 'download' ? 'opacity-60' : '',
+                    item.id === 'download' && isDownloading ? 'opacity-60 cursor-wait' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
                 >
                   {item.icon}
                   <span>{item.label}</span>
-                  {item.id === 'download' && (
-                    <span className="ml-auto text-[10px] font-medium text-[var(--foreground-secondary)] bg-[var(--surface-secondary)] px-1.5 py-0.5 rounded">
-                      Soon
-                    </span>
-                  )}
                 </button>
               </div>
             ))}
@@ -236,6 +267,45 @@ export function ShareMenu({ url, title, description, postId }: ShareMenuProps) {
           id={postId}
         />
       )}
+
+      {/*
+        Off-screen share card. Rendered far off-screen (not display:none, which
+        breaks html-to-image layout) so it can be captured to a PNG on demand.
+      */}
+      <div
+        aria-hidden="true"
+        style={{ position: 'fixed', left: '-9999px', top: 0, pointerEvents: 'none' }}
+      >
+        <div
+          ref={captureRef}
+          style={{
+            width: 600,
+            padding: 40,
+            backgroundColor: '#0d1117',
+            color: '#e6edf3',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: '#58a6ff' }}>Gitgram</span>
+          </div>
+          <h2 style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.25, margin: 0 }}>
+            {title}
+          </h2>
+          {description && (
+            <p style={{ fontSize: 16, lineHeight: 1.5, color: '#8b949e', margin: 0 }}>
+              {description.slice(0, 280)}
+            </p>
+          )}
+          <p style={{ fontSize: 14, color: '#6e7681', margin: 0, wordBreak: 'break-all' }}>
+            {url}
+          </p>
+        </div>
+      </div>
     </>
   )
 }

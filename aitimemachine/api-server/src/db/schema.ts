@@ -27,6 +27,25 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Per-user account + dashboard preferences (settings pages).
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  displayName: text("display_name"),
+  autoSync: boolean("auto_sync").default(true).notNull(),
+  emailNotifications: boolean("email_notifications").default(false).notNull(),
+  weeklySummary: boolean("weekly_summary").default(true).notNull(),
+  // Dashboard preferences
+  compress: boolean("compress").default(true).notNull(),
+  retainDays: integer("retain_days").default(30).notNull(),
+  timezone: text("timezone").default("UTC").notNull(),
+  // Dashboard notification toggles
+  notifications: jsonb("notifications").default({}).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const apiKeys = pgTable("api_keys", {
   id: text("id").primaryKey(),
   userId: text("user_id")

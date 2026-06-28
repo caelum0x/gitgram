@@ -1076,6 +1076,7 @@ export default function TimelinePage() {
     restoredCount: number;
     restoreEventId: string;
   } | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // Restore flow step
   const [restoreStep, setRestoreStep] = useState<RestoreStep>('preview');
@@ -1265,6 +1266,7 @@ export default function TimelinePage() {
       setPreviewEvent(event);
       setPreviewData(null);
       setRestoreResult(null);
+      setRestoreError(null);
       setRestoreReason('');
       setRestoreConfirmChecked(false);
       setRestoreConfirmText('');
@@ -1296,9 +1298,10 @@ export default function TimelinePage() {
     []
   );
 
-  const applyRestore = useCallback(async () => {
-    if (!previewEvent?.projectId || !previewEvent?.checkpointId) return;
+  const applyRestore = useCallback(async (): Promise<boolean> => {
+    if (!previewEvent?.projectId || !previewEvent?.checkpointId) return false;
     setRestoring(true);
+    setRestoreError(null);
     try {
       const response = await fetch('/api/time/restore', {
         method: 'POST',
@@ -1312,13 +1315,23 @@ export default function TimelinePage() {
           includeContext: true,
         }),
       });
-      if (!response.ok) throw new Error('restore_failed');
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          (data && typeof data.error === 'string' && data.error) ||
+          'Restore failed. No files were changed.';
+        setRestoreError(message);
+        return false;
+      }
       setRestoreResult({
-        restoredCount: Number(data.restoredCount || 0),
-        restoreEventId: data.restoreEventId || 'unknown',
+        restoredCount: Number(data?.restoredCount || 0),
+        restoreEventId: data?.restoreEventId || 'unknown',
       });
       await mutate();
+      return true;
+    } catch {
+      setRestoreError('Restore service is unavailable. No files were changed.');
+      return false;
     } finally {
       setRestoring(false);
     }
@@ -1981,6 +1994,18 @@ export default function TimelinePage() {
                     />
                   </div>
                 </div>
+
+                {restoreError && (
+                  <div className="rounded-lg border border-red-800/50 bg-red-950/30 p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+                      <div className="text-sm text-red-300">
+                        <p className="font-semibold">Restore failed</p>
+                        <p className="mt-1 text-xs text-red-400/80">{restoreError}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2043,8 +2068,8 @@ export default function TimelinePage() {
             {restoreStep === 'confirm' && (
               <Button
                 onClick={async () => {
-                  await applyRestore();
-                  setRestoreStep('success');
+                  const ok = await applyRestore();
+                  if (ok) setRestoreStep('success');
                 }}
                 disabled={
                   !previewData ||

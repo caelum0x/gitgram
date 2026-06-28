@@ -94,8 +94,8 @@ export const registerA2ATools = createToolRegistrar([
     run: async ({ registryUrl }) => {
       const base =
         registryUrl ??
-        (typeof process !== 'undefined' && process.env.AITM_API_URL) ||
-        'http://localhost:3000';
+        ((typeof process !== 'undefined' && process.env.AITM_API_URL) ||
+          'http://localhost:3000');
       const url = `${base.replace(/\/$/, '')}/a2a/agents`;
 
       let response: Response;

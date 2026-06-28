@@ -9,8 +9,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  let body: { toCheckpointId?: unknown; projectId?: unknown };
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  if (typeof body.toCheckpointId !== 'string' || body.toCheckpointId.length === 0) {
+    return NextResponse.json(
+      { error: 'toCheckpointId is required' },
+      { status: 400 }
+    );
+  }
+
+  try {
     const response = await fetch(`${API_URL}/api/internal/time/preview`, {
       method: 'POST',
       headers: {
@@ -21,30 +34,29 @@ export async function POST(req: Request) {
         userId,
         projectId: body.projectId,
         toCheckpointId: body.toCheckpointId,
-        fromCheckpointId: body.fromCheckpointId,
-        scopeType: body.scopeType || 'project',
-        scopePath: body.scopePath,
-        limit: body.limit || 200,
+        fromCheckpointId: (body as { fromCheckpointId?: unknown }).fromCheckpointId,
+        scopeType: (body as { scopeType?: unknown }).scopeType || 'project',
+        scopePath: (body as { scopePath?: unknown }).scopePath,
+        limit: (body as { limit?: unknown }).limit || 200,
       }),
       cache: 'no-store',
     });
 
+    // Propagate the backend's real status and error payload so the UI can
+    // distinguish a genuine failure from a successful preview.
+    const data = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error('preview_failed');
+      return NextResponse.json(
+        data ?? { error: 'Failed to generate restore preview' },
+        { status: response.status }
+      );
     }
 
-    return NextResponse.json(await response.json());
+    return NextResponse.json(data);
   } catch {
-    return NextResponse.json({
-      success: true,
-      fromCheckpointId: 'cp_mock_before',
-      toCheckpointId: 'cp_mock_after',
-      fileCount: 2,
-      summary: { added: 12, removed: 4, modified: 7 },
-      files: [
-        { filePath: 'src/app/page.tsx', diffContent: '@@ mock @@', stats: { added: 8, removed: 2, modified: 4 } },
-        { filePath: 'src/lib/api.ts', diffContent: '@@ mock @@', stats: { added: 4, removed: 2, modified: 3 } },
-      ],
-    });
+    return NextResponse.json(
+      { error: 'Restore preview service is unavailable' },
+      { status: 502 }
+    );
   }
 }

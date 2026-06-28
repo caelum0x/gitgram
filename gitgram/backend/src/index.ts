@@ -38,6 +38,7 @@ import searchRoutes from './routes/search';
 import uploadRoutes from './routes/upload';
 import analyticsRoutes from './routes/analytics';
 import adminRoutes from './routes/admin';
+import adminPanelRoutes from './routes/adminPanel';
 import notificationRoutes from './routes/notifications';
 import pushNotificationRoutes from './routes/pushNotifications';
 import githubRoutes from './routes/github';
@@ -266,6 +267,9 @@ app.use('/api/v1/snippets', snippetsRoutes);
 
 // Admin routes (protected with admin-specific rate limiting)
 app.use('/api/v1/admin', adminLimiter, adminRoutes);
+
+// Admin panel routes (dashboard, user management, suspend/unsuspend, reports, audit log)
+app.use('/api/v1/admin/panel', adminLimiter, adminPanelRoutes);
 
 // Notifications routes
 app.use('/api/v1/notifications', notificationRoutes);

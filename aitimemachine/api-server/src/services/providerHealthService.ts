@@ -253,8 +253,10 @@ async function checkRedis(): Promise<ProviderHealth> {
     });
   }
   try {
-    // Dynamic import to avoid hard dependency — mirrors the pattern in rateLimit.ts
-    const { default: Redis } = await import("ioredis");
+    // Dynamic import to avoid hard dependency — mirrors the pattern in rateLimit.ts.
+    // Use the named `Redis` export: ioredis's hybrid default export is typed as
+    // the module namespace under NodeNext and is not constructable.
+    const { Redis } = await import("ioredis");
     const client = new Redis(redisUrl, {
       connectTimeout: CHECK_TIMEOUT_MS,
       lazyConnect: true,

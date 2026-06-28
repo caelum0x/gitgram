@@ -65,6 +65,10 @@ interface CheckpointsResponse {
 
 type Speed = 0.5 | 1 | 2 | 4;
 
+// Fixed, varied widths for diff skeleton placeholders (deterministic so SSR and
+// client render identically — no Math.random hydration mismatch).
+const SKELETON_WIDTHS = [92, 68, 80, 55, 74, 88, 63, 78] as const;
+
 // ---------------------------------------------------------------------------
 // Diff parsing helpers (shared with diff/page.tsx)
 // ---------------------------------------------------------------------------
@@ -927,7 +931,9 @@ export default function SessionReplayPage() {
                           <Skeleton
                             key={j}
                             className="h-4 bg-gray-800/60 rounded"
-                            style={{ width: `${60 + Math.random() * 40}%` }}
+                            // Deterministic varied widths avoid hydration
+                            // mismatches and a fake "data" appearance.
+                            style={{ width: `${SKELETON_WIDTHS[j % SKELETON_WIDTHS.length]}%` }}
                           />
                         ))}
                       </div>

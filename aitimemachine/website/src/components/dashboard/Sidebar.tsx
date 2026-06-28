@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { useSubscription } from '@/hooks/useDashboard';
 
 interface NavItem {
   title: string;
@@ -135,17 +136,20 @@ const navSections: NavSection[] = [
   },
 ];
 
-// Mock function to check if user is on team plan - replace with actual implementation
-function useIsTeamPlan() {
-  // This should be replaced with actual subscription check
-  // For now, we'll show it for all users but you can connect this to your billing system
-  return true;
-}
+type DisplayPlan = 'Free' | 'Pro' | 'Team' | 'Enterprise';
 
-// Mock function to get user's plan - replace with actual implementation
-function useUserPlan() {
-  // This should be replaced with actual subscription check
-  return 'Pro'; // Could be 'Free', 'Pro', 'Team', 'Enterprise'
+// Map the billing API's lowercase plan id to the title-cased label used in the UI.
+function toDisplayPlan(plan: string | undefined): DisplayPlan {
+  switch (plan) {
+    case 'team':
+      return 'Team';
+    case 'pro':
+      return 'Pro';
+    case 'enterprise':
+      return 'Enterprise';
+    default:
+      return 'Free';
+  }
 }
 
 export function Sidebar() {
@@ -153,8 +157,13 @@ export function Sidebar() {
   const { user } = useUser();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const isTeamPlan = useIsTeamPlan();
-  const userPlan = useUserPlan();
+  const { subscription } = useSubscription();
+
+  // Derive plan state from the real billing subscription. While the request is
+  // in flight `subscription` is undefined, which resolves to the Free defaults
+  // (no team nav, Free badge) and updates once the data arrives.
+  const userPlan = toDisplayPlan(subscription?.plan);
+  const isTeamPlan = userPlan === 'Team' || userPlan === 'Enterprise';
 
   // Close mobile menu when route changes
   useEffect(() => {

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { db, schema } from "../db/index.js";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { logger } from "../lib/monitoring.js";
 
 // ============================================
@@ -402,24 +402,23 @@ export async function listDevices(
     platform?: string;
   };
 
-  // Fetch all sync checkpoints across these projects
+  // Fetch all sync checkpoints belonging to this user's projects, newest first.
+  // Scope by projectId at the query level so we never read other users' data.
   const rows = await db
     .select({
       id: schema.checkpoints.id,
+      projectId: schema.checkpoints.projectId,
       metadata: schema.checkpoints.metadata,
       createdAt: schema.checkpoints.createdAt,
     })
     .from(schema.checkpoints)
-    .where(eq(schema.checkpoints.triggerType, "sync"))
-    .orderBy(desc(schema.checkpoints.createdAt));
-
-  const filtered = rows.filter((r) =>
-    projectIds.includes(
-      // Rehydrate projectId from the join — metadata carries it indirectly;
-      // we filter by projectId at query level when the ORM supports `inArray`
-      r.id // placeholder — see note below
+    .where(
+      and(
+        eq(schema.checkpoints.triggerType, "sync"),
+        inArray(schema.checkpoints.projectId, projectIds)
+      )
     )
-  );
+    .orderBy(desc(schema.checkpoints.createdAt));
 
   // Group by deviceId, keep only the most recent checkpoint per device
   const deviceMap = new Map<string, Device>();

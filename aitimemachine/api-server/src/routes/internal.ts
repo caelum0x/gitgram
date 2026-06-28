@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { db, schema } from "../db/index.js";
 import { internalAuth } from "../middleware/auth.js";
-import { and, desc, eq, gte, inArray, like, lte, or, SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, like, lte, max, or, SQL } from "drizzle-orm";
 import { getDeliveryStats, retryDelivery } from "../services/webhookDelivery.js";
 import {
   backfillKnowledgeBaseEmbeddings,
@@ -19,6 +19,8 @@ import {
   listPipelineJobs,
 } from "../services/data-pipeline.js";
 import { checkConsent } from "../services/consent.js";
+import { purgeUserData } from "../services/dataDeletion.js";
+import { getEmailService } from "../services/email.js";
 import { logger } from "../lib/monitoring.js";
 
 const router = Router();
@@ -197,8 +199,29 @@ router.post("/webhooks/clerk", async (req, res) => {
       }
 
       case "user.deleted": {
-        // Soft-delete: just log for now, don't actually remove the user
-        logger.info("Clerk user.deleted: received deletion event (no action taken)", { userId: data.id });
+        // GDPR right-to-erasure: purge all user-scoped data and anonymise the
+        // account record. Idempotent — safe even if the user is already gone.
+        if (!data.id) {
+          logger.error("Clerk user.deleted: missing user id", undefined, {});
+          break;
+        }
+        try {
+          const summary = await purgeUserData(data.id);
+          logger.info("Clerk user.deleted: purged user data", {
+            userId: data.id,
+            deletedProjects: summary.deletedProjectIds.length,
+            deletedRepositories: summary.deletedRepositoryIds.length,
+            deletedCheckpoints: summary.deletedCheckpointIds.length,
+          });
+        } catch (purgeError) {
+          // Log and rethrow so the outer handler records it; Clerk will retry.
+          logger.error(
+            "Clerk user.deleted: failed to purge user data",
+            purgeError instanceof Error ? purgeError : undefined,
+            { userId: data.id, details: String(purgeError) }
+          );
+          throw purgeError;
+        }
         break;
       }
 
@@ -953,7 +976,37 @@ const apiKeySchema = z.object({
   keyHash: z.string(),
   keyPrefix: z.string(),
   name: z.string().optional(),
+  // The caller (website) should pass the authenticated user's real email/name
+  // so a newly-created user row is never seeded with placeholder data.
+  email: z.string().email().optional(),
+  userName: z.string().optional(),
 });
+
+/**
+ * Fetch a user's primary email address from the Clerk Backend API.
+ * Returns null when Clerk is not configured or the lookup fails.
+ */
+async function fetchClerkUserEmail(userId: string): Promise<string | null> {
+  const secret = process.env.CLERK_SECRET_KEY;
+  if (!secret) return null;
+  try {
+    const response = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      primary_email_address_id?: string;
+      email_addresses?: Array<{ id: string; email_address: string }>;
+    };
+    const emails = body.email_addresses ?? [];
+    const primary =
+      emails.find((e) => e.id === body.primary_email_address_id) ?? emails[0];
+    return primary?.email_address ?? null;
+  } catch (error) {
+    logger.warn("Clerk user lookup failed", { userId, details: String(error) });
+    return null;
+  }
+}
 
 router.post("/keys", async (req, res) => {
   try {
@@ -967,10 +1020,22 @@ router.post("/keys", async (req, res) => {
       .limit(1);
 
     if (!user) {
-      // Create user if doesn't exist (from Clerk webhook or first key creation)
+      // Create the user if they don't exist yet (first key creation can race
+      // ahead of the Clerk user.created webhook). Resolve the real email from
+      // the request payload, falling back to the Clerk Backend API — never a
+      // fabricated placeholder.
+      const resolvedEmail = data.email ?? (await fetchClerkUserEmail(data.userId));
+      if (!resolvedEmail) {
+        return res.status(422).json({
+          error:
+            "Cannot create API key: user does not exist and no email could be resolved. " +
+            "Provide 'email' in the request or configure CLERK_SECRET_KEY.",
+        });
+      }
       await db.insert(schema.users).values({
         id: data.userId,
-        email: `${data.userId}@placeholder.com`, // Will be updated by webhook
+        email: resolvedEmail,
+        name: data.userName ?? null,
       });
     }
 
@@ -1599,6 +1664,334 @@ router.get("/context/:checkpointId", async (req, res) => {
   } catch (error) {
     logger.error("internal context error", error instanceof Error ? error : undefined, { details: String(error) });
     return res.status(400).json({ error: "Invalid context request" });
+  }
+});
+
+// ============================================
+// PROJECTS (internal, called by website /api/v1/sessions)
+// ============================================
+
+const internalProjectsListSchema = z.object({
+  userId: z.string().min(1),
+  path: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+});
+
+/**
+ * GET /api/internal/projects
+ * List a user's projects enriched with checkpoint counts and the
+ * timestamp of their most recent checkpoint. Optionally filter by an
+ * exact rootPath (used by the restore "verify project" flow).
+ */
+router.get("/projects", async (req, res) => {
+  try {
+    const query = internalProjectsListSchema.parse(req.query);
+
+    const conditions: (SQL | undefined)[] = [
+      eq(schema.projects.userId, query.userId),
+    ];
+    if (query.path) {
+      conditions.push(eq(schema.projects.rootPath, query.path));
+    }
+
+    const projectRows = await db
+      .select({
+        id: schema.projects.id,
+        name: schema.projects.name,
+        rootPath: schema.projects.rootPath,
+        createdAt: schema.projects.createdAt,
+        updatedAt: schema.projects.updatedAt,
+        lastSyncedAt: schema.projects.lastSyncedAt,
+      })
+      .from(schema.projects)
+      .where(and(...conditions))
+      .orderBy(desc(schema.projects.updatedAt))
+      .limit(query.limit);
+
+    if (projectRows.length === 0) {
+      return res.json({ projects: [] });
+    }
+
+    const projectIds = projectRows.map((p) => p.id);
+
+    const stats = await db
+      .select({
+        projectId: schema.checkpoints.projectId,
+        checkpointCount: count(schema.checkpoints.id),
+        lastCheckpointAt: max(schema.checkpoints.createdAt),
+      })
+      .from(schema.checkpoints)
+      .where(
+        and(
+          eq(schema.checkpoints.userId, query.userId),
+          inArray(schema.checkpoints.projectId, projectIds)
+        )
+      )
+      .groupBy(schema.checkpoints.projectId);
+
+    const statsById = new Map(stats.map((s) => [s.projectId, s]));
+
+    const projects = projectRows.map((p) => {
+      const stat = statsById.get(p.id);
+      return {
+        id: p.id,
+        name: p.name,
+        rootPath: p.rootPath,
+        createdAt: p.createdAt?.toISOString() ?? null,
+        updatedAt: p.updatedAt?.toISOString() ?? null,
+        lastSyncedAt: p.lastSyncedAt?.toISOString() ?? null,
+        checkpointCount: Number(stat?.checkpointCount ?? 0),
+        lastCheckpointAt: stat?.lastCheckpointAt
+          ? new Date(stat.lastCheckpointAt).toISOString()
+          : null,
+      };
+    });
+
+    return res.json({ projects });
+  } catch (error) {
+    logger.error(
+      "internal projects list error",
+      error instanceof Error ? error : undefined,
+      { details: String(error) }
+    );
+    return res.status(400).json({ error: "Invalid projects request" });
+  }
+});
+
+const internalProjectCreateSchema = z.object({
+  userId: z.string().min(1),
+  name: z.string().min(1).max(200),
+  rootPath: z.string().max(1000).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+/**
+ * POST /api/internal/projects
+ * Create a new project for the user. Used by the website "Use template"
+ * flow to scaffold a real, user-owned project the timeline can target.
+ */
+router.post("/projects", async (req, res) => {
+  try {
+    const body = internalProjectCreateSchema.parse(req.body || {});
+
+    const [user] = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, body.userId))
+      .limit(1);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const id = crypto.randomBytes(16).toString("hex");
+    const now = new Date();
+
+    const [project] = await db
+      .insert(schema.projects)
+      .values({
+        id,
+        userId: body.userId,
+        name: body.name,
+        rootPath: body.rootPath ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({
+        id: schema.projects.id,
+        name: schema.projects.name,
+        rootPath: schema.projects.rootPath,
+        createdAt: schema.projects.createdAt,
+      });
+
+    return res.status(201).json({
+      project: {
+        id: project.id,
+        name: project.name,
+        rootPath: project.rootPath,
+        createdAt: project.createdAt?.toISOString() ?? now.toISOString(),
+      },
+    });
+  } catch (error) {
+    logger.error(
+      "internal project create error",
+      error instanceof Error ? error : undefined,
+      { details: String(error) }
+    );
+    return res.status(400).json({ error: "Invalid project create request" });
+  }
+});
+
+// ============================================
+// USER SETTINGS (internal, called by website /api/settings)
+// ============================================
+
+const internalSettingsGetSchema = z.object({
+  userId: z.string().min(1),
+});
+
+const internalSettingsPutSchema = z.object({
+  userId: z.string().min(1),
+  displayName: z.string().max(200).nullable().optional(),
+  autoSync: z.boolean().optional(),
+  emailNotifications: z.boolean().optional(),
+  weeklySummary: z.boolean().optional(),
+  compress: z.boolean().optional(),
+  retainDays: z.number().int().min(1).max(3650).optional(),
+  timezone: z.string().max(100).optional(),
+  notifications: z.record(z.unknown()).optional(),
+});
+
+const SETTINGS_DEFAULTS = {
+  displayName: null as string | null,
+  autoSync: true,
+  emailNotifications: false,
+  weeklySummary: true,
+  compress: true,
+  retainDays: 30,
+  timezone: "UTC",
+  notifications: {} as Record<string, unknown>,
+};
+
+router.get("/settings", async (req, res) => {
+  try {
+    const { userId } = internalSettingsGetSchema.parse(req.query);
+    const [row] = await db
+      .select()
+      .from(schema.userSettings)
+      .where(eq(schema.userSettings.userId, userId))
+      .limit(1);
+
+    if (!row) {
+      return res.json(SETTINGS_DEFAULTS);
+    }
+
+    return res.json({
+      displayName: row.displayName,
+      autoSync: row.autoSync,
+      emailNotifications: row.emailNotifications,
+      weeklySummary: row.weeklySummary,
+      compress: row.compress,
+      retainDays: row.retainDays,
+      timezone: row.timezone,
+      notifications: row.notifications ?? {},
+    });
+  } catch (error) {
+    logger.error(
+      "internal settings get error",
+      error instanceof Error ? error : undefined,
+      { details: String(error) }
+    );
+    return res.status(400).json({ error: "Invalid settings request" });
+  }
+});
+
+router.put("/settings", async (req, res) => {
+  try {
+    const body = internalSettingsPutSchema.parse(req.body || {});
+    const { userId, ...rest } = body;
+    const now = new Date();
+
+    // Only persist explicitly provided fields (partial update).
+    const updates: Record<string, unknown> = { updatedAt: now };
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) updates[key] = value;
+    }
+
+    await db
+      .insert(schema.userSettings)
+      .values({
+        userId,
+        displayName: rest.displayName ?? SETTINGS_DEFAULTS.displayName,
+        autoSync: rest.autoSync ?? SETTINGS_DEFAULTS.autoSync,
+        emailNotifications:
+          rest.emailNotifications ?? SETTINGS_DEFAULTS.emailNotifications,
+        weeklySummary: rest.weeklySummary ?? SETTINGS_DEFAULTS.weeklySummary,
+        compress: rest.compress ?? SETTINGS_DEFAULTS.compress,
+        retainDays: rest.retainDays ?? SETTINGS_DEFAULTS.retainDays,
+        timezone: rest.timezone ?? SETTINGS_DEFAULTS.timezone,
+        notifications: rest.notifications ?? SETTINGS_DEFAULTS.notifications,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.userSettings.userId,
+        set: updates,
+      });
+
+    return res.json({ success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid settings payload" });
+    }
+    logger.error(
+      "internal settings put error",
+      error instanceof Error ? error : undefined,
+      { details: String(error) }
+    );
+    return res.status(500).json({ error: "Failed to save settings" });
+  }
+});
+
+// ============================================
+// CONTACT (internal, called by website /api/contact)
+// ============================================
+
+const internalContactSchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email().max(320),
+  subject: z.string().min(1).max(120),
+  message: z.string().min(1).max(5000),
+});
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * POST /api/internal/contact
+ * Delivers a contact-form submission to the support inbox via the email
+ * service. In environments without RESEND_API_KEY the email service logs to
+ * stdout, so this never silently drops a message.
+ */
+router.post("/contact", async (req, res) => {
+  try {
+    const body = internalContactSchema.parse(req.body || {});
+    const supportInbox = process.env.SUPPORT_EMAIL || "support@gitgram.app";
+
+    const safeName = escapeHtml(body.name);
+    const safeEmail = escapeHtml(body.email);
+    const safeSubject = escapeHtml(body.subject);
+    const safeMessage = escapeHtml(body.message).replace(/\n/g, "<br/>");
+
+    const result = await getEmailService().send({
+      to: supportInbox,
+      replyTo: body.email,
+      subject: `[Contact: ${body.subject}] from ${body.name}`,
+      html: `<h2>New contact form submission</h2>
+<p><strong>Name:</strong> ${safeName}</p>
+<p><strong>Email:</strong> ${safeEmail}</p>
+<p><strong>Subject:</strong> ${safeSubject}</p>
+<hr/>
+<p>${safeMessage}</p>`,
+      text: `New contact form submission\n\nName: ${body.name}\nEmail: ${body.email}\nSubject: ${body.subject}\n\n${body.message}`,
+    });
+
+    return res.json({ success: true, id: result.id });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid contact submission" });
+    }
+    logger.error(
+      "internal contact error",
+      error instanceof Error ? error : undefined,
+      { details: String(error) }
+    );
+    return res.status(502).json({ error: "Failed to deliver message" });
   }
 });
 

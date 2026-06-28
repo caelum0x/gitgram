@@ -362,6 +362,19 @@ async function deleteUserScopedData(userId: string): Promise<DeletionSummary> {
   };
 }
 
+/**
+ * Purge all data for a user and anonymise their account record. Intended for
+ * GDPR "right to erasure" flows, including the Clerk `user.deleted` webhook.
+ *
+ * This performs a hard delete of all user-scoped data (projects, checkpoints,
+ * blobs, API keys, sessions, social content, etc.) and replaces PII on the
+ * users row with an anonymised tombstone. Idempotent: running it again on an
+ * already-purged user is a no-op beyond re-anonymising the row.
+ */
+export async function purgeUserData(userId: string): Promise<DeletionSummary> {
+  return deleteUserScopedData(userId);
+}
+
 export async function processDeleteRequestJob(
   requestId: string,
   userId: string,

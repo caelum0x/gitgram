@@ -2155,8 +2155,10 @@ describe("Tenant Isolation - Complete Route Coverage Matrix", () => {
     // Routes that are inherently public or have special auth
     const publicRoutes = ["health", "auth", "internal", "billing"];
 
-    // Routes that use external auth (billing uses Polar webhooks)
-    const specialAuthRoutes = ["sso"];
+    // Routes that use external / protocol-level auth instead of the platform
+    // middleware: sso (external IdP), a2a (A2A protocol agent API keys verified
+    // per-endpoint via a2aService.resolveApiKey, mounted outside /v1).
+    const specialAuthRoutes = ["sso", "a2a"];
 
     const routesDir = new URL(
       "../api-server/src/routes/",

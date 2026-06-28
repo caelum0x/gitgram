@@ -270,23 +270,6 @@ const ENV_VARS: EnvVarSpec[] = [
     defaultValue: 'sandbox',
   },
 
-  // ── DodoPay (alternative payment) ──
-  {
-    name: 'DODO_PAYMENTS_API_KEY',
-    description: 'DodoPay API key',
-    tier: 'optional',
-  },
-  {
-    name: 'DODO_PAYMENTS_SECRET_KEY',
-    description: 'DodoPay secret key',
-    tier: 'optional',
-  },
-  {
-    name: 'DODO_WEBHOOK_SECRET',
-    description: 'DodoPay webhook signing secret',
-    tier: 'optional',
-  },
-
   // ── Email ──
   {
     name: 'RESEND_API_KEY',

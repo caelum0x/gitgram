@@ -41,8 +41,36 @@ vi.mock("ioredis", () => {
     disconnect = mockRedisDisconnect;
     constructor(_url: string, _opts?: any) {}
   }
-  return { default: Redis };
+  // The service imports the named `Redis` export; also provide `default`.
+  return { Redis, default: Redis };
 });
+
+// ---------------------------------------------------------------------------
+// In-process engine mocks
+//
+// GitNexus, Context7, and PAL are first-party in-process engines (not HTTP
+// services). GitNexus health → gitNexusService.isAvailable(); Context7 →
+// CONTEXT7_API_KEY presence; PAL → palEngine.health().
+// ---------------------------------------------------------------------------
+const mockIsAvailable = vi.fn<[], Promise<boolean>>();
+vi.mock("../../src/services/gitNexusService.js", () => ({
+  isAvailable: mockIsAvailable,
+}));
+
+const mockPalHealth = vi.fn<
+  [],
+  Promise<{
+    status: "ok" | "starting" | "down";
+    running: boolean;
+    pid: number | null;
+    command: string;
+    detail?: string;
+  }>
+>();
+vi.mock("../../src/engines/palEngine.js", () => ({
+  palEngine: { health: mockPalHealth },
+  PalEngine: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // monitoring mock (shared with other unit tests)
@@ -126,13 +154,21 @@ describe("providerHealthService", () => {
 
     // Clear required env vars
     setEnv({
-      GITNEXUS_URL: undefined,
-      CONTEXT7_URL: undefined,
-      PAL_URL: undefined,
+      CONTEXT7_API_KEY: undefined,
       OPENAI_API_KEY: undefined,
       ANTHROPIC_API_KEY: undefined,
       REDIS_URL: undefined,
       BEADS_BINARY: undefined,
+    });
+
+    // Default in-process engine stubs: GitNexus unavailable, PAL down.
+    mockIsAvailable.mockResolvedValue(false);
+    mockPalHealth.mockResolvedValue({
+      status: "down",
+      running: false,
+      pid: null,
+      command: "python pal_server.py",
+      detail: "not started",
     });
   });
 
@@ -153,94 +189,91 @@ describe("providerHealthService", () => {
   // checkProvider — GitNexus
   // =========================================================================
 
-  describe("checkProvider — GitNexus", () => {
-    it("returns unconfigured when GITNEXUS_URL is not set", async () => {
-      const result = await checkProvider("GitNexus");
-      expect(result.status).toBe("unconfigured");
-      expect(result.latencyMs).toBe(0);
-    });
-
-    it("returns healthy when the /health endpoint returns 200", async () => {
-      setEnv({ GITNEXUS_URL: "http://localhost:3010" });
-      mockFetch.mockResolvedValueOnce(makeOkResponse({ version: "1.2.3" }));
+  describe("checkProvider — GitNexus (in-process)", () => {
+    it("returns healthy when the in-process backend is available", async () => {
+      mockIsAvailable.mockResolvedValueOnce(true);
 
       const result = await checkProvider("GitNexus");
       expect(result.status).toBe("healthy");
-      expect(result.version).toBe("1.2.3");
       expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     });
 
-    it("returns degraded when the /health endpoint returns a non-2xx status", async () => {
-      setEnv({ GITNEXUS_URL: "http://localhost:3010" });
-      mockFetch.mockResolvedValueOnce(makeErrorResponse(503));
-
-      const result = await checkProvider("GitNexus");
-      expect(result.status).toBe("degraded");
-      expect(result.error).toContain("503");
-    });
-
-    it("returns unavailable when fetch throws (network down)", async () => {
-      setEnv({ GITNEXUS_URL: "http://localhost:3010" });
-      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    it("returns unavailable when the in-process backend is not responding", async () => {
+      mockIsAvailable.mockResolvedValueOnce(false);
 
       const result = await checkProvider("GitNexus");
       expect(result.status).toBe("unavailable");
-      expect(result.error).toContain("ECONNREFUSED");
+      expect(result.error).toContain("not responding");
+    });
+
+    it("returns unavailable when the availability check throws", async () => {
+      mockIsAvailable.mockRejectedValueOnce(new Error("engine boom"));
+
+      const result = await checkProvider("GitNexus");
+      expect(result.status).toBe("unavailable");
+      expect(result.error).toContain("engine boom");
     });
   });
 
   // =========================================================================
-  // checkProvider — Context7
+  // checkProvider — Context7 (configured via CONTEXT7_API_KEY)
   // =========================================================================
 
   describe("checkProvider — Context7", () => {
-    it("returns unconfigured when CONTEXT7_URL is not set", async () => {
+    it("returns unconfigured when CONTEXT7_API_KEY is not set", async () => {
       const result = await checkProvider("Context7");
       expect(result.status).toBe("unconfigured");
+      expect(result.error).toMatch(/CONTEXT7_API_KEY/);
     });
 
-    it("returns healthy when the /message endpoint returns 200", async () => {
-      setEnv({ CONTEXT7_URL: "http://localhost:3100" });
-      mockFetch.mockResolvedValueOnce(makeOkResponse({}));
+    it("returns healthy when CONTEXT7_API_KEY is set (no URL needed)", async () => {
+      setEnv({ CONTEXT7_API_KEY: "ctx7-valid-key" });
 
       const result = await checkProvider("Context7");
       expect(result.status).toBe("healthy");
-    });
-
-    it("returns unavailable when fetch throws", async () => {
-      setEnv({ CONTEXT7_URL: "http://localhost:3100" });
-      mockFetch.mockRejectedValueOnce(new Error("Timeout"));
-
-      const result = await checkProvider("Context7");
-      expect(result.status).toBe("unavailable");
     });
   });
 
   // =========================================================================
-  // checkProvider — PAL
+  // checkProvider — PAL (in-process Python subprocess via palEngine.health)
   // =========================================================================
 
   describe("checkProvider — PAL", () => {
-    it("returns unconfigured when PAL_URL is not set", async () => {
-      const result = await checkProvider("PAL");
-      expect(result.status).toBe("unconfigured");
-    });
-
-    it("returns healthy with version when /health responds 200", async () => {
-      setEnv({ PAL_URL: "http://localhost:8000" });
-      mockFetch.mockResolvedValueOnce(makeOkResponse({ version: "0.9.1" }));
+    it("returns healthy when palEngine reports status ok", async () => {
+      mockPalHealth.mockResolvedValueOnce({
+        status: "ok",
+        running: true,
+        pid: 1234,
+        command: "python pal_server.py",
+      });
 
       const result = await checkProvider("PAL");
       expect(result.status).toBe("healthy");
-      expect(result.version).toBe("0.9.1");
     });
 
-    it("returns degraded on non-2xx response", async () => {
-      setEnv({ PAL_URL: "http://localhost:8000" });
-      mockFetch.mockResolvedValueOnce(makeErrorResponse(502));
+    it("returns degraded when palEngine reports status starting", async () => {
+      mockPalHealth.mockResolvedValueOnce({
+        status: "starting",
+        running: true,
+        pid: 1234,
+        command: "python pal_server.py",
+      });
 
       const result = await checkProvider("PAL");
       expect(result.status).toBe("degraded");
+    });
+
+    it("returns unavailable when palEngine reports status down", async () => {
+      mockPalHealth.mockResolvedValueOnce({
+        status: "down",
+        running: false,
+        pid: null,
+        command: "python pal_server.py",
+        detail: "process exited",
+      });
+
+      const result = await checkProvider("PAL");
+      expect(result.status).toBe("unavailable");
     });
   });
 
@@ -435,15 +468,22 @@ describe("providerHealthService", () => {
 
     it("returns overall=healthy when every provider is healthy", async () => {
       setEnv({
-        GITNEXUS_URL: "http://localhost:3010",
-        CONTEXT7_URL: "http://localhost:3100",
-        PAL_URL: "http://localhost:8000",
+        CONTEXT7_API_KEY: "ctx7-ok",
         OPENAI_API_KEY: "sk-ok",
         ANTHROPIC_API_KEY: "sk-ant-ok",
         REDIS_URL: "redis://localhost:6379",
       });
 
-      // HTTP providers all return 200
+      // In-process engines healthy
+      mockIsAvailable.mockResolvedValue(true);
+      mockPalHealth.mockResolvedValue({
+        status: "ok",
+        running: true,
+        pid: 1234,
+        command: "python pal_server.py",
+      });
+
+      // HTTP providers (OpenAI, Anthropic) return 200
       mockFetch.mockResolvedValue(makeOkResponse({ version: "1.0.0" }));
 
       // Beads returns a version
