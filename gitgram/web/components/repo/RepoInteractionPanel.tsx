@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Repository, repoService } from '@/services/repoService';
+import { githubService } from '@/services/githubService';
+import { useAuthStore } from '@/store/authStore';
+import { getErrorMessage } from '@/utils/error';
 import { buildRepoTextPath } from '@/utils/repositoryRouting';
 
 interface RepoInteractionPanelProps {
@@ -131,10 +134,69 @@ function RecentContributors({ owner, name }: { owner: string; name: string }) {
 
 export default function RepoInteractionPanel({ repository, owner, name, onFollow }: RepoInteractionPanelProps) {
   const REACTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F389}', '\u{1F680}', '\u{1F440}', '\u{1F525}'];
+  const { user } = useAuthStore();
+  const isGitHubConnected = Boolean(user?.githubId);
   const [shareCopied, setShareCopied] = useState(false);
   const [exportLoading, setExportLoading] = useState<'copy' | 'download' | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [cachedRepoText, setCachedRepoText] = useState<string | null>(null);
+
+  // GitHub one-click star state
+  const [starred, setStarred] = useState<boolean | null>(null);
+  const [starLoading, setStarLoading] = useState(false);
+  const [starError, setStarError] = useState<string | null>(null);
+
+  // Resolve current star state once GitHub is connected.
+  useEffect(() => {
+    let active = true;
+    if (!isGitHubConnected) {
+      setStarred(null);
+      return;
+    }
+    githubService
+      .hasStarredRepo(repository.fullName)
+      .then((value) => {
+        if (active) setStarred(value);
+      })
+      .catch(() => {
+        // Non-fatal: leave as unknown so the button still offers to star.
+        if (active) setStarred(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isGitHubConnected, repository.fullName]);
+
+  const handleStarOnGitHub = useCallback(async () => {
+    // Not connected → fall back to opening the repo on GitHub (previous behavior).
+    if (!isGitHubConnected) {
+      window.open(repository.htmlUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (starLoading) return;
+    setStarError(null);
+
+    const next = !starred;
+    // Optimistic toggle.
+    setStarred(next);
+    setStarLoading(true);
+    try {
+      const result = next
+        ? await githubService.starRepo(repository.fullName)
+        : await githubService.unstarRepo(repository.fullName);
+      if (!result.success) {
+        throw new Error(result.message || 'GitHub action failed');
+      }
+      setStarred(result.active);
+    } catch (error) {
+      // Revert on failure.
+      setStarred(!next);
+      setStarError(getErrorMessage(error));
+    } finally {
+      setStarLoading(false);
+    }
+  }, [isGitHubConnected, starred, starLoading, repository.fullName, repository.htmlUrl]);
 
   const handleReaction = async (type: string) => {
     try {
@@ -152,10 +214,6 @@ export default function RepoInteractionPanel({ repository, owner, name, onFollow
     } catch (error) {
       console.error('Failed to share', error);
     }
-  };
-
-  const handleStarOnGitHub = () => {
-    window.open(repository.htmlUrl, '_blank');
   };
 
   const fetchRepoText = async () => {
@@ -224,12 +282,33 @@ export default function RepoInteractionPanel({ repository, owner, name, onFollow
         <div className="flex gap-2 mb-3">
           <button
             onClick={handleStarOnGitHub}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background py-2 text-sm font-medium text-foreground transition hover:bg-hover"
+            disabled={starLoading}
+            aria-pressed={isGitHubConnected ? starred ?? false : undefined}
+            title={
+              isGitHubConnected
+                ? starred
+                  ? 'Unstar on GitHub'
+                  : 'Star on GitHub'
+                : 'Open on GitHub'
+            }
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+              isGitHubConnected && starred
+                ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20'
+                : 'border-border bg-background text-foreground hover:bg-hover'
+            }`}
           >
-            <svg className="h-4 w-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-            Star
+            {starLoading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <svg
+                className={`h-4 w-4 ${isGitHubConnected && starred ? 'text-yellow-500' : 'text-yellow-500'}`}
+                fill={isGitHubConnected && starred ? 'currentColor' : 'currentColor'}
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+            )}
+            {isGitHubConnected ? (starred ? 'Starred' : 'Star') : 'Star'}
           </button>
           <button
             onClick={handleShare}
@@ -241,6 +320,12 @@ export default function RepoInteractionPanel({ repository, owner, name, onFollow
             {shareCopied ? 'Copied!' : 'Share'}
           </button>
         </div>
+
+        {starError && (
+          <p className="mb-3 text-xs text-error" role="alert">
+            {starError}
+          </p>
+        )}
 
         <div className="mb-3 grid grid-cols-2 gap-2">
           <button

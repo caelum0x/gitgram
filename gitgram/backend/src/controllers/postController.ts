@@ -13,6 +13,7 @@ import { validateCheckpoint, buildCheckpointRef, formatCheckpointDescription } f
 import type { AitmCheckpointRef } from '../services/aitmService';
 import { getCachedComments, setCachedComments, invalidateCommentCache } from '../utils/commentCache';
 import { tuneFeed, type TunableFeedItem } from '../services/feedTuner';
+import { normalizeSelfLabels, decideSelfLabel } from '../services/selfLabels';
 
 export const createPost = asyncHandler(async (req: AuthRequest, res: Response) => {
   const {
@@ -29,6 +30,8 @@ export const createPost = asyncHandler(async (req: AuthRequest, res: Response) =
     diffSummary,
     changedFiles,
     changeStoryTitle,
+    selfLabels,
+    contentWarning,
   } = req.body;
   const account = await prisma.account.findFirst({ where: { userId: req.userId } });
   if (!account) throw Errors.notFound('Account');
@@ -103,6 +106,13 @@ export const createPost = asyncHandler(async (req: AuthRequest, res: Response) =
 
   const effectiveType = checkpointId ? 'CHANGE_STORY' : type;
 
+  // Author self-labeling / content warnings (voluntary sensitivity tags).
+  const normalizedSelfLabels = normalizeSelfLabels(selfLabels);
+  const normalizedContentWarning =
+    typeof contentWarning === 'string' && contentWarning.trim().length > 0
+      ? contentWarning.trim().slice(0, 300)
+      : null;
+
   // Validate and resolve AITM checkpoint metadata (optional — allows post even if AITM is down)
   let resolvedAitmCheckpointRef: AitmCheckpointRef | null = null;
   const effectiveAitmCheckpointId = typeof checkpointId === 'string' && checkpointId.trim() ? checkpointId.trim() : null;
@@ -128,6 +138,8 @@ export const createPost = asyncHandler(async (req: AuthRequest, res: Response) =
       aitmProjectId: effectiveAitmProjectId,
       aitmCheckpointRef: resolvedAitmCheckpointRef ?? undefined,
       type: effectiveType,
+      selfLabels: normalizedSelfLabels,
+      contentWarning: normalizedContentWarning,
     },
     include: {
       user: {
@@ -197,13 +209,41 @@ export const createPost = asyncHandler(async (req: AuthRequest, res: Response) =
   res.status(201).json({ post: { ...post, linkPreviews } });
 });
 
+/**
+ * Derive the thread-root key for a feed post.
+ *
+ * Gitgram posts are flat (no native reply chain), so the closest analog to a
+ * Bluesky thread is an AITM change-story progression: a run of posts about the
+ * same AITM project/checkpoint. Collapsing those keeps a busy change-story from
+ * flooding the following feed, surfacing its highest-ranked entry once.
+ *
+ * We deliberately do NOT key on `repositoryId` alone — a repository can host
+ * many distinct, unrelated posts, and collapsing all of them would regress the
+ * general feed. Only the AITM-project subject is treated as a thread root.
+ */
+function deriveThreadRoot(post: Record<string, unknown>): string | null {
+  const aitmProjectId = post.aitmProjectId;
+  if (typeof aitmProjectId === 'string' && aitmProjectId.length > 0) {
+    return `aitm:${aitmProjectId}`;
+  }
+  return null;
+}
+
 /** Map a raw feed post to the minimal shape required by FeedTuner. */
 function toTunableItem(post: Record<string, unknown>): TunableFeedItem {
+  const selfLabel = decideSelfLabel({
+    selfLabels: (post.selfLabels as string[] | null | undefined) ?? null,
+    contentWarning: (post.contentWarning as string | null | undefined) ?? null,
+  });
   return {
     ...(post as TunableFeedItem),
     id: post.id as string,
     type: 'post',
     authorId: (post.userId as string | null) ?? null,
+    rootPostId: deriveThreadRoot(post),
+    // Attach the self-label decision so the client can blur 'warn' posts and so
+    // the feed can drop 'hide' posts (see applySelfLabelBehavior).
+    selfLabel,
     score: (post.likesCount as number ?? 0) * 2 + (post.commentsCount as number ?? 0) * 3,
     likesCount: post.likesCount as number | undefined,
     commentsCount: post.commentsCount as number | undefined,
@@ -212,9 +252,37 @@ function toTunableItem(post: Record<string, unknown>): TunableFeedItem {
   };
 }
 
+/**
+ * Apply author self-label hide/warn behavior to a tuned feed.
+ *
+ * `hide` items (adult content) are removed unless the viewer is the author or
+ * has opted into adult content. `warn` items stay in the feed carrying their
+ * `selfLabel` decision so the client can blur them behind the warning.
+ */
+function applySelfLabelBehavior(
+  items: TunableFeedItem[],
+  opts: { viewerId: string; adultContentEnabled: boolean }
+): TunableFeedItem[] {
+  return items.filter(item => {
+    const decision = item.selfLabel as ReturnType<typeof decideSelfLabel> | undefined;
+    if (!decision || decision.behavior !== 'hide') return true;
+    // Always show the author their own labeled post.
+    if (item.authorId && item.authorId === opts.viewerId) return true;
+    return opts.adultContentEnabled;
+  });
+}
+
 export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
   const { page = 1, limit = 20, cursor } = req.query;
+
+  // Viewer's opt-in for author-self-labeled adult content (default: hidden).
+  const viewer = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { adultContentEnabled: true },
+  });
+  const adultContentEnabled = viewer?.adultContentEnabled ?? false;
+  const labelOpts = { viewerId: userId, adultContentEnabled };
 
   if (typeof cursor === 'string' && cursor.trim()) {
     const result = await FeedService.getPersonalizedFeedCursor(
@@ -222,8 +290,9 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
       cursor.trim(),
       Number(limit)
     );
-    const tunedPosts = tuneFeed(
-      (result.posts as Record<string, unknown>[]).map(toTunableItem)
+    const tunedPosts = applySelfLabelBehavior(
+      tuneFeed((result.posts as Record<string, unknown>[]).map(toTunableItem)),
+      labelOpts
     );
     res.json({ ...result, posts: tunedPosts });
     return;
@@ -242,8 +311,9 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
     return;
   }
 
-  const tunedPosts = tuneFeed(
-    (posts as Record<string, unknown>[]).map(toTunableItem)
+  const tunedPosts = applySelfLabelBehavior(
+    tuneFeed((posts as Record<string, unknown>[]).map(toTunableItem)),
+    labelOpts
   );
 
   res.json({ posts: tunedPosts, isDiscover: false });

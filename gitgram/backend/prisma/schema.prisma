@@ -86,6 +86,10 @@ model User {
   emailVerified     Boolean  @default(false)
   verified          Boolean  @default(false)
   isPrivate         Boolean  @default(false)
+  // Viewer opt-in for author-self-labeled adult content. When false (default),
+  // posts an author marked as adult (sexual/nudity/porn) are hidden from this
+  // user's feed. See services/selfLabels.ts.
+  adultContentEnabled Boolean @default(false)
   isBanned          Boolean  @default(false)
   bannedAt          DateTime?
   bannedReason      String?
@@ -372,6 +376,13 @@ model Post {
   status         String    @default("PUBLISHED") // PUBLISHED, DRAFT, SCHEDULED
   isArchived   Boolean  @default(false)
   archivedAt   DateTime?
+
+  // Author self-labeling / content warnings (ported from Bluesky SELF_LABELS).
+  // Voluntary, author-applied sensitivity tags. Each maps to a hide-or-warn
+  // behavior in the feed pipeline. Adult labels (sexual, nudity, porn) hide by
+  // default; graphic-media and spoiler warn (blur) by default.
+  selfLabels     String[]  @default([]) // e.g. ["sexual", "graphic-media", "spoiler"]
+  contentWarning String?   // optional free-text warning shown alongside the label
 
   // Optional geotagging for map / nearby discovery
   location  String?

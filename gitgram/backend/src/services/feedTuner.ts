@@ -33,6 +33,37 @@ export interface TunableFeedItem {
   type: FeedItemType;
   /** Author/owner identifier — null for system or anonymous items. */
   authorId: string | null;
+  /**
+   * Identifier of the conversation/thread this item belongs to.
+   *
+   * Ported from Bluesky's `FeedViewPostsSlice.rootUri` concept: multiple items
+   * that share the same thread root collapse to a single entry (the most recent)
+   * so a busy thread surfaces once instead of flooding the feed.
+   *
+   * In Gitgram a "thread" is the set of posts about the same subject. Callers
+   * derive this from a stable subject key — typically the repository id or the
+   * AITM project/checkpoint id. When absent, the item is treated as its own
+   * thread root and is never collapsed.
+   */
+  rootPostId?: string | null;
+  /**
+   * Explicit thread identifier. When both `threadId` and `rootPostId` are set,
+   * `threadId` wins. Provided as a convenience alias so callers that already
+   * model threads can pass through without reshaping the field name.
+   */
+  threadId?: string | null;
+  /**
+   * When true, this item belongs to a thread the viewer has muted and should be
+   * dropped by `removeMutedThreads`. The backend has no thread-mute store yet,
+   * so callers that lack mute data simply leave this undefined.
+   */
+  isThreadMuted?: boolean;
+  /**
+   * When true, this item is a reply whose parent/root context could not be
+   * resolved (an "orphan"). `removeOrphans` drops these so the feed never shows
+   * a dangling reply with no visible context.
+   */
+  isOrphan?: boolean;
   /** Pre-computed feed ranking score (higher = better). */
   score: number;
   /** Optional trending score override; computed on-the-fly when absent. */
@@ -113,6 +144,28 @@ export interface FeedTunerOptions {
    * @default []
    */
   sponsoredItems?: ReadonlyArray<SponsoredItem>;
+
+  /**
+   * When true, collapse items that share the same thread root so each
+   * conversation appears at most once (its highest-ranked entry survives).
+   * Ported from Bluesky's `FeedTuner.dedupThreads`.
+   * @default true
+   */
+  dedupeThreads?: boolean;
+
+  /**
+   * When true, drop items flagged `isThreadMuted`.
+   * Ported from Bluesky's `FeedTuner.removeMutedThreads`.
+   * @default true
+   */
+  removeMutedThreads?: boolean;
+
+  /**
+   * When true, drop items flagged `isOrphan` (replies whose context could not
+   * be resolved). Ported from Bluesky's `FeedTuner.removeOrphans`.
+   * @default true
+   */
+  removeOrphans?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +179,9 @@ const DEFAULT_TRENDING_BOOST_THRESHOLD = 50;
 const DEFAULT_TRENDING_BOOST_MULTIPLIER = 1.5;
 const DEFAULT_DIVERSITY_PENALTY_AFTER = 3;
 const DEFAULT_DIVERSITY_PENALTY_MULTIPLIER = 0.5;
+const DEFAULT_DEDUPE_THREADS = true;
+const DEFAULT_REMOVE_MUTED_THREADS = true;
+const DEFAULT_REMOVE_ORPHANS = true;
 
 // ---------------------------------------------------------------------------
 // Internal helpers  (pure functions — no side-effects)
@@ -383,6 +439,64 @@ function deduplicateById(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem
   });
 }
 
+/**
+ * Resolve the thread-root key for an item.
+ *
+ * `threadId` takes precedence over `rootPostId`. When neither is present the
+ * item is its own thread root (it can never collapse another item) and we
+ * return `null` to signal "no shared thread".
+ */
+function threadRootKey(item: TunableFeedItem): string | null {
+  if (typeof item.threadId === 'string' && item.threadId.length > 0) {
+    return item.threadId;
+  }
+  if (typeof item.rootPostId === 'string' && item.rootPostId.length > 0) {
+    return item.rootPostId;
+  }
+  return null;
+}
+
+/**
+ * Collapse items that share the same thread root so each conversation surfaces
+ * once. The FIRST item encountered for a given root wins; later items sharing
+ * that root are dropped.
+ *
+ * Callers are expected to pass items already ordered so the "winning" entry per
+ * thread (e.g. the most recent / highest-ranked) appears first. The tuner runs
+ * this AFTER `sortByScore`, so the highest-scoring entry of each thread is kept,
+ * mirroring Bluesky's "you only see the most recent reply" behaviour for the
+ * following feed.
+ *
+ * Items without a thread root (see `threadRootKey`) are always preserved.
+ * Returns a new array — input is not modified.
+ */
+function deduplicateByThreadRoot(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
+  const seenRoots = new Set<string>();
+  return items.filter(item => {
+    const root = threadRootKey(item);
+    if (root === null) return true; // standalone item, never collapsed
+    if (seenRoots.has(root)) return false;
+    seenRoots.add(root);
+    return true;
+  });
+}
+
+/**
+ * Drop items flagged `isThreadMuted`. Ported from Bluesky's
+ * `FeedTuner.removeMutedThreads`. Returns a new array.
+ */
+function dropMutedThreads(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
+  return items.filter(item => item.isThreadMuted !== true);
+}
+
+/**
+ * Drop items flagged `isOrphan`. Ported from Bluesky's
+ * `FeedTuner.removeOrphans`. Returns a new array.
+ */
+function dropOrphans(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
+  return items.filter(item => item.isOrphan !== true);
+}
+
 // ---------------------------------------------------------------------------
 // FeedTuner class
 // ---------------------------------------------------------------------------
@@ -409,6 +523,9 @@ export class FeedTuner {
       diversityPenaltyAfter: options.diversityPenaltyAfter ?? DEFAULT_DIVERSITY_PENALTY_AFTER,
       diversityPenaltyMultiplier: options.diversityPenaltyMultiplier ?? DEFAULT_DIVERSITY_PENALTY_MULTIPLIER,
       sponsoredItems: options.sponsoredItems ?? [],
+      dedupeThreads: options.dedupeThreads ?? DEFAULT_DEDUPE_THREADS,
+      removeMutedThreads: options.removeMutedThreads ?? DEFAULT_REMOVE_MUTED_THREADS,
+      removeOrphans: options.removeOrphans ?? DEFAULT_REMOVE_ORPHANS,
     };
   }
 
@@ -416,12 +533,16 @@ export class FeedTuner {
    * Process a raw feed array and return a tuned feed.
    *
    * Pipeline:
-   *  1. Deduplicate
-   *  2. Apply score adjustments (trending boost + diversity penalty)
-   *  3. Re-sort by adjusted score
-   *  4. Enforce author run limit
-   *  5. Interleave content types
-   *  6. Inject sponsored items
+   *  1. Deduplicate by id
+   *  2. Drop orphaned replies (removeOrphans)
+   *  3. Drop muted threads (removeMutedThreads)
+   *  4. Apply score adjustments (trending boost + diversity penalty)
+   *  5. Re-sort by adjusted score
+   *  6. Collapse threads by root (dedupThreads) — keeps the highest-scoring
+   *     entry per thread, so it runs after the sort
+   *  7. Enforce author run limit
+   *  8. Interleave content types
+   *  9. Inject sponsored items
    *
    * @param posts - Raw feed items (not mutated).
    * @returns New array of tuned feed items.
@@ -429,14 +550,25 @@ export class FeedTuner {
   tune(posts: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
     if (posts.length === 0) return [];
 
-    const step1 = deduplicateById(posts);
-    const step2 = applyScoreAdjustments(step1, this.options);
-    const step3 = sortByScore(step2);
-    const step4 = enforceAuthorRun(step3, this.options.maxAuthorRun);
-    const step5 = interleaveContentTypes(step4);
-    const step6 = injectSponsored(step5, this.options.sponsoredItems, this.options.sponsoredInterval);
+    const deduped = deduplicateById(posts);
+    const withoutOrphans = this.options.removeOrphans ? dropOrphans(deduped) : deduped;
+    const withoutMuted = this.options.removeMutedThreads
+      ? dropMutedThreads(withoutOrphans)
+      : withoutOrphans;
+    const adjusted = applyScoreAdjustments(withoutMuted, this.options);
+    const sorted = sortByScore(adjusted);
+    const threadDeduped = this.options.dedupeThreads
+      ? deduplicateByThreadRoot(sorted)
+      : sorted;
+    const runLimited = enforceAuthorRun(threadDeduped, this.options.maxAuthorRun);
+    const interleaved = interleaveContentTypes(runLimited);
+    const withSponsored = injectSponsored(
+      interleaved,
+      this.options.sponsoredItems,
+      this.options.sponsoredInterval
+    );
 
-    return step6;
+    return withSponsored;
   }
 }
 

@@ -14,13 +14,18 @@
  */
 
 import crypto from "crypto";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { db, schema } from "../db/index.js";
 import {
   getEmbeddingService,
   type EmbeddingService,
 } from "./embeddings.js";
+import { resolveBeadsBinary } from "./engineManager.js";
 import type { SavedContextSource } from "../db/schema.js";
 import { logger } from "../lib/monitoring.js";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Resolve where ingested memory should be persisted. Both fields are required
@@ -266,4 +271,101 @@ export async function ingestLibraryDoc(
       topic,
     },
   });
+}
+
+// ============================================================================
+// Beads dependency-graph helpers
+//
+// Thin wrappers over the `bd` binary (resolved via engineManager) that expose
+// the dependency DAG operations the multi-agent orchestration relies on:
+// `bd dep add`, `bd dep list`, and `bd dep cycles`. These return the parsed
+// `--json` payload from the binary. Kept here (next to ingestTask) so all
+// beads-backed memory operations live in one service.
+// ============================================================================
+
+function beadsBinary(): string {
+  return resolveBeadsBinary().path ?? "bd";
+}
+
+function parseBeadsJson(stdout: string): unknown {
+  const trimmed = stdout.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    // Some `bd` mutations emit a human-readable confirmation rather than JSON;
+    // surface the raw message instead of throwing.
+    return { message: trimmed };
+  }
+}
+
+/** Allowed beads dependency edge types (mirrors `bd dep add -t`). */
+export type BeadsDependencyType =
+  | "blocks"
+  | "tracks"
+  | "related"
+  | "parent-child"
+  | "discovered-from"
+  | "until"
+  | "caused-by"
+  | "validates"
+  | "relates-to"
+  | "supersedes";
+
+const VALID_DEP_TYPES: ReadonlySet<string> = new Set([
+  "blocks",
+  "tracks",
+  "related",
+  "parent-child",
+  "discovered-from",
+  "until",
+  "caused-by",
+  "validates",
+  "relates-to",
+  "supersedes",
+]);
+
+/**
+ * Add a dependency edge: `blocked` depends on `blocker`. Runs the per-edge
+ * cycle check (the binary refuses and errors if the edge would create a cycle).
+ * Throws on failure (e.g. unknown id, or a would-be cycle) so the caller can
+ * map it to an HTTP status.
+ */
+export async function addDependency(
+  blocked: string,
+  blocker: string,
+  type?: string
+): Promise<unknown> {
+  const args = ["dep", "add", blocked, blocker];
+  if (type && VALID_DEP_TYPES.has(type)) {
+    args.push("--type", type);
+  }
+  args.push("--json");
+
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  return parseBeadsJson(stdout);
+}
+
+/**
+ * List dependencies for a task. `direction='down'` (default) returns what the
+ * task depends on (its blockers); `direction='up'` returns what depends on it.
+ */
+export async function listDependencies(
+  id: string,
+  direction: "up" | "down" = "down"
+): Promise<unknown> {
+  const args = ["dep", "list", id, `--direction=${direction}`, "--json"];
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  return parseBeadsJson(stdout);
+}
+
+/**
+ * Detect dependency cycles across the whole graph. Returns the parsed analysis
+ * from `bd dep cycles --json`.
+ */
+export async function findDependencyCycles(): Promise<unknown> {
+  const { stdout } = await execFileAsync(beadsBinary(), ["dep", "cycles", "--json"]);
+  return parseBeadsJson(stdout);
 }

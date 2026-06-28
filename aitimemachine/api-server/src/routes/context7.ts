@@ -25,28 +25,79 @@ const router = Router();
 router.use(apiKeyAuth);
 
 // ============================================================================
-// In-process Context7 client
+// Per-request Context7 client
+//
+// The Context7 key is resolved per request so each tenant/user can supply their
+// own key (and consume their own rate limit) instead of every caller sharing
+// one server-wide key. Resolution order mirrors the upstream Context7 MCP
+// server's `extractApiKey`:
+//   1. Authorization: Bearer <key>
+//   2. X-Context7-Key / Context7-API-Key headers
+// then falls back to the server-wide CONTEXT7_API_KEY env var.
+//
+// Note: the product's own API auth uses the `x-api-key` header, so we do NOT
+// read `x-api-key` here (it carries the AITM key, not the Context7 key) —
+// `X-Context7-Key` is the dedicated per-request Context7 header.
+//
+// Clients are cached by key so we don't reconstruct an SDK instance on every
+// request, while still keeping per-key isolation.
 // ============================================================================
 
-let _client: Context7 | null = null;
+const clientCache = new Map<string, Context7>();
+
+/** Read a single header value, taking the first entry of array-valued headers. */
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+/** Extract a Bearer token from an Authorization header, if present. */
+function extractBearerToken(authorization: string | string[] | undefined): string | undefined {
+  const header = headerValue(authorization);
+  if (!header) {
+    return undefined;
+  }
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match ? match[1].trim() : undefined;
+}
 
 /**
- * Lazily construct the SDK client. Returns null if no API key is configured so
- * callers can surface a clean "unavailable" state instead of crashing.
+ * Resolve the effective Context7 API key for a request: a per-request key from
+ * headers when supplied, otherwise the server-wide env key. Returns null when
+ * no key is available at all.
  */
-function getClient(): Context7 | null {
-  if (_client) {
-    return _client;
-  }
+function resolveApiKey(req: Request): string | null {
+  const fromRequest =
+    extractBearerToken(req.headers.authorization) ||
+    headerValue(req.headers["x-context7-key"]) ||
+    headerValue(req.headers["context7-api-key"]);
 
-  const apiKey = process.env.CONTEXT7_API_KEY;
+  const key = (fromRequest && fromRequest.trim()) || process.env.CONTEXT7_API_KEY;
+  return key && key.trim().length > 0 ? key.trim() : null;
+}
+
+/**
+ * Build (or reuse) an SDK client for the request's effective key. Returns null
+ * when no key is configured so callers can surface a clean "unavailable" state
+ * instead of crashing.
+ */
+function getClient(req: Request): Context7 | null {
+  const apiKey = resolveApiKey(req);
   if (!apiKey) {
     return null;
   }
 
+  const cached = clientCache.get(apiKey);
+  if (cached) {
+    return cached;
+  }
+
   try {
-    _client = new Context7({ apiKey });
-    return _client;
+    const client = new Context7({ apiKey });
+    clientCache.set(apiKey, client);
+    return client;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.warn("context7: failed to initialise SDK client", { reason: msg });
@@ -54,10 +105,12 @@ function getClient(): Context7 | null {
   }
 }
 
-function requireClient(): Context7 {
-  const client = getClient();
+function requireClient(req: Request): Context7 {
+  const client = getClient(req);
   if (!client) {
-    throw new Error("Context7 not configured: set CONTEXT7_API_KEY");
+    throw new Error(
+      "Context7 not configured: provide an X-Context7-Key header or set CONTEXT7_API_KEY"
+    );
   }
   return client;
 }
@@ -84,11 +137,11 @@ const searchQuerySchema = z.object({
 
 router.get(
   "/status",
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let available = false;
     let latencyMs: number | null = null;
 
-    const client = getClient();
+    const client = getClient(req);
     if (client) {
       const start = Date.now();
       try {
@@ -135,7 +188,7 @@ router.get(
     const { q } = parsed.data;
 
     logger.info("context7: search", { query: q });
-    const libraries: Library[] = await requireClient().searchLibrary(q, q, {
+    const libraries: Library[] = await requireClient(req).searchLibrary(q, q, {
       type: "json",
     });
 
@@ -168,7 +221,7 @@ router.get(
 
     logger.info("context7: get library docs", { libraryId: id, version, topic, tokens });
 
-    const docs: Documentation[] = await requireClient().getContext(topic, id, {
+    const docs: Documentation[] = await requireClient(req).getContext(topic, id, {
       type: "json",
     });
 
@@ -206,7 +259,7 @@ router.get(
     // The SDK requires a non-empty libraryName; fall back to the query (or a
     // broad term) so a bare /libraries listing still returns results.
     const libraryName = q || "library";
-    const libraries: Library[] = await requireClient().searchLibrary(
+    const libraries: Library[] = await requireClient(req).searchLibrary(
       q || "popular libraries",
       libraryName,
       { type: "json" }

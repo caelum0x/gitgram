@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -12,6 +13,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/Colors';
 import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { useHaptics } from '../hooks/useHaptics';
 import { authService } from '../services/authService';
 import { logger } from '../utils/logger';
 
@@ -31,6 +34,19 @@ interface MenuItem {
 export default function MenuScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const hapticsDisabled = useSettingsStore((state) => state.hapticsDisabled);
+  const setHapticsDisabled = useSettingsStore((state) => state.setHapticsDisabled);
+  const altTextRequired = useSettingsStore((state) => state.altTextRequired);
+  const setAltTextRequired = useSettingsStore((state) => state.setAltTextRequired);
+  const haptics = useHaptics();
+
+  const toggleHaptics = (value: boolean) => {
+    // Fire a confirming buzz only when turning haptics back on.
+    if (!value) {
+      haptics('Light');
+    }
+    void setHapticsDisabled(!value);
+  };
 
   const handleLogout = () => {
     const run = async () => {
@@ -101,6 +117,27 @@ export default function MenuScreen() {
       </View>
 
       <ScrollView style={styles.menu}>
+        <View style={styles.toggleRow}>
+          <Icon name="vibration" size={24} color={Colors.text} />
+          <Text style={styles.menuLabel}>Haptic Feedback</Text>
+          <Switch
+            value={!hapticsDisabled}
+            onValueChange={toggleHaptics}
+            trackColor={{ false: Colors.border, true: Colors.primary }}
+            thumbColor={Colors.white}
+          />
+        </View>
+        <View style={styles.toggleRow}>
+          <Icon name="accessibility-new" size={24} color={Colors.text} />
+          <Text style={styles.menuLabel}>Require Alt Text</Text>
+          <Switch
+            value={altTextRequired}
+            onValueChange={(value) => void setAltTextRequired(value)}
+            trackColor={{ false: Colors.border, true: Colors.primary }}
+            thumbColor={Colors.white}
+          />
+        </View>
+        <View style={styles.divider} />
         {menuItems.map((item, index) => {
           if (item.divider) {
             return <View key={`divider-${index}`} style={styles.divider} />;
@@ -186,6 +223,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,

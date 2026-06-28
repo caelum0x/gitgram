@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  StyleProp,
+  ViewStyle,
+  TouchableOpacity,
+} from 'react-native';
 import { Image, ImageContentFit } from 'expo-image';
 import { Colors } from '../../constants/Colors';
 import SkeletonLoader from './SkeletonLoader';
+import { useLightbox } from './Lightbox';
 
 interface OptimizedImageProps {
   source: string | { uri: string };
@@ -13,6 +21,13 @@ interface OptimizedImageProps {
   showSkeleton?: boolean;
   aspectRatio?: number;
   borderRadius?: number;
+  // Accessible description of the image. Drives the screen-reader label and the
+  // "ALT" badge overlay (Bluesky-style accessibility affordance).
+  alt?: string;
+  // Show an "ALT" badge overlay when alt text is present.
+  showAltBadge?: boolean;
+  // When true, tapping the image opens the global fullscreen lightbox.
+  enableLightbox?: boolean;
 }
 
 // Default blurhash for loading state
@@ -27,9 +42,13 @@ export default function OptimizedImage({
   showSkeleton = true,
   aspectRatio,
   borderRadius = 0,
+  alt,
+  showAltBadge = true,
+  enableLightbox = false,
 }: OptimizedImageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const openLightbox = useLightbox();
 
   const uri = typeof source === 'string' ? source : source.uri;
 
@@ -67,8 +86,8 @@ export default function OptimizedImage({
     );
   }
 
-  return (
-    <View style={[style, aspectRatio ? { aspectRatio } : {}]}>
+  const imageContent = (
+    <>
       {isLoading && showSkeleton && (
         <View style={[StyleSheet.absoluteFill, { borderRadius }]}>
           <SkeletonLoader
@@ -93,9 +112,34 @@ export default function OptimizedImage({
         onLoadStart={handleLoadStart}
         onLoadEnd={handleLoadEnd}
         onError={handleError}
+        accessible={!!alt}
+        accessibilityLabel={alt}
       />
-    </View>
+      {!!alt && showAltBadge && (
+        <View style={styles.altBadge} pointerEvents="none">
+          <Text style={styles.altBadgeText}>ALT</Text>
+        </View>
+      )}
+    </>
   );
+
+  const containerStyle = [style, aspectRatio ? { aspectRatio } : {}];
+
+  if (enableLightbox) {
+    return (
+      <TouchableOpacity
+        style={containerStyle}
+        activeOpacity={0.9}
+        onPress={() => openLightbox([{ uri, alt }], 0)}
+        accessibilityRole="imagebutton"
+        accessibilityLabel={alt || 'Open image'}
+      >
+        {imageContent}
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={containerStyle}>{imageContent}</View>;
 }
 
 // Pre-configured variants for common use cases
@@ -163,6 +207,21 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  altBadge: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  altBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   errorContainer: {
     backgroundColor: Colors.surface,

@@ -21,6 +21,9 @@ import { scheduledPostsService } from '../../services/scheduledPostsService';
 import { userService } from '../../services/userService';
 import { logger } from '../../utils/logger';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import ImageAltTextDialog from '../../components/common/ImageAltTextDialog';
+import { useSettingsStore } from '../../store/settingsStore';
+import { useToast } from '../../hooks/useToast';
 
 interface TaggablePerson {
   id: string;
@@ -34,6 +37,7 @@ interface SelectedMedia {
   uri: string;
   type: MediaType;
   mimeType?: string;
+  alt?: string;
 }
 
 const inferMediaType = (asset: ImagePicker.ImagePickerAsset): MediaType =>
@@ -50,11 +54,14 @@ export default function CreatePostScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ schedule?: string }>();
   const isScheduling = params.schedule === 'true';
+  const altTextRequired = useSettingsStore((state) => state.altTextRequired);
+  const { showToast, ToastComponent } = useToast();
 
   const [content, setContent] = useState('');
   const [media, setMedia] = useState<SelectedMedia | null>(null);
   const [taggedPeople, setTaggedPeople] = useState<TaggablePerson[]>([]);
   const [loading, setLoading] = useState(false);
+  const [altDialogVisible, setAltDialogVisible] = useState(false);
 
   const [tagModalVisible, setTagModalVisible] = useState(false);
   const [tagQuery, setTagQuery] = useState('');
@@ -104,8 +111,18 @@ export default function CreatePostScreen() {
     );
   };
 
+  const saveAltText = (altText: string) => {
+    setMedia((prev) => (prev ? { ...prev, alt: altText } : prev));
+  };
+
   const handlePost = async () => {
     if (!content && !media) return;
+
+    // Enforce alt text on images when the preference is enabled (accessibility).
+    if (altTextRequired && media?.type === 'image' && !media.alt?.trim()) {
+      showToast('Please add alt text to your image before posting.', 'error');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -120,6 +137,9 @@ export default function CreatePostScreen() {
           type: buildMimeType(media, filename),
         } as unknown as Blob);
         formData.append('mediaType', media.type);
+        if (media.alt?.trim()) {
+          formData.append('altTexts[]', media.alt.trim());
+        }
       }
 
       taggedPeople.forEach((person) => {
@@ -181,11 +201,32 @@ export default function CreatePostScreen() {
                 <ThemedText style={styles.videoLabel}>Video selected</ThemedText>
               </View>
             ) : (
-              <Image source={{ uri: media.uri }} style={styles.image} />
+              <Image
+                source={{ uri: media.uri }}
+                style={styles.image}
+                accessibilityLabel={media.alt || undefined}
+              />
             )}
             <TouchableOpacity style={styles.removeButton} onPress={() => setMedia(null)}>
               <Icon name="close" size={20} color="#FFF" />
             </TouchableOpacity>
+            {media.type === 'image' && (
+              <TouchableOpacity
+                style={styles.altButton}
+                onPress={() => setAltDialogVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={media.alt ? 'Edit alt text' : 'Add alt text'}
+              >
+                <Icon
+                  name={media.alt ? 'check-circle' : 'add-circle-outline'}
+                  size={16}
+                  color="#FFF"
+                />
+                <ThemedText style={styles.altButtonText}>
+                  {media.alt ? 'ALT added' : 'Add alt text'}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -261,6 +302,18 @@ export default function CreatePostScreen() {
           )}
         </ThemedView>
       </Modal>
+
+      {media?.type === 'image' && (
+        <ImageAltTextDialog
+          visible={altDialogVisible}
+          imageUri={media.uri}
+          initialAltText={media.alt ?? ''}
+          onSave={saveAltText}
+          onClose={() => setAltDialogVisible(false)}
+        />
+      )}
+
+      {ToastComponent}
     </ThemedView>
   );
 }
@@ -313,6 +366,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 12,
     padding: 4,
+  },
+  altButton: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  altButtonText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   taggedRow: {
     flexDirection: 'row',

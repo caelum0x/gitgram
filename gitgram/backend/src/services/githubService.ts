@@ -10,11 +10,43 @@ const CACHE_TTL = {
     SEARCH: 1 * 60 * 60, // 1 hour
 };
 
+/** Parse an "owner/repo" string into its parts, validating the shape. */
+function parseRepoFullName(fullName: string): { owner: string; repo: string } {
+    const trimmed = (fullName || '').trim().replace(/\.git$/i, '');
+    const parts = trimmed.split('/').filter(Boolean);
+    if (parts.length !== 2) {
+        throw new Error(`Invalid repository full name: "${fullName}". Expected "owner/repo".`);
+    }
+    return { owner: parts[0], repo: parts[1] };
+}
+
+/** Strip a leading "@" and surrounding whitespace from a username. */
+function normalizeUsername(username: string): string {
+    const normalized = (username || '').trim().replace(/^@/, '');
+    if (!normalized) {
+        throw new Error('A GitHub username is required.');
+    }
+    return normalized;
+}
+
+/** Narrow an unknown Octokit error to detect a 404 (not-found) response. */
+function isNotFoundError(error: unknown): boolean {
+    return (
+        typeof error === 'object' &&
+        error !== null &&
+        'status' in error &&
+        (error as { status?: number }).status === 404
+    );
+}
+
 export class GitHubService {
     private octokit: Octokit;
     private redis: any;
+    /** The per-user OAuth token, when this instance was built for a user. */
+    private readonly userAccessToken?: string;
 
     constructor(accessToken?: string) {
+        this.userAccessToken = accessToken;
         this.octokit = new Octokit({
             auth: accessToken || GITHUB_TOKEN,
         });
@@ -331,6 +363,132 @@ export class GitHubService {
         }
 
         return results;
+    }
+
+    // ============================================
+    // TWO-WAY GITHUB ACTIONS (write-back via user OAuth token)
+    //
+    // Ported from gh-social (githubApi.ts: starAction, followAction,
+    // hasIStarredTheRepo, amIFollowingTheUser). These require a per-user OAuth
+    // token with the `public_repo`/`user:follow` scopes — construct the service
+    // with `new GitHubService(userAccessToken)`. The shared app token used by
+    // the singleton MUST NOT be used here, so each method guards against it.
+    // ============================================
+
+    /**
+     * Guard: write actions require a per-user OAuth token, never the shared
+     * app/server token. Throws a clear error when the service was built without
+     * an explicit token.
+     */
+    private assertUserToken(): void {
+        if (!this.userAccessToken) {
+            throw new Error(
+                'A GitHub user access token is required for write actions. ' +
+                'Construct GitHubService with the user OAuth token.'
+            );
+        }
+    }
+
+    /**
+     * Star a repository on GitHub.com on behalf of the authenticated user.
+     * Idempotent: starring an already-starred repo still resolves to starred.
+     * @param fullName - "owner/repo"
+     * @returns true when the repo is starred after the call.
+     */
+    async starRepo(fullName: string): Promise<boolean> {
+        this.assertUserToken();
+        const { owner, repo } = parseRepoFullName(fullName);
+        try {
+            await this.octokit.activity.starRepoForAuthenticatedUser({ owner, repo });
+            return true;
+        } catch (error: unknown) {
+            logger.error(`Failed to star repo ${fullName}:`, error);
+            throw new Error('Failed to star repository on GitHub');
+        }
+    }
+
+    /**
+     * Remove a star from a repository on GitHub.com.
+     * Idempotent: unstarring a not-starred repo still resolves to not-starred.
+     * @returns true when the repo is no longer starred after the call.
+     */
+    async unstarRepo(fullName: string): Promise<boolean> {
+        this.assertUserToken();
+        const { owner, repo } = parseRepoFullName(fullName);
+        try {
+            await this.octokit.activity.unstarRepoForAuthenticatedUser({ owner, repo });
+            return true;
+        } catch (error: unknown) {
+            logger.error(`Failed to unstar repo ${fullName}:`, error);
+            throw new Error('Failed to unstar repository on GitHub');
+        }
+    }
+
+    /**
+     * Live check: has the authenticated user starred this repo?
+     * GitHub returns 204 when starred and 404 when not.
+     */
+    async hasStarred(fullName: string): Promise<boolean> {
+        this.assertUserToken();
+        const { owner, repo } = parseRepoFullName(fullName);
+        try {
+            await this.octokit.activity.checkRepoIsStarredByAuthenticatedUser({ owner, repo });
+            return true;
+        } catch (error: unknown) {
+            if (isNotFoundError(error)) return false;
+            logger.error(`Failed to check star status for ${fullName}:`, error);
+            throw new Error('Failed to check star status on GitHub');
+        }
+    }
+
+    /**
+     * Follow a GitHub user on behalf of the authenticated user.
+     * Idempotent.
+     * @returns true when the user is followed after the call.
+     */
+    async followUser(username: string): Promise<boolean> {
+        this.assertUserToken();
+        const normalized = normalizeUsername(username);
+        try {
+            await this.octokit.users.follow({ username: normalized });
+            return true;
+        } catch (error: unknown) {
+            logger.error(`Failed to follow user ${normalized}:`, error);
+            throw new Error('Failed to follow user on GitHub');
+        }
+    }
+
+    /**
+     * Unfollow a GitHub user. Idempotent.
+     * @returns true when the user is no longer followed after the call.
+     */
+    async unfollowUser(username: string): Promise<boolean> {
+        this.assertUserToken();
+        const normalized = normalizeUsername(username);
+        try {
+            await this.octokit.users.unfollow({ username: normalized });
+            return true;
+        } catch (error: unknown) {
+            logger.error(`Failed to unfollow user ${normalized}:`, error);
+            throw new Error('Failed to unfollow user on GitHub');
+        }
+    }
+
+    /**
+     * Live check: is the authenticated user following this GitHub user?
+     * GitHub returns 204 when following and 404 when not.
+     */
+    async isFollowing(username: string): Promise<boolean> {
+        this.assertUserToken();
+        const normalized = normalizeUsername(username);
+        try {
+            await this.octokit.users.checkPersonIsFollowedByAuthenticated({ username: normalized });
+            return true;
+        } catch (error: unknown) {
+            if (isNotFoundError(error)) return false;
+            logger.error(`Failed to check follow status for ${normalized}:`, error);
+            throw new Error('Failed to check follow status on GitHub');
+        }
     }
 
     /**

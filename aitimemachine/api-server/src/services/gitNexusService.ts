@@ -59,6 +59,7 @@ const METHOD_ALIASES: Readonly<Record<string, string>> = {
   gn_dep_graph: "cypher",
   gn_symbol_search: "query",
   gn_ping: "list_repos",
+  gn_detect_changes: "detect_changes",
   // Bare aliases (idempotent passthrough).
   context: "context",
   impact: "impact",
@@ -66,6 +67,7 @@ const METHOD_ALIASES: Readonly<Record<string, string>> = {
   dep_graph: "cypher",
   symbol_search: "query",
   ping: "list_repos",
+  detect_changes: "detect_changes",
 };
 
 function resolveToolName(method: string): string {
@@ -113,6 +115,38 @@ export interface Symbol {
   file: string;
   line: number;
   exported: boolean;
+}
+
+/** Which set of git changes to analyse for {@link detectChanges}. */
+export type ChangeScope = "unstaged" | "staged" | "all" | "compare";
+
+export interface DetectChangesOptions {
+  /** Which changes to analyse. Defaults to "unstaged". */
+  scope?: ChangeScope;
+  /** Base ref for the "compare" scope (e.g. "main"). */
+  baseRef?: string;
+  /** Absolute path to a linked git worktree when changes live there. */
+  worktree?: string;
+  /** Repository name/path; omit when a single repo is indexed. */
+  repo?: string;
+}
+
+/**
+ * Result of mapping a git diff to its blast radius. The GitNexus backend may
+ * return additional fields; the structured ones below are normalised, and the
+ * full payload is preserved under {@link ChangeAnalysis.raw}.
+ */
+export interface ChangeAnalysis {
+  /** Symbols touched by the diff (free-form strings as reported by the engine). */
+  changedSymbols: string[];
+  /** Execution flows / processes affected by the changed symbols. */
+  affectedProcesses: string[];
+  /** Risk classification of the change set, when the engine provides one. */
+  riskLevel: string | null;
+  /** Human-readable risk/summary text, when provided. */
+  summary: string | null;
+  /** The unnormalised backend payload for callers that need full detail. */
+  raw: unknown;
 }
 
 // ============================================================================
@@ -349,6 +383,79 @@ export async function searchSymbols(
       exported: typeof r["exported"] === "boolean" ? r["exported"] : false,
     };
   });
+}
+
+/**
+ * Maps a git diff (uncommitted, staged, or compared against a base ref) to the
+ * processes it affects and an overall risk summary — the "blast radius" signal
+ * AITM needs when an agent checkpoints or opens a PR.
+ *
+ * Delegates to the GitNexus `detect_changes` tool and normalises its response
+ * into {@link ChangeAnalysis}. Returns safe empty defaults (with the raw
+ * payload preserved) when the backend returns an unexpected shape.
+ */
+export async function detectChanges(
+  options: DetectChangesOptions = {}
+): Promise<ChangeAnalysis> {
+  const params: Record<string, unknown> = {
+    scope: options.scope ?? "unstaged",
+  };
+  if (options.baseRef) {
+    params["base_ref"] = options.baseRef;
+  }
+  if (options.worktree) {
+    params["worktree"] = options.worktree;
+  }
+  if (options.repo) {
+    params["repo"] = options.repo;
+  }
+
+  const result = await callGitNexus("gn_detect_changes", params);
+
+  const empty: ChangeAnalysis = {
+    changedSymbols: [],
+    affectedProcesses: [],
+    riskLevel: null,
+    summary: null,
+    raw: result,
+  };
+
+  if (!isRecord(result)) {
+    logger.error("gitNexus: unexpected shape from detect_changes", undefined, {
+      result: String(result),
+    });
+    return empty;
+  }
+
+  const asStringArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.map((v) =>
+          typeof v === "string"
+            ? v
+            : isRecord(v) && typeof v["name"] === "string"
+              ? (v["name"] as string)
+              : String(v)
+        )
+      : [];
+
+  const changedSymbols = asStringArray(
+    result["changedSymbols"] ?? result["changed_symbols"] ?? result["symbols"]
+  );
+  const affectedProcesses = asStringArray(
+    result["affectedProcesses"] ?? result["affected_processes"] ?? result["processes"]
+  );
+  const riskLevel =
+    typeof result["riskLevel"] === "string"
+      ? (result["riskLevel"] as string)
+      : typeof result["risk_level"] === "string"
+        ? (result["risk_level"] as string)
+        : typeof result["risk"] === "string"
+          ? (result["risk"] as string)
+          : null;
+  const summary =
+    typeof result["summary"] === "string" ? (result["summary"] as string) : null;
+
+  return { changedSymbols, affectedProcesses, riskLevel, summary, raw: result };
 }
 
 // ============================================================================

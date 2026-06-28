@@ -26,6 +26,7 @@ import { userService } from '@/services/userService'
 import { githubService } from '@/services/githubService'
 import { useToast } from '@/components/ui/toast'
 import { getErrorMessage } from '@/utils/error'
+import CropImageDialog from '@/components/CropImageDialog'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,6 +34,9 @@ import { getErrorMessage } from '@/utils/error'
 
 const BIO_MAX_LENGTH = 160
 const USERNAME_DEBOUNCE_MS = 500
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024 // 5 MB
+const AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const AVATAR_ASPECT_RATIO = 1 // square
 const PRONOUNS_PRESETS = ['he/him', 'she/her', 'they/them', 'he/they', 'she/they', 'custom'] as const
 
 const URL_PATTERN =
@@ -182,6 +186,8 @@ export default function ProfileEditPage() {
   const [avatarPreview, setAvatarPreview] = useState<string>(user?.avatar ?? '')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  // Source object URL for the crop dialog (null when closed)
+  const [cropSrc, setCropSrc] = useState<string | null>(null)
 
   // Username availability
   const [usernameAvail, setUsernameAvail] = useState<UsernameAvailability>({
@@ -280,30 +286,66 @@ export default function ProfileEditPage() {
   // Avatar upload
   // -------------------------------------------------------------------------
 
+  // Step 1: validate the selected file and open the crop dialog.
   const handleAvatarFileChange = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
+      // Reset input immediately so the same file can be re-selected later.
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
       if (!file) return
 
-      // Local preview
-      const objectUrl = URL.createObjectURL(file)
-      setAvatarPreview(objectUrl)
+      if (!AVATAR_ALLOWED_TYPES.includes(file.type)) {
+        showToast('Please choose a JPG, PNG, GIF, or WebP image', 'error')
+        return
+      }
+      if (file.size > AVATAR_MAX_BYTES) {
+        showToast('Image must be 5 MB or smaller', 'error')
+        return
+      }
+
+      // Hand the raw image to the crop dialog; revoke any previous source.
+      setCropSrc((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
+    },
+    [showToast],
+  )
+
+  const closeCropDialog = useCallback(() => {
+    setCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
+  }, [])
+
+  // Step 2: receive the cropped webp blob and upload it.
+  const handleCroppedAvatar = useCallback(
+    async (blob: Blob | null) => {
+      if (!blob) {
+        showToast('Could not process the image. Please try again.', 'error')
+        return
+      }
+
+      const croppedFile = new File([blob], 'avatar.webp', { type: 'image/webp' })
+
+      // Optimistic local preview of the cropped result.
+      const previewUrl = URL.createObjectURL(croppedFile)
+      const previousPreview = form.avatarUrl
+      setAvatarPreview(previewUrl)
 
       setUploadingAvatar(true)
       try {
-        const { avatarUrl } = await userService.uploadAvatarFile(file)
+        const { avatarUrl } = await userService.uploadAvatarFile(croppedFile)
         updateField('avatarUrl', avatarUrl)
         setAvatarPreview(avatarUrl)
         showToast('Avatar uploaded!', 'success')
       } catch (err) {
         showToast(getErrorMessage(err), 'error')
-        // Revert preview on failure
-        setAvatarPreview(form.avatarUrl)
+        setAvatarPreview(previousPreview)
       } finally {
         setUploadingAvatar(false)
-        // Reset input so the same file can be re-selected if needed
-        if (avatarInputRef.current) avatarInputRef.current.value = ''
-        URL.revokeObjectURL(objectUrl)
+        URL.revokeObjectURL(previewUrl)
       }
     },
     [form.avatarUrl, updateField, showToast],
@@ -790,6 +832,17 @@ export default function ProfileEditPage() {
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
+
+      {/* Avatar crop dialog */}
+      {cropSrc && (
+        <CropImageDialog
+          src={cropSrc}
+          cropAspectRatio={AVATAR_ASPECT_RATIO}
+          onCropped={handleCroppedAvatar}
+          onClose={closeCropDialog}
+          title="Crop your photo"
+        />
+      )}
     </div>
   )
 }

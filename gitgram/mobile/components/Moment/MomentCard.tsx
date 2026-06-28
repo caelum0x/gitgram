@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,12 @@ import { Image } from 'expo-image';
 import { momentService } from '../../services/momentService';
 import { logger } from '../../utils/logger';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useHaptics } from '../../hooks/useHaptics';
+import LikeBounceAnimation, {
+  LikeBounceAnimationHandle,
+} from '../common/LikeBounceAnimation';
+
+const DOUBLE_PRESS_DELAY = 300;
 
 interface MomentCardProps {
   moment: {
@@ -31,32 +37,71 @@ interface MomentCardProps {
 
 export default function MomentCard({ moment }: MomentCardProps) {
   const router = useRouter();
+  const haptics = useHaptics();
+  const likeBounceRef = useRef<LikeBounceAnimationHandle>(null);
+  const lastTapRef = useRef(0);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(moment.likesCount);
+  const [liking, setLiking] = useState(false);
 
-  const handleLike = async () => {
+  const handleLike = async (mode: 'toggle' | 'like-only' = 'toggle') => {
+    if (liking) return;
+    if (mode === 'like-only' && isLiked) return;
+
+    haptics('Medium');
+
+    const previousIsLiked = isLiked;
+    setIsLiked(!previousIsLiked);
+    setLikesCount((prev) => (!previousIsLiked ? prev + 1 : prev - 1));
+    setLiking(true);
+
     try {
       const response = await momentService.likeMoment(moment.id);
       setIsLiked(response.liked);
-      setLikesCount((prev) => (response.liked ? prev + 1 : prev - 1));
+      setLikesCount(moment.likesCount + (response.liked ? 1 : 0));
     } catch (error) {
+      // Roll back the optimistic update on failure.
+      setIsLiked(previousIsLiked);
+      setLikesCount((prev) => (!previousIsLiked ? prev - 1 : prev + 1));
       logger.error('Like moment error:', error);
+    } finally {
+      setLiking(false);
     }
   };
 
+  const handlePreviewPress = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_PRESS_DELAY) {
+      lastTapRef.current = 0;
+      likeBounceRef.current?.animate();
+      void handleLike('like-only');
+      return;
+    }
+    lastTapRef.current = now;
+    router.push(`/moments/${moment.id}`);
+  };
+
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={() => router.push(`/moments/${moment.id}`)}
-    >
-      <View style={styles.momentContainer}>
-        <View style={styles.screenshotContainer}>
-          <Image source={{ uri: moment.screenshotUrl }} style={styles.screenshot} />
+    <View style={styles.container}>
+      <TouchableOpacity activeOpacity={0.95} onPress={handlePreviewPress}>
+        <View style={styles.momentContainer}>
+          <View style={styles.screenshotContainer}>
+            <Image
+              source={{ uri: moment.screenshotUrl }}
+              style={styles.screenshot}
+              accessibilityLabel={moment.caption || `Moment by ${moment.user.username}`}
+            />
+          </View>
+          <View style={styles.selfieContainer}>
+            <Image
+              source={{ uri: moment.selfieUrl }}
+              style={styles.selfie}
+              accessibilityLabel={`Selfie by ${moment.user.username}`}
+            />
+          </View>
         </View>
-        <View style={styles.selfieContainer}>
-          <Image source={{ uri: moment.selfieUrl }} style={styles.selfie} />
-        </View>
-      </View>
+        <LikeBounceAnimation ref={likeBounceRef} color="#ff4757" />
+      </TouchableOpacity>
 
       <View style={styles.infoContainer}>
         <View style={styles.userInfo}>
@@ -81,10 +126,10 @@ export default function MomentCard({ moment }: MomentCardProps) {
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleLike();
-            }}
+            onPress={() => handleLike('toggle')}
+            disabled={liking}
+            accessibilityRole="button"
+            accessibilityLabel={isLiked ? 'Unlike moment' : 'Like moment'}
           >
             <Icon
               name={isLiked ? 'favorite' : 'favorite-border'}
@@ -96,17 +141,14 @@ export default function MomentCard({ moment }: MomentCardProps) {
 
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              router.push(`/moments/${moment.id}/reactions`);
-            }}
+            onPress={() => router.push(`/moments/${moment.id}/reactions`)}
           >
             <Icon name="comment" size={20} color={Colors.text} />
             <Text style={styles.actionText}>{moment.commentsCount}</Text>
           </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 

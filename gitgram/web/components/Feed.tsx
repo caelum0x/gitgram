@@ -8,6 +8,8 @@ import RichContent from './RichContent';
 import AitmChangeStoryCard from './AitmChangeStoryCard';
 import BookmarkButton from './BookmarkButton';
 import { parseAitmChangeStoryBlock } from '@/utils/aitmChangeStory';
+import { useModeration } from '@/hooks/useModeration';
+import { isPostMuted } from '@/utils/moderation';
 import api from '@/services/api';
 
 interface Post {
@@ -68,6 +70,7 @@ const ACCOUNT_BADGES = {
 export default function Feed() {
   const queryClient = useQueryClient();
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const moderation = useModeration();
 
   // ── Infinite feed query ────────────────────────────────────────────────────
   const {
@@ -84,8 +87,18 @@ export default function Feed() {
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
-  const posts = data?.pages.flatMap((p) => p.posts) ?? [];
+  const allPosts = data?.pages.flatMap((p) => p.posts) ?? [];
   const isDiscover = data?.pages[0]?.isDiscover;
+
+  // Apply client-side moderation (muted words / accounts / threads).
+  const posts = allPosts.filter(
+    (post) =>
+      !isPostMuted(
+        { id: post.id, content: post.content ?? '', username: post.account.username },
+        moderation,
+      ),
+  );
+  const mutedCount = allPosts.length - posts.length;
 
   // ── Intersection Observer for infinite scroll ──────────────────────────────
   const onIntersect = useCallback(
@@ -183,6 +196,19 @@ export default function Feed() {
   }
 
   if (!posts.length) {
+    // Distinguish a genuinely empty feed from one fully hidden by moderation.
+    if (mutedCount > 0) {
+      return (
+        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg">
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            All {mutedCount} post{mutedCount === 1 ? '' : 's'} here are hidden by your muted words or accounts.
+          </p>
+          <Link href="/settings/moderation" className="text-sm text-blue-600 hover:underline">
+            Manage moderation filters
+          </Link>
+        </div>
+      );
+    }
     return (
       <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg">
         <p className="text-gray-600 dark:text-gray-400 mb-4">No posts yet</p>
@@ -201,6 +227,15 @@ export default function Feed() {
       {isDiscover && (
         <p className="text-xs text-center text-gray-400 dark:text-gray-500">
           Showing popular posts — follow more people to personalize your feed
+        </p>
+      )}
+
+      {mutedCount > 0 && (
+        <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+          {mutedCount} post{mutedCount === 1 ? '' : 's'} hidden by your{' '}
+          <Link href="/settings/moderation" className="underline hover:text-gray-600 dark:hover:text-gray-300">
+            moderation filters
+          </Link>
         </p>
       )}
 

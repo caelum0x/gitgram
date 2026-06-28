@@ -10,6 +10,7 @@ import {
   getDisabledTools,
   getToolAvailability,
   getUnknownDisabledTools,
+  getProtectedEssentialTools,
 } from './lib/stable-tools.js';
 import {
   formatHiddenFamiliesWarning,
@@ -136,6 +137,13 @@ let currentProjectPath = process.cwd();
 const unknownDisabledTools = getUnknownDisabledTools(TOOL_SELECTION_OPTIONS);
 if (unknownDisabledTools.length > 0) {
   console.warn(`Unknown tools in DISABLED_TOOLS: ${unknownDisabledTools.join(', ')}`);
+}
+
+const protectedEssentialTools = getProtectedEssentialTools(TOOL_SELECTION_OPTIONS);
+if (protectedEssentialTools.length > 0) {
+  console.warn(
+    `Cannot disable essential tools (ignored in DISABLED_TOOLS): ${protectedEssentialTools.join(', ')}`
+  );
 }
 
 function ensureLibLoaded() {

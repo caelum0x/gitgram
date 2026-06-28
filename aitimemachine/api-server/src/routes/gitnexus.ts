@@ -19,6 +19,7 @@ import {
   getApiRoutes,
   getDependencyGraph,
   searchSymbols,
+  detectChanges,
 } from "../services/gitNexusService.js";
 
 const router = Router();
@@ -57,6 +58,18 @@ const symbolQuerySchema = workspaceQuerySchema.extend({
     .min(1, "query must not be empty")
     .max(500, "query must be 500 characters or less"),
 });
+
+const detectChangesBodySchema = z
+  .object({
+    scope: z.enum(["unstaged", "staged", "all", "compare"]).default("unstaged"),
+    baseRef: z.string().min(1).max(255).optional(),
+    worktree: z.string().min(1).max(2048).optional(),
+    repo: z.string().min(1).max(2048).optional(),
+  })
+  .refine((v) => v.scope !== "compare" || (v.baseRef && v.baseRef.length > 0), {
+    message: "baseRef is required when scope is 'compare'",
+    path: ["baseRef"],
+  });
 
 // ============================================================================
 // GET /gitnexus/status
@@ -116,6 +129,32 @@ router.post(
 
     logger.info("gitnexus: findImpactedFiles", { changedFile, workspacePath });
     const data = await findImpactedFiles(changedFile, workspacePath);
+
+    return res.json({ success: true, data });
+  })
+);
+
+// ============================================================================
+// POST /gitnexus/detect-changes
+// Map a git diff (uncommitted/staged/compare) to affected processes + risk.
+// ============================================================================
+
+router.post(
+  "/detect-changes",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = detectChangesBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+
+    const { scope, baseRef, worktree, repo } = parsed.data;
+
+    logger.info("gitnexus: detectChanges", { scope, baseRef, repo });
+    const data = await detectChanges({ scope, baseRef, worktree, repo });
 
     return res.json({ success: true, data });
   })

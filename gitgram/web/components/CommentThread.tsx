@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import Link from 'next/link'
 import api from '@/services/api'
+import { linkifyText } from '@/utils/linkify'
 
 interface Comment {
   id: string
@@ -170,7 +171,7 @@ export default function CommentThread({
             </div>
 
             <p className="text-sm mt-1 whitespace-pre-wrap break-words">
-              {comment.content}
+              {linkifyText(comment.content)}
             </p>
 
             <div className="flex items-center gap-4 mt-2">

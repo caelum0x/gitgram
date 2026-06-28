@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { postService } from '@/services/postService'
 import PostCard from '@/components/PostCard'
+import MuteThreadButton from '@/components/MuteThreadButton'
 
 export default function PostDetailPage() {
   const params = useParams()
@@ -24,6 +25,9 @@ export default function PostDetailPage() {
         post={post}
         onLike={(id: string) => { postService.likePost(id).then(() => setPost({...post, isLiked: true, likesCount: post.likesCount + 1})) }}
       />
+      <div className="mt-3 flex justify-end">
+        <MuteThreadButton postId={params.id as string} />
+      </div>
     </div>
   )
 }

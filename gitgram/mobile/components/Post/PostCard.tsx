@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -12,10 +11,17 @@ import { Colors } from '../../constants/Colors';
 import { postService } from '../../services/postService';
 import { logger } from '../../utils/logger';
 import { useAuthStore } from '../../store/authStore';
+import { useHaptics } from '../../hooks/useHaptics';
 import PostOptionsModal from '../common/PostOptionsModal';
 import ReportModal from '../common/ReportModal';
 import CodeBlock from '../common/CodeBlock';
 import RichContent from '../common/RichContent';
+import LikeBounceAnimation, {
+  LikeBounceAnimationHandle,
+} from '../common/LikeBounceAnimation';
+import { useLightbox } from '../common/Lightbox';
+
+const DOUBLE_PRESS_DELAY = 300;
 
 interface Post {
   id: string;
@@ -46,16 +52,25 @@ interface PostCardProps {
 export default function PostCard({ post, onLike, showFullContent = false }: PostCardProps) {
   const router = useRouter();
   const { user } = useAuthStore();
+  const haptics = useHaptics();
+  const openLightbox = useLightbox();
   const [isLiked, setIsLiked] = useState(post.isLiked);
   const [likesCount, setLikesCount] = useState(post.likesCount);
   const [loading, setLoading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const likeBounceRef = useRef<LikeBounceAnimationHandle>(null);
+  const lastTapRef = useRef(0);
 
   const isOwner = user?.id === post.user.id;
 
-  const handleLike = async () => {
+  // mode: 'toggle' for the like button, 'like-only' for double-tap (which never
+  // unlikes, matching Instagram/TikTok behaviour).
+  const handleLike = async (mode: 'toggle' | 'like-only' = 'toggle') => {
     if (loading) return;
+    if (mode === 'like-only' && isLiked) return;
+
+    haptics('Medium');
 
     // Optimistic update - update UI immediately
     const previousIsLiked = isLiked;
@@ -79,6 +94,26 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleImagePress = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_PRESS_DELAY) {
+      lastTapRef.current = 0;
+      likeBounceRef.current?.animate();
+      void handleLike('like-only');
+      return;
+    }
+    lastTapRef.current = now;
+    if (!showFullContent) {
+      router.push(`/post/${post.id}`);
+    }
+  };
+
+  const handleImageLongPress = () => {
+    if (!post.mediaUrl) return;
+    haptics('Light');
+    openLightbox([{ uri: post.mediaUrl, alt: post.content || undefined }], 0);
   };
 
   return (
@@ -106,7 +141,9 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
       {/* Project Visual */}
       {post.mediaType === 'image' && post.mediaUrl && (
         <TouchableOpacity
-          onPress={() => !showFullContent && router.push(`/post/${post.id}`)}
+          onPress={handleImagePress}
+          onLongPress={handleImageLongPress}
+          delayLongPress={350}
           activeOpacity={showFullContent ? 1 : 0.9}
         >
           <Image
@@ -116,7 +153,9 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
             transition={200}
             placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
             cachePolicy="memory-disk"
+            accessibilityLabel={post.content || undefined}
           />
+          <LikeBounceAnimation ref={likeBounceRef} />
         </TouchableOpacity>
       )}
 
@@ -135,8 +174,10 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
         <View style={styles.actionBarLeft}>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={handleLike}
+            onPress={() => handleLike('toggle')}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel={isLiked ? 'Unlike post' : 'Like post'}
           >
             <Text style={styles.actionIcon}>{isLiked ? '❤️' : '🤍'}</Text>
           </TouchableOpacity>

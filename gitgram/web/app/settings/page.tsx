@@ -25,6 +25,7 @@ export default function SettingsPage() {
     { title: 'Appearance', href: '/settings/appearance', icon: '🎨', desc: 'Theme, font size, language, density' },
     { title: 'Security', href: '/settings/security', icon: '🛡️', desc: 'Sessions, login history, 2FA' },
     { title: 'Blocked Users', href: '/settings/blocked', icon: '🚫', desc: 'Manage blocked accounts' },
+    { title: 'Moderation', href: '/settings/moderation', icon: '🔇', desc: 'Muted words, accounts, and threads' },
     { title: 'Language', href: '/settings/language', icon: '🌐', desc: 'Display language and region' },
     { title: 'Data & Storage', href: '/settings/data', icon: '💾', desc: 'Cache, downloads, data export' },
     { title: 'Subscription', href: '/settings/subscription', icon: '⭐', desc: 'Plan, billing, premium features' },

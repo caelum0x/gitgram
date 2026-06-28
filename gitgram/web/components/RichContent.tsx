@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { parseCodeContent, ContentSegment, hasCode } from '@/utils/codeParser';
+import { linkifyText } from '@/utils/linkify';
 import CodeBlock, { InlineCode } from './CodeBlock';
 
 interface RichContentProps {
@@ -15,11 +16,11 @@ interface RichContentProps {
 export default function RichContent({ content, className = '' }: RichContentProps) {
   const segments = useMemo(() => parseCodeContent(content), [content]);
 
-  // If no code, just render plain text for better performance
+  // If no code, just render linkified plain text for better performance
   if (!hasCode(content)) {
     return (
       <div className={`whitespace-pre-wrap ${className}`}>
-        {content}
+        {linkifyText(content)}
       </div>
     );
   }
@@ -48,7 +49,7 @@ function RenderSegment({ segment }: { segment: ContentSegment }) {
       return <InlineCode>{segment.code}</InlineCode>;
 
     case 'text':
-      return <span className="whitespace-pre-wrap">{segment.content}</span>;
+      return <span className="whitespace-pre-wrap">{linkifyText(segment.content)}</span>;
 
     default:
       return null;

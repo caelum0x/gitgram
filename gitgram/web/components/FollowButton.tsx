@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from 'react'
 import { userService } from '@/services/userService'
+import { githubService } from '@/services/githubService'
+import { useAuthStore } from '@/store/authStore'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +14,12 @@ interface FollowButtonProps {
   username: string
   initialFollowing: boolean
   onFollowChange?: (isFollowing: boolean) => void
+  /**
+   * When provided, and the viewer has GitHub connected, the in-app follow is
+   * mirrored to GitHub (PUT/DELETE /user/following/:username) in one click.
+   * Failure of the GitHub sync never blocks the in-app follow.
+   */
+  githubUsername?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -23,7 +31,11 @@ export function FollowButton({
   username,
   initialFollowing,
   onFollowChange,
+  githubUsername,
 }: FollowButtonProps) {
+  const { user } = useAuthStore()
+  const canSyncGitHub = Boolean(githubUsername && user?.githubId)
+
   const [isFollowing, setIsFollowing] = useState(initialFollowing)
   const [isLoading, setIsLoading] = useState(false)
   const [isHovering, setIsHovering] = useState(false)
@@ -45,6 +57,20 @@ export function FollowButton({
         await userService.unfollow(userId)
       }
       onFollowChange?.(nextFollowing)
+
+      // Best-effort GitHub write-back. A failure here is surfaced but never
+      // reverts the successful in-app follow.
+      if (canSyncGitHub && githubUsername) {
+        try {
+          if (nextFollowing) {
+            await githubService.followOnGitHub(githubUsername)
+          } else {
+            await githubService.unfollowOnGitHub(githubUsername)
+          }
+        } catch {
+          setError('Followed here, but GitHub sync failed.')
+        }
+      }
     } catch (err: unknown) {
       // Revert on failure
       setIsFollowing(isFollowing)
@@ -53,7 +79,7 @@ export function FollowButton({
     } finally {
       setIsLoading(false)
     }
-  }, [isLoading, isFollowing, userId, onFollowChange])
+  }, [isLoading, isFollowing, userId, onFollowChange, canSyncGitHub, githubUsername])
 
   // ---------------------------------------------------------------------------
   // Render helpers

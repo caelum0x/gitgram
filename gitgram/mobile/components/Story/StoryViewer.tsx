@@ -10,6 +10,7 @@ import {
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Colors } from '../../constants/Colors';
+import { useLightbox } from '../common/Lightbox';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const STORY_DURATION = 5000; // 5 seconds
@@ -39,6 +40,7 @@ export default function StoryViewer({
   const [currentStoryIndex, setCurrentStoryIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const openLightbox = useLightbox();
 
   const currentStory = stories[currentStoryIndex];
   const player = useVideoPlayer(
@@ -110,6 +112,20 @@ export default function StoryViewer({
     }
   };
 
+  const handleLongPress = () => {
+    // Only still images make sense to open in the zoomable lightbox.
+    if (currentStory?.mediaType === 'video') return;
+    openLightbox(
+      [
+        {
+          uri: currentStory.mediaUrl,
+          alt: `Story by ${currentStory.user.username}`,
+        },
+      ],
+      0,
+    );
+  };
+
   if (!currentStory) {
     return null;
   }
@@ -142,6 +158,8 @@ export default function StoryViewer({
         style={styles.content}
         activeOpacity={1}
         onPress={handleTap}
+        onLongPress={handleLongPress}
+        delayLongPress={350}
       >
         {currentStory.mediaType === 'video' ? (
           <VideoView player={player} style={styles.media} contentFit="cover" />

@@ -16,6 +16,7 @@ import RepoLinker from './RepoLinker'
 import SchedulePicker from './SchedulePicker'
 import DraftManager from './DraftManager'
 import MediaPreview from './MediaPreview'
+import SortableMediaGrid, { type SortableMediaItem } from './SortableMediaGrid'
 
 export type ContentType = 'POST' | 'REEL' | 'STORY'
 
@@ -239,6 +240,45 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
       mediaPreviews: newPreviews,
     })
   }
+
+  // Remove an image by its preview id (used by the sortable grid). The blob
+  // URL is the stable id, so it is also the one to revoke.
+  const removeImageByPreview = useCallback(
+    (previewId: string) => {
+      const index = state.mediaPreviews.indexOf(previewId)
+      if (index === -1) return
+      removeImage(index)
+    },
+    // removeImage closes over the latest state through updateState; depend on
+    // the previews array so the index lookup is always current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.mediaPreviews, state.mediaFiles],
+  )
+
+  // Apply a new ordering coming from the sortable grid. Files and previews are
+  // parallel arrays keyed by the preview URL, so reorder both in lockstep.
+  const reorderImages = useCallback(
+    (ordered: SortableMediaItem[]) => {
+      const previewToFile = new Map<string, File>()
+      state.mediaPreviews.forEach((preview, i) => {
+        previewToFile.set(preview, state.mediaFiles[i])
+      })
+
+      const nextPreviews = ordered.map((item) => item.id)
+      const nextFiles = ordered
+        .map((item) => previewToFile.get(item.id))
+        .filter((file): file is File => file !== undefined)
+
+      // Guard: only apply if every preview still maps to a file.
+      if (nextFiles.length !== nextPreviews.length) return
+
+      updateState({ mediaFiles: nextFiles, mediaPreviews: nextPreviews })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.mediaPreviews, state.mediaFiles, updateState],
+  )
+
+  const sortableItems: SortableMediaItem[] = state.mediaPreviews.map((src) => ({ id: src, src }))
 
   const removeVideo = () => {
     if (state.videoPreview) URL.revokeObjectURL(state.videoPreview)
@@ -662,7 +702,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
         </div>
 
         {/* Media Previews */}
-        {(state.mediaPreviews.length > 0 || state.videoPreview) && (
+        {state.videoPreview || state.mediaPreviews.length === 1 ? (
           <div className="mb-4">
             <MediaPreview
               images={state.mediaPreviews}
@@ -672,7 +712,18 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
               onRemoveVideo={removeVideo}
             />
           </div>
-        )}
+        ) : state.mediaPreviews.length > 1 ? (
+          <div className="mb-4 space-y-2">
+            <p className="text-xs text-foreground-secondary">
+              Drag to reorder. The first image is shown as the cover.
+            </p>
+            <SortableMediaGrid
+              items={sortableItems}
+              onReorder={reorderImages}
+              onRemove={removeImageByPreview}
+            />
+          </div>
+        ) : null}
 
         {/* Code Snippet Preview */}
         {state.codeSnippet && (

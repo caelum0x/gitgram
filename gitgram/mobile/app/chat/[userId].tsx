@@ -19,6 +19,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import * as ImagePicker from 'expo-image-picker';
 import { logger } from '../../utils/logger';
+import { useHaptics } from '../../hooks/useHaptics';
 
 const TYPING_DEBOUNCE_MS = 2000; // Stop typing after 2 seconds of no input
 
@@ -114,6 +115,7 @@ interface Message {
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
+  const haptics = useHaptics();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState('');
@@ -229,6 +231,7 @@ export default function ChatScreen() {
 
     try {
       setSending(true);
+      haptics('Light');
 
       // Stop typing indicator when sending
       emitTypingStop();

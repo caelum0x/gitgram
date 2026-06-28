@@ -9,6 +9,23 @@ import logger from '../utils/logger'
 import { asyncHandler, Errors, ApiError } from '../middleware/errorHandler'
 import { getCachedProfile, setCachedProfile, setCachedRepo } from '../utils/githubProfileCache'
 import { fetchGitHubTrending } from '../services/ghSocialBridge'
+import { GitHubService } from '../services/githubService'
+import { createNotification } from '../services/notificationService'
+
+/**
+ * Resolve the authenticated user's stored GitHub OAuth token, or throw a
+ * 400 telling them to connect GitHub. Shared by all two-way GitHub actions.
+ */
+async function requireUserGitHubToken(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { githubAccessToken: true },
+  })
+  if (!user?.githubAccessToken) {
+    throw Errors.badRequest('GitHub account not linked. Connect GitHub in settings first.')
+  }
+  return user.githubAccessToken
+}
 
 export const githubController = {
   // Existing endpoints
@@ -676,5 +693,128 @@ export const githubController = {
     await activityService.clearUserCache(userId)
 
     res.json({ message: 'Activity cache cleared successfully' })
+  }),
+
+  // ============================================
+  // TWO-WAY GITHUB ACTIONS (write-back via user OAuth token)
+  // Ported from gh-social: star/unstar a repo and follow/unfollow a user on
+  // GitHub.com, plus live "have I starred / am I following" status checks.
+  // ============================================
+
+  /**
+   * Star a repository on GitHub.com using the user's OAuth token.
+   * PUT /api/v1/github/star/:owner/:repo
+   */
+  starRepo: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { owner, repo } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const fullName = `${owner}/${repo}`
+    const starred = await github.starRepo(fullName)
+
+    res.json({ message: 'Repository starred on GitHub', repository: fullName, starred })
+  }),
+
+  /**
+   * Remove a star from a repository on GitHub.com.
+   * DELETE /api/v1/github/star/:owner/:repo
+   */
+  unstarRepo: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { owner, repo } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const fullName = `${owner}/${repo}`
+    const starred = await github.unstarRepo(fullName)
+
+    res.json({ message: 'Repository unstarred on GitHub', repository: fullName, starred })
+  }),
+
+  /**
+   * Live check: has the user starred this repo on GitHub.com?
+   * GET /api/v1/github/star/:owner/:repo
+   */
+  getStarStatus: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { owner, repo } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const fullName = `${owner}/${repo}`
+    const starred = await github.hasStarred(fullName)
+
+    res.json({ repository: fullName, starred })
+  }),
+
+  /**
+   * Follow a GitHub user on GitHub.com using the user's OAuth token.
+   * When the followed GitHub user maps to a Gitgram account, send them an
+   * in-app notification (mirrors gh-social's follow notification).
+   * PUT /api/v1/github/follow-user/:username
+   */
+  followGitHubUser: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { username } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const following = await github.followUser(username)
+
+    // Notify the target if they have a Gitgram account linked to this GitHub login.
+    const actor = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    })
+    const target = await prisma.user.findFirst({
+      where: { githubUsername: { equals: username, mode: 'insensitive' } },
+      select: { id: true },
+    })
+    if (target && target.id !== userId && actor?.username) {
+      try {
+        await createNotification(
+          target.id,
+          'FOLLOW',
+          `${actor.username} followed you on GitHub`,
+          userId
+        )
+      } catch (notifyError: unknown) {
+        logger.error('Failed to send GitHub follow notification:', notifyError)
+      }
+    }
+
+    res.json({ message: 'User followed on GitHub', username, following })
+  }),
+
+  /**
+   * Unfollow a GitHub user on GitHub.com.
+   * DELETE /api/v1/github/follow-user/:username
+   */
+  unfollowGitHubUser: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { username } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const following = await github.unfollowUser(username)
+
+    res.json({ message: 'User unfollowed on GitHub', username, following })
+  }),
+
+  /**
+   * Live check: is the user following this GitHub user?
+   * GET /api/v1/github/follow-user/:username
+   */
+  getFollowUserStatus: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { username } = req.params
+    const userId = req.userId!
+    const token = await requireUserGitHubToken(userId)
+
+    const github = new GitHubService(token)
+    const following = await github.isFollowing(username)
+
+    res.json({ username, following })
   }),
 }

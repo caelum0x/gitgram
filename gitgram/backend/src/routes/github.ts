@@ -406,6 +406,128 @@ router.delete('/bookmark/:owner/:repo', authenticate, githubController.unbookmar
 router.get('/stats/:owner/:repo', githubController.getRepositoryStats);
 
 // ============================================
+// TWO-WAY GITHUB ACTIONS (write-back via user OAuth token)
+// Ported from gh-social. Star/unstar a repo and follow/unfollow a GitHub user
+// on GitHub.com, plus live status checks. All require the user's linked GitHub
+// OAuth token (stored on the user record) and an authenticated session.
+// ============================================
+
+/**
+ * @swagger
+ * /api/v1/github/star/{owner}/{repo}:
+ *   get:
+ *     summary: Check whether the authenticated user has starred a repo on GitHub
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: owner
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: repo
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Star status
+ *   put:
+ *     summary: Star a repository on GitHub.com
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: owner
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: repo
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Repository starred
+ *   delete:
+ *     summary: Remove a star from a repository on GitHub.com
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: owner
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: repo
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Repository unstarred
+ */
+router.get('/star/:owner/:repo', authenticate, githubController.getStarStatus);
+router.put('/star/:owner/:repo', authenticate, githubController.starRepo);
+router.delete('/star/:owner/:repo', authenticate, githubController.unstarRepo);
+
+/**
+ * @swagger
+ * /api/v1/github/follow-user/{username}:
+ *   get:
+ *     summary: Check whether the authenticated user follows a GitHub user
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Follow status
+ *   put:
+ *     summary: Follow a GitHub user on GitHub.com
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User followed
+ *   delete:
+ *     summary: Unfollow a GitHub user on GitHub.com
+ *     tags: [GitHub]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User unfollowed
+ */
+router.get('/follow-user/:username', authenticate, githubController.getFollowUserStatus);
+router.put('/follow-user/:username', authenticate, githubController.followGitHubUser);
+router.delete('/follow-user/:username', authenticate, githubController.unfollowGitHubUser);
+
+// ============================================
 // GITHUB ACTIVITY FEED ENDPOINTS
 // ============================================
 

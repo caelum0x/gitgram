@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { ThemedText } from '../ui/ThemedText';
@@ -7,6 +7,12 @@ import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import ReportModal from '../common/ReportModal';
 import { VISUAL_EFFECTS } from '../../store/reelEditorStore';
+import { useHaptics } from '../../hooks/useHaptics';
+import LikeBounceAnimation, {
+  LikeBounceAnimationHandle,
+} from '../common/LikeBounceAnimation';
+
+const DOUBLE_PRESS_DELAY = 300;
 
 const { width, height } = Dimensions.get('window');
 
@@ -63,6 +69,9 @@ export default function ReelPlayer({
     user: { username: username || 'user', avatar: '' },
   };
   const video = React.useRef<Video>(null);
+  const haptics = useHaptics();
+  const likeBounceRef = useRef<LikeBounceAnimationHandle>(null);
+  const lastTapRef = useRef(0);
   const [status, setStatus] = React.useState<any>({});
   const [isPlaying, setIsPlaying] = React.useState(isActive);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -99,9 +108,31 @@ export default function ReelPlayer({
     }
   };
 
+  const handleLikePress = () => {
+    haptics('Medium');
+    onLike();
+  };
+
+  const handleVideoPress = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_PRESS_DELAY) {
+      lastTapRef.current = 0;
+      // Double-tap always likes (never unlikes), matching the feed convention.
+      if (!isLiked) {
+        likeBounceRef.current?.animate();
+        handleLikePress();
+      } else {
+        likeBounceRef.current?.animate();
+      }
+      return;
+    }
+    lastTapRef.current = now;
+    togglePlayback();
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity activeOpacity={1} onPress={togglePlayback} style={styles.videoContainer}>
+      <TouchableOpacity activeOpacity={1} onPress={handleVideoPress} style={styles.videoContainer}>
         <Video
           ref={video}
           source={{ uri: reel.videoUrl }}
@@ -133,6 +164,7 @@ export default function ReelPlayer({
             <Icon name="play-arrow" size={64} color="rgba(255, 255, 255, 0.6)" />
           </View>
         )}
+        <LikeBounceAnimation ref={likeBounceRef} color="#ff4757" />
       </TouchableOpacity>
 
       <View style={styles.overlay}>
@@ -171,7 +203,12 @@ export default function ReelPlayer({
         </View>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionButton} onPress={onLike}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleLikePress}
+            accessibilityRole="button"
+            accessibilityLabel={isLiked ? 'Unlike reel' : 'Like reel'}
+          >
             <Icon name={isLiked ? "favorite" : "favorite-border"} size={32} color={isLiked ? "#ff4757" : "#FFF"} />
             <ThemedText style={styles.actionText}>{likesCount}</ThemedText>
           </TouchableOpacity>

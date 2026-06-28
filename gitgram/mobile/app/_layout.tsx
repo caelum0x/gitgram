@@ -3,9 +3,11 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import NetworkStatus from '../components/common/NetworkStatus';
 import { ToastProvider } from '../components/proximity/Toast';
+import { LightboxProvider } from '../components/common/Lightbox';
 import { pushNotificationService } from '../services/pushNotificationService';
 import { paymentDeepLinkHandler } from '../utils/paymentDeepLinkHandler';
 import { setupNotificationDeepLinkHandler, handleNotificationDeepLink } from '../utils/notificationDeepLinkHandler';
@@ -13,9 +15,11 @@ import { logger } from '../utils/logger';
 
 export default function RootLayout() {
   const { initialize, isAuthenticated } = useAuthStore();
+  const hydrateSettings = useSettingsStore((state) => state.hydrate);
 
   useEffect(() => {
     initialize();
+    hydrateSettings();
   }, []);
 
   useEffect(() => {
@@ -66,6 +70,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="(modals)" />
             </Stack>
+            <LightboxProvider />
           </ToastProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

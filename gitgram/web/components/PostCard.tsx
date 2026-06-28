@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { linkifyText } from '@/utils/linkify'
 
 export interface Post {
   id: string
@@ -104,7 +105,7 @@ function RenderedContent({ content }: { content: string }) {
         }
         return (
           <span key={i} style={{ color: '#E2E8F0', whiteSpace: 'pre-wrap' }}>
-            {seg.value}
+            {linkifyText(seg.value, { linkClassName: 'text-[#A78BFA] hover:underline' })}
           </span>
         )
       })}
