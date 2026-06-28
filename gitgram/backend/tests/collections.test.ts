@@ -631,7 +631,9 @@ describe('Collections API', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('posts');
-      expect(res.body).toHaveProperty('pagination');
+      // The saved-posts view uses cursor-based pagination for infinite scroll.
+      expect(res.body).toHaveProperty('hasMore');
+      expect(res.body).toHaveProperty('nextCursor');
     });
 
     it('should require authentication', async () => {

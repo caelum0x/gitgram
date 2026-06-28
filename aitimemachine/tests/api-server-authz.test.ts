@@ -65,7 +65,12 @@ describe("api-server authz", () => {
       }
 
       const address = moduleRef.httpServer.address() as AddressInfo;
-      baseUrl = `http://127.0.0.1:${address.port}`;
+      // Connect to the interface the server actually bound to. `localhost`
+      // can resolve to IPv6 (::1) on some platforms, so a hardcoded IPv4
+      // host (127.0.0.1) would be refused. IPv6 literals must be bracketed.
+      const host =
+        address.family === "IPv6" ? `[${address.address}]` : address.address;
+      baseUrl = `http://${host}:${address.port}`;
 
       const register = await requestJson("/api/auth/register", {
         method: "POST",

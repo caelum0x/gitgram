@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
@@ -21,7 +22,17 @@ const APP_NAME = 'Gitgram';
 const TOTP_PERIOD = 30; // seconds per window
 const TOTP_DIGITS = 6;
 const BACKUP_CODE_COUNT = 10;
-const QR_API_BASE = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=';
+
+/**
+ * Render an otpauth URL as an inline PNG data URL.
+ *
+ * Generated locally so the TOTP secret is never sent to a third-party QR
+ * service (which would be a secret-disclosure regression). Returns a
+ * `data:image/png;base64,…` string suitable for direct use in an <img src>.
+ */
+async function renderQrCodeDataUrl(otpauthUrl: string): Promise<string> {
+  return QRCode.toDataURL(otpauthUrl, { width: 200, margin: 2 });
+}
 
 // ─── Internal TOTP helpers (RFC 6238 / RFC 4226) ────────────────────────────
 
@@ -122,6 +133,32 @@ export function generateTOTPToken(secretBase32: string, timestamp = Date.now()):
 }
 
 /**
+ * Generate a fresh TOTP secret and its otpauth URL, with no database side effects.
+ *
+ * This is the pure-crypto counterpart to {@link generateTOTPSecret}, useful for
+ * callers (and tests) that only need a Base32 secret and an enrolment URL without
+ * persisting any pending 2FA state.
+ */
+export function generateSecret(email: string): { secret: string; otpauthUrl: string } {
+  const secret = base32Encode(crypto.randomBytes(20));
+  const otpauthUrl =
+    `otpauth://totp/${encodeURIComponent(`${APP_NAME}:${email}`)}` +
+    `?secret=${secret}&issuer=${encodeURIComponent(APP_NAME)}`;
+
+  return { secret, otpauthUrl };
+}
+
+/**
+ * Validate a TOTP token against a known Base32 secret, allowing ±1 window drift.
+ *
+ * Pure-crypto counterpart to {@link verifyTOTPToken} which reads the secret from
+ * the database; this overload takes the secret directly.
+ */
+export function verifyTOTP(secretBase32: string, token: string): boolean {
+  return validateTOTPToken(secretBase32, token);
+}
+
+/**
  * Validate a TOTP token against the current time, allowing ±1 window drift.
  */
 function validateTOTPToken(secretBase32: string, token: string): boolean {
@@ -179,7 +216,7 @@ export async function generateTOTPSecret(userId: string): Promise<TOTPSetup> {
     `otpauth://totp/${encodeURIComponent(`${APP_NAME}:${email}`)}` +
     `?secret=${secret}&issuer=${encodeURIComponent(APP_NAME)}`;
 
-  const qrCodeUrl = `${QR_API_BASE}${encodeURIComponent(otpauthUrl)}`;
+  const qrCodeUrl = await renderQrCodeDataUrl(otpauthUrl);
 
   // Persist the pending secret (enabled: false) so verifyTOTPToken can read it
   await prisma.twoFactorAuth.upsert({
@@ -245,8 +282,17 @@ export async function enableTOTP(userId: string, token: string): Promise<string[
     throw new Error('Invalid TOTP token');
   }
 
-  const plainCodes = generatePlainBackupCodes();
-  const hashedCodes = plainCodes.map(hashBackupCode);
+  // Reuse the backup codes already persisted at setup time so the codes the user
+  // saved remain valid. Only mint fresh codes if none were pre-generated (e.g.
+  // a setup flow that did not pre-seed them). Freshly minted codes are returned
+  // so the caller can surface them; pre-existing hashed codes cannot be shown
+  // again and are returned as an empty list.
+  let plainCodes: string[] = [];
+  let hashedCodes = record.backupCodes;
+  if (!hashedCodes || hashedCodes.length === 0) {
+    plainCodes = generatePlainBackupCodes();
+    hashedCodes = plainCodes.map(hashBackupCode);
+  }
 
   await prisma.$transaction([
     prisma.twoFactorAuth.update({
@@ -367,11 +413,20 @@ export async function setup2FA(
   _email: string,
 ): Promise<{ secret: string; otpauthUrl: string; qrCodeUrl: string; backupCodes: string[] }> {
   const setup = await generateTOTPSecret(userId);
-  // Pre-generate plain backup codes so the controller can return them in the
-  // setup response. The codes are NOT enabled until verifyAndEnable2FA is called.
-  const plainCodes: string[] = Array.from({ length: 10 }, () =>
-    require('crypto').randomBytes(4).toString('hex').toUpperCase(),
-  );
+
+  // Pre-generate backup codes so the UI can display them once during setup.
+  // The hashed copies are persisted on the pending record now so that the SAME
+  // codes remain valid after the user verifies and 2FA is enabled. (Previously
+  // enableTOTP regenerated fresh codes, silently invalidating the ones the user
+  // had already saved.)
+  const plainCodes = generatePlainBackupCodes();
+  const hashedCodes = plainCodes.map(hashBackupCode);
+
+  await prisma.twoFactorAuth.update({
+    where: { userId },
+    data: { backupCodes: hashedCodes },
+  });
+
   return { ...setup, backupCodes: plainCodes };
 }
 

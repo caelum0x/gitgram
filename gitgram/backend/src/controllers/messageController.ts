@@ -669,11 +669,11 @@ async function assertMessageAccess(
  * its reaction list (getReactionInfo) computed server-side here instead.
  */
 function aggregateReactions(
-  reactions: { emoji: string; userId: string }[],
+  reactions: { emoji: string; userId: string }[] | undefined | null,
   currentUserId: string,
 ): { emoji: string; count: number; reactedByMe: boolean }[] {
   const map = new Map<string, { count: number; reactedByMe: boolean }>();
-  for (const r of reactions) {
+  for (const r of reactions ?? []) {
     const entry = map.get(r.emoji) ?? { count: 0, reactedByMe: false };
     entry.count += 1;
     if (r.userId === currentUserId) {

@@ -7,9 +7,18 @@ import * as webhookService from '../src/services/webhookService';
 import crypto from 'crypto';
 
 // Mock axios for webhook delivery tests
-jest.mock('axios', () => ({
-  post: jest.fn(),
-}));
+// Override only `axios.post` (used for webhook delivery) while preserving the
+// rest of the real module. Transitive consumers loaded via createApp() — e.g.
+// @googlemaps/google-maps-services-js, which calls axios.getAdapter() at import
+// time — need the genuine axios surface, so a bare `{ post }` stub breaks them.
+jest.mock('axios', () => {
+  const actualAxios = jest.requireActual('axios');
+  return {
+    ...actualAxios,
+    default: { ...actualAxios.default, post: jest.fn() },
+    post: jest.fn(),
+  };
+});
 
 import axios from 'axios';
 const mockedAxios = axios as jest.Mocked<typeof axios>;

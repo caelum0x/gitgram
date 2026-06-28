@@ -147,13 +147,13 @@ describe('Beads tools (HTTP proxy)', () => {
     }
   });
 
-  it('beads_mark_done PATCHes /beads/tasks/:id/done', async () => {
+  it('beads_mark_done PUTs /beads/tasks/:id/done', async () => {
     fetchMock.mockResolvedValueOnce(jsonOk({ id: 'bd-1', status: 'done' }));
     const { call } = captureTools(registerBeadsTools, stubRuntime);
     await call('beads_mark_done', { id: 'bd-1' });
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toMatch(/\/beads\/tasks\/bd-1\/done$/);
-    expect((init as RequestInit).method).toBe('PATCH');
+    expect((init as RequestInit).method).toBe('PUT');
   });
 
   it('beads_list_tasks surfaces an actionable error when the API server is unreachable', async () => {

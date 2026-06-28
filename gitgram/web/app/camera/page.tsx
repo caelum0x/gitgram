@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { useToast } from '@/components/ui/toast'
@@ -51,8 +51,13 @@ export default function CameraPage() {
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login')
+    }
+  }, [isAuthenticated, router])
+
   if (!isAuthenticated) {
-    router.replace('/login')
     return null
   }
 

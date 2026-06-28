@@ -90,6 +90,11 @@ const countRelation = (row: any, relation: string) => {
       return getMockRows('like').filter((entry) => entry.postId === row.id).length;
     case 'comments':
       return getMockRows('comment').filter((entry) => entry.postId === row.id).length;
+    case 'replies':
+      // Threaded replies live in the same table, linked by parentId.
+      return [...getMockRows('unifiedComment'), ...getMockRows('comment')].filter(
+        (entry) => entry.parentId === row.id,
+      ).length;
     case 'deliveries':
       return getMockRows('webhookDelivery').filter((entry) => entry.webhookId === row.id || entry.userWebhookId === row.id).length;
     default:
@@ -418,6 +423,20 @@ const mockPrisma: any = {
   userTopicInterest: createMockPrismaModel(),
   star: createMockPrismaModel(),
   organization: createMockPrismaModel(),
+  accountSwitchGrant: createMockPrismaModel(),
+  adCampaign: createMockPrismaModel(),
+  adPreferences: createMockPrismaModel(),
+  auditLog: createMockPrismaModel(),
+  feedback: createMockPrismaModel(),
+  messageReaction: createMockPrismaModel(),
+  moment: createMockPrismaModel(),
+  momentLike: createMockPrismaModel(),
+  mutedWord: createMockPrismaModel(),
+  repositoryClone: createMockPrismaModel(),
+  repositoryPathView: createMockPrismaModel(),
+  repositoryReferrer: createMockPrismaModel(),
+  storeItem: createMockPrismaModel(),
+  storePurchase: createMockPrismaModel(),
   $connect: jest.fn().mockResolvedValue(undefined),
   $disconnect: jest.fn().mockResolvedValue(undefined),
   $transaction: jest.fn().mockImplementation(async (fn: any) => {
@@ -467,6 +486,12 @@ jest.mock('../src/services/redisService', () => ({
   redisClient: mockRedisClient,
   connectRedis: jest.fn().mockResolvedValue(undefined),
   getRedisClient: jest.fn().mockReturnValue(mockRedisClient),
+  cache: {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+    clear: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 jest.mock('../src/config/redis', () => ({

@@ -60,6 +60,7 @@ jest.mock('../src/controllers/uploadController', () => ({
   uploadAvatar: ok,
   uploadStory: ok,
   uploadReelCover: ok,
+  getVideoMetadataHandler: ok,
 }));
 
 jest.mock('../src/controllers/storiesController', () => ({

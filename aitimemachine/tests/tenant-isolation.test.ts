@@ -2157,8 +2157,10 @@ describe("Tenant Isolation - Complete Route Coverage Matrix", () => {
 
     // Routes that use external / protocol-level auth instead of the platform
     // middleware: sso (external IdP), a2a (A2A protocol agent API keys verified
-    // per-endpoint via a2aService.resolveApiKey, mounted outside /v1).
-    const specialAuthRoutes = ["sso", "a2a"];
+    // per-endpoint via a2aService.resolveApiKey, mounted outside /v1), and
+    // a2aVendored (the first-party vendored A2A SDK server mounted at /a2a/v2,
+    // same JSON-RPC A2A protocol family as a2a, also outside /v1).
+    const specialAuthRoutes = ["sso", "a2a", "a2aVendored"];
 
     const routesDir = new URL(
       "../api-server/src/routes/",
