@@ -69,23 +69,19 @@ const integrations = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 via-transparent to-transparent" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-blue-500/10 rounded-full blur-3xl" />
-
+      <section className="relative overflow-hidden border-b border-gray-800">
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32 text-center">
-          <div className="inline-flex items-center gap-2 bg-gray-800/50 border border-gray-700 rounded-full px-4 py-1.5 text-sm mb-8">
+          <div className="inline-flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-full px-4 py-1.5 text-sm mb-8">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span className="text-gray-300">Now with Claude Code integration</span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
+            <span className="text-primary">
               Git versions code.
             </span>
             <br />
@@ -298,8 +294,7 @@ export default function LandingPage() {
       {/* CTA */}
       <section className="py-20 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-gray-800 rounded-3xl p-8 sm:p-12 text-center">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
+          <div className="relative overflow-hidden bg-gray-900 border border-gray-800 rounded-2xl p-8 sm:p-12 text-center">
             <div className="relative">
               <h2 className="text-3xl sm:text-4xl font-bold mb-4">Ready to Time Travel?</h2>
               <p className="text-gray-400 mb-8 max-w-xl mx-auto">

@@ -32,13 +32,13 @@ const footerLinks = {
 
 export function Footer() {
   return (
-    <footer className="border-t border-gray-800 bg-gray-950">
+    <footer className="border-t border-gray-800 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-lg font-bold">
+              <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center text-lg font-bold text-white">
                 A
               </div>
               <span className="text-lg font-bold text-white">Gitgram TimeMachine</span>

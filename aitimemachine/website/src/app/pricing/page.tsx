@@ -620,8 +620,7 @@ export default function PricingPage() {
       {/* Final CTA */}
       <section className="py-20 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden bg-gradient-to-r from-blue-900/50 to-purple-900/50 border border-gray-800 rounded-3xl p-10 sm:p-14 text-center">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 pointer-events-none" />
+          <div className="relative overflow-hidden bg-gray-900 border border-gray-800 rounded-2xl p-10 sm:p-14 text-center">
             <div className="relative">
               <h2 className="text-3xl sm:text-4xl font-bold mb-4">
                 Start before your next AI session breaks something
