@@ -4,6 +4,7 @@ import {
   getMcpCapabilities,
   type ToolSelectionOptions,
 } from '../lib/stable-tools.js';
+import { getToolInfo } from '../lib/tool-catalog.js';
 import type { ToolRuntimeContext } from '../lib/tool-runtime.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -93,12 +94,29 @@ export function registerResources(
           text: JSON.stringify(
             {
               ...capabilities,
-              tools: availableTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                category: tool.category,
-                stable: tool.stable,
-              })),
+              // Per-tool parameter detail comes from the live registration
+              // catalog (populated as tools register). When a tool has not yet
+              // been recorded (e.g. capabilities read before registration
+              // completes), fall back to the static name/description metadata.
+              tools: availableTools.map((tool) => {
+                const info = getToolInfo(tool.name);
+                return {
+                  name: tool.name,
+                  description: tool.description,
+                  category: tool.category,
+                  stable: tool.stable,
+                  ...(info
+                    ? {
+                        readOnly: info.readOnly,
+                        destructive: info.destructive,
+                        parameters: info.parameters,
+                      }
+                    : {}),
+                };
+              }),
+              discovery: {
+                hint: 'Call tm_discover_tools for a cheap name list, then tm_get_tool_info(name) for one tool\'s full schema and example.',
+              },
               disabledTools: disabledTools.map((tool) => ({
                 name: tool.name,
                 description: tool.description,

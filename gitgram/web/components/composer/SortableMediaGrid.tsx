@@ -31,6 +31,8 @@ export interface SortableMediaItem {
   id: string
   /** Image preview source. */
   src: string
+  /** Per-image alt text (accessibility description). */
+  alt?: string
 }
 
 interface SortableMediaGridProps {
@@ -39,6 +41,8 @@ interface SortableMediaGridProps {
   onReorder: (items: SortableMediaItem[]) => void
   /** Called with the id of an item to remove. */
   onRemove: (id: string) => void
+  /** Called when the user edits an item's alt text. */
+  onEditAlt?: (id: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -50,9 +54,10 @@ interface SortableTileProps {
   index: number
   total: number
   onRemove: (id: string) => void
+  onEditAlt?: (id: string) => void
 }
 
-function SortableTile({ item, index, total, onRemove }: SortableTileProps) {
+function SortableTile({ item, index, total, onRemove, onEditAlt }: SortableTileProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
   })
@@ -99,10 +104,30 @@ function SortableTile({ item, index, total, onRemove }: SortableTileProps) {
         {index + 1}
       </span>
 
+      {/* Alt-text badge — lit when a description has been added. */}
+      {onEditAlt && (
+        <button
+          type="button"
+          onClick={() => onEditAlt(item.id)}
+          aria-label={
+            item.alt
+              ? `Edit alt text for image ${index + 1}`
+              : `Add alt text for image ${index + 1}`
+          }
+          className={`absolute bottom-1.5 left-1.5 z-20 rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors ${
+            item.alt
+              ? 'bg-[var(--primary)] text-white'
+              : 'bg-black/60 text-white hover:bg-black/80'
+          }`}
+        >
+          ALT
+        </button>
+      )}
+
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={item.src}
-        alt={`Selected image ${index + 1}`}
+        alt={item.alt || `Selected image ${index + 1}`}
         className="h-full w-full rounded-lg object-cover"
         draggable={false}
       />
@@ -131,7 +156,7 @@ const DndContext = RawDndContext as unknown as ComponentType<
  * Adapted from munia's CreatePostSort/CreatePostSortItem to the product's
  * stack (object-URL previews, CSS-variable theme, no custom svg_components).
  */
-export default function SortableMediaGrid({ items, onReorder, onRemove }: SortableMediaGridProps) {
+export default function SortableMediaGrid({ items, onReorder, onRemove, onEditAlt }: SortableMediaGridProps) {
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -165,7 +190,13 @@ export default function SortableMediaGrid({ items, onReorder, onRemove }: Sortab
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {items.map((item, index) => (
             <div key={item.id} className="group">
-              <SortableTile item={item} index={index} total={items.length} onRemove={onRemove} />
+              <SortableTile
+                item={item}
+                index={index}
+                total={items.length}
+                onRemove={onRemove}
+                onEditAlt={onEditAlt}
+              />
             </div>
           ))}
         </div>

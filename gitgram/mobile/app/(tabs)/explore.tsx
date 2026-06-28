@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { userService } from '../../services/userService';
 import { postService } from '../../services/postService';
 import repositoryService from '../../services/repositoryService';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import { listenSoftReset } from '../../utils/events';
 import { logger } from '../../utils/logger';
 
 interface User {
@@ -62,6 +63,7 @@ export default function ExploreScreen() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
   const [trendingProjects, setTrendingProjects] = useState<Project[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (activeTab === 'projects' || activeTab === 'trending') {
@@ -70,6 +72,20 @@ export default function ExploreScreen() {
     if (activeTab === 'users') {
       loadSuggestedUsers();
     }
+  }, [activeTab, selectedLanguage]);
+
+  // Soft reset: re-pressing the Explore tab scrolls to top and reloads the
+  // active tab's content.
+  useEffect(() => {
+    const unlisten = listenSoftReset(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      if (activeTab === 'users') {
+        loadSuggestedUsers();
+      } else {
+        loadTrendingProjects();
+      }
+    });
+    return unlisten;
   }, [activeTab, selectedLanguage]);
 
   const loadTrendingProjects = async () => {
@@ -340,7 +356,7 @@ export default function ExploreScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scrollView}>
+      <ScrollView ref={scrollRef} style={styles.scrollView}>
         {activeTab === 'projects' && (
           <>
             {/* Section Header */}

@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { linkifyText } from '@/utils/linkify'
+import ImageCarousel from './ImageCarousel'
+import ContentHider from './moderation/ContentHider'
+import { parseSelfLabel } from '@/utils/moderation'
 
 export interface Post {
   id: string
@@ -20,6 +23,10 @@ export interface Post {
   repoOwner?: string
   repoName?: string
   isLiked?: boolean
+  /** Attached image URLs, in display order. */
+  images?: string[]
+  /** Per-image alt text, parallel to `images` (accessibility). */
+  imageAlts?: string[]
 }
 
 export interface PostCardProps {
@@ -200,6 +207,7 @@ export default function PostCard({ post, onLike }: PostCardProps) {
   }
 
   const initials = post.author.displayName.trim().charAt(0).toUpperCase()
+  const { label: selfLabel, cleanContent } = parseSelfLabel(post.content || '')
 
   return (
     <article
@@ -310,10 +318,18 @@ export default function PostCard({ post, onLike }: PostCardProps) {
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ marginBottom: '12px' }}>
-        <RenderedContent content={post.content} />
-      </div>
+      {/* Content + media (soft-hidden behind a warning when self-labelled) */}
+      <ContentHider label={selfLabel}>
+        <div style={{ marginBottom: '12px' }}>
+          <RenderedContent content={cleanContent} />
+        </div>
+
+        {post.images && post.images.length > 0 && (
+          <div style={{ marginBottom: '12px', borderRadius: 12, overflow: 'hidden' }}>
+            <ImageCarousel images={post.images} alts={post.imageAlts} />
+          </div>
+        )}
+      </ContentHider>
 
       {/* Tags */}
       {post.tags && post.tags.length > 0 && (

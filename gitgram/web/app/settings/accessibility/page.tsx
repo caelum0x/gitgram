@@ -16,6 +16,7 @@ interface AccessibilitySettings {
   highContrast: boolean
   fontScale: number
   alwaysShowAltText: boolean
+  requireAltText: boolean
   keyboardShortcuts: boolean
   screenReaderOptimizations: boolean
 }
@@ -27,6 +28,7 @@ const DEFAULT_SETTINGS: AccessibilitySettings = {
   highContrast: false,
   fontScale: 100,
   alwaysShowAltText: false,
+  requireAltText: false,
   keyboardShortcuts: true,
   screenReaderOptimizations: false,
 }
@@ -268,6 +270,13 @@ export default function AccessibilitySettingsPage() {
           description="Display image descriptions beneath every image."
           checked={settings.alwaysShowAltText}
           onChange={(v) => updateSetting('alwaysShowAltText', v)}
+        />
+        <div className="border-t border-[var(--border)]" />
+        <ToggleRow
+          label="Require alt text before posting"
+          description="Stop you from publishing images that have no description, so your posts stay accessible."
+          checked={settings.requireAltText}
+          onChange={(v) => updateSetting('requireAltText', v)}
         />
         <div className="border-t border-[var(--border)]" />
         <ToggleRow

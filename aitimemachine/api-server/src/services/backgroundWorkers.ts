@@ -5,7 +5,25 @@ import { processGCWorker } from "./gcWorker.js";
 import { processQueue as processWebhookQueue } from "./webhookDelivery.js";
 import { recoverStuckPaperIndexing } from "../routes/research-papers.js";
 import { DATA_CLASSES, DataClass } from "./retention.js";
+import { compactIssues } from "./memoryService.js";
 import { WorkerScheduler, WorkerRunResult } from "./scheduler.js";
+
+/** Extract a numeric "compacted/candidate" count from a `bd compact` payload. */
+function compactItemsProcessed(result: unknown): number {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const rec = result as Record<string, unknown>;
+    for (const field of ["compacted", "candidates", "processed", "count"]) {
+      const value = rec[field];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.length;
+      }
+    }
+  }
+  return 0;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -255,6 +273,30 @@ function startManagedWorkers(): WorkerScheduler {
         Math.min(Math.max(Number(process.env.PAPER_INDEXING_LIMIT || 25), 1), 200)
       );
       return { success: true, itemsProcessed: recovered };
+    },
+  });
+
+  // Beads compaction worker — semantic memory decay of old closed issues so the
+  // beads DAG (and agent context window) never grows unbounded. Disabled by
+  // default; when enabled it runs in dry-run mode unless BEADS_COMPACT_DRY_RUN
+  // is explicitly turned off (auto compaction mutates the store).
+  const compactCron = process.env.BEADS_COMPACT_CRON || "0 5 * * 0"; // weekly Sun 5 AM
+  scheduler.register({
+    name: "beads-compact",
+    cronExpression: compactCron,
+    enabled: parseBoolean(process.env.BEADS_COMPACT_WORKER_ENABLED, false),
+    lockTtlMs: 600_000, // 10 min
+    execute: async (): Promise<WorkerRunResult> => {
+      const dryRun = parseBoolean(process.env.BEADS_COMPACT_DRY_RUN, true);
+      const result = await compactIssues({
+        all: parseBoolean(process.env.BEADS_COMPACT_ALL, false),
+        dryRun,
+        limit: Math.min(
+          Math.max(Number(process.env.BEADS_COMPACT_LIMIT || 100), 1),
+          10000
+        ),
+      });
+      return { success: true, itemsProcessed: compactItemsProcessed(result) };
     },
   });
 

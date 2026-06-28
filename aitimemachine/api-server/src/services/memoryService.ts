@@ -369,3 +369,223 @@ export async function findDependencyCycles(): Promise<unknown> {
   const { stdout } = await execFileAsync(beadsBinary(), ["dep", "cycles", "--json"]);
   return parseBeadsJson(stdout);
 }
+
+/**
+ * Return the recursive dependency tree rooted at an issue via `bd dep tree`.
+ *   direction='down' (default): the transitive blockers `id` depends on
+ *   direction='up':             the transitive dependents that depend on `id`
+ *   direction='both':           both directions
+ *
+ * Unlike {@link listDependencies} (a flat one-hop edge list), this returns the
+ * full transitive tree an agent needs to plan multi-step work in a single call.
+ * `maxDepth` bounds traversal (the binary's own safety limit defaults high).
+ */
+export async function listDependencyTree(
+  id: string,
+  direction: "up" | "down" | "both" = "down",
+  maxDepth?: number
+): Promise<unknown> {
+  const args = ["dep", "tree", id, `--direction=${direction}`, "--json"];
+  if (typeof maxDepth === "number" && Number.isFinite(maxDepth)) {
+    args.push("--max-depth", String(Math.max(1, Math.floor(maxDepth))));
+  }
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  return parseBeadsJson(stdout);
+}
+
+// ============================================================================
+// Beads compaction (semantic memory decay of old closed issues)
+//
+// `bd compact` summarises old closed issues to keep the DAG (and the agent
+// context window) from growing unbounded. We support the read-only analysis
+// paths (--stats, --analyze) and the dry-run / auto compaction paths. Mutating
+// auto-compaction requires the binary's server/direct mode; the caller decides
+// whether to pass dryRun.
+// ============================================================================
+
+export interface CompactOptions {
+  /** Show statistics only (read-only). */
+  stats?: boolean;
+  /** Return compaction candidates with full content (read-only). */
+  analyze?: boolean;
+  /** Preview without mutating. */
+  dryRun?: boolean;
+  /** Compact all eligible issues (auto mode). */
+  all?: boolean;
+  /** Restrict to a single issue id. */
+  id?: string;
+  /** Cap the number of issues considered. */
+  limit?: number;
+}
+
+/**
+ * Run `bd compact` with the supplied mode. Returns the parsed `--json` payload.
+ * Defaults to `--stats` (read-only) when no mode is selected so an accidental
+ * call never mutates the store.
+ */
+export async function compactIssues(
+  options: CompactOptions = {}
+): Promise<unknown> {
+  // `compact` lives under the `admin` command group in the bundled `bd` binary
+  // (`bd admin compact …`), not at the top level.
+  const args = ["admin", "compact"];
+
+  if (options.stats) {
+    args.push("--stats");
+  } else if (options.analyze) {
+    args.push("--analyze");
+  } else {
+    // Auto compaction path. Force a dry-run unless the caller explicitly opts
+    // out, so the default behaviour is non-destructive.
+    args.push("--auto");
+    if (options.dryRun !== false) {
+      args.push("--dry-run");
+    }
+    if (options.all) {
+      args.push("--all");
+    }
+    if (options.id) {
+      args.push("--id", options.id);
+    }
+  }
+
+  if (typeof options.limit === "number" && Number.isFinite(options.limit)) {
+    args.push("--limit", String(Math.max(1, Math.floor(options.limit))));
+  }
+
+  args.push("--json");
+
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  return parseBeadsJson(stdout);
+}
+
+// ============================================================================
+// Beads persistent memory (remember / recall / memories / forget)
+//
+// A durable per-project key→insight store the `bd` binary injects at `bd prime`.
+// These survive context resets and account rotation — the long-horizon memory
+// surface AITM's mission needs. Thin execFile wrappers over the `bd` commands.
+// ============================================================================
+
+/**
+ * Run a `bd` command that may legitimately exit non-zero (e.g. `recall`/`forget`
+ * on a missing key) while still emitting a useful `--json` body on stdout.
+ * Resolves with the trimmed stdout regardless of exit code, so callers can
+ * inspect the JSON `found` flag instead of treating a miss as a thrown error.
+ * Genuine failures (binary missing, malformed args) surface no stdout and are
+ * re-thrown.
+ */
+async function execBeadsTolerant(args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(beadsBinary(), args);
+    return stdout;
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "stdout" in error &&
+      typeof (error as { stdout: unknown }).stdout === "string"
+    ) {
+      const stdout = (error as { stdout: string }).stdout;
+      if (stdout.trim().length > 0) {
+        return stdout;
+      }
+    }
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+export interface MemoryEntry {
+  key: string;
+  value: string;
+}
+
+export interface RecallResult {
+  key: string;
+  value: string;
+  found: boolean;
+}
+
+export interface ForgetResult {
+  key: string;
+  deleted: boolean;
+}
+
+/**
+ * Persist an insight. When `key` is omitted the binary derives a slug from the
+ * insight text. Returns the stored `{ key, value }`.
+ */
+export async function remember(insight: string, key?: string): Promise<MemoryEntry> {
+  const args = ["remember", insight];
+  if (key && key.trim().length > 0) {
+    args.push("--key", key.trim());
+  }
+  args.push("--json");
+
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  const parsed = parseBeadsJson(stdout);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const rec = parsed as Record<string, unknown>;
+    return {
+      key: typeof rec["key"] === "string" ? rec["key"] : (key ?? ""),
+      value: typeof rec["value"] === "string" ? rec["value"] : insight,
+    };
+  }
+  return { key: key ?? "", value: insight };
+}
+
+/**
+ * Retrieve a single memory by key. Returns `found: false` (rather than throwing)
+ * when the key is absent.
+ */
+export async function recall(key: string): Promise<RecallResult> {
+  const stdout = await execBeadsTolerant(["recall", key, "--json"]);
+  const parsed = parseBeadsJson(stdout);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const rec = parsed as Record<string, unknown>;
+    const value = typeof rec["value"] === "string" ? rec["value"] : "";
+    const found =
+      typeof rec["found"] === "boolean" ? rec["found"] : value.length > 0;
+    return { key, value, found };
+  }
+  return { key, value: "", found: false };
+}
+
+/**
+ * List all persistent memories, optionally filtered by a keyword `search`.
+ * Returns a normalised `{ key, value }[]` (the binary emits a `{ key: value }`
+ * map under `--json`).
+ */
+export async function listMemories(search?: string): Promise<MemoryEntry[]> {
+  const args = ["memories"];
+  if (search && search.trim().length > 0) {
+    args.push(search.trim());
+  }
+  args.push("--json");
+
+  const { stdout } = await execFileAsync(beadsBinary(), args);
+  const parsed = parseBeadsJson(stdout);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return Object.entries(parsed as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "string")
+      .map(([key, v]) => ({ key, value: v as string }));
+  }
+  return [];
+}
+
+/**
+ * Remove a memory by key. Returns `deleted: false` (rather than throwing) when
+ * the key did not exist.
+ */
+export async function forget(key: string): Promise<ForgetResult> {
+  const stdout = await execBeadsTolerant(["forget", key, "--json"]);
+  const parsed = parseBeadsJson(stdout);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const rec = parsed as Record<string, unknown>;
+    // The binary emits "deleted": "true" on success and "found": "false" on a
+    // miss (string-valued in both cases).
+    const deleted = rec["deleted"] === "true" || rec["deleted"] === true;
+    return { key, deleted };
+  }
+  return { key, deleted: false };
+}

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   View,
   Text,
@@ -6,12 +12,15 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
 import PostCard from '../../components/Post/PostCard';
 import AdCard from '../../components/ads/AdCard';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import LoadLatestButton from '../../components/common/LoadLatestButton';
 import EmptyState from '../../components/common/EmptyState';
 import TrendingRepoCard from '../../components/proximity/TrendingRepoCard';
 import { PostSkeleton } from '../../components/proximity/Skeleton';
@@ -21,8 +30,15 @@ import { postService } from '../../services/postService';
 import { adService } from '../../services/adService';
 import repositoryService from '../../services/repositoryService';
 import { storyService } from '../../services/storyService';
+import { usePostViewTracking } from '../../hooks/usePostViewTracking';
+import { listenSoftReset } from '../../utils/events';
 import { logger } from '../../utils/logger';
 import { useRouter } from 'expo-router';
+
+type FeedItem = { type: 'post' | 'ad' | 'repo'; data: any; index: number };
+
+// Distance (px) the user must scroll down before the "load latest" pill appears.
+const LOAD_LATEST_OFFSET = 320;
 
 interface TrendingRepo {
   fullName: string;
@@ -93,6 +109,28 @@ export default function HomeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [createSheetVisible, setCreateSheetVisible] = useState(false);
+  const [scrolledDown, setScrolledDown] = useState(false);
+  const [newPostCount, setNewPostCount] = useState(0);
+
+  const listRef = useRef<FlatList<FeedItem>>(null);
+  // Newest post id currently shown at the top of the feed, used to detect when
+  // a background poll surfaces fresher content.
+  const newestPostIdRef = useRef<string | null>(null);
+
+  const { onViewableItemsChanged, reset: resetViewTracking } =
+    usePostViewTracking<FeedItem>({
+      logContext: 'home-feed',
+      getPostId: (item) =>
+        item.type === 'post' && typeof item.data?.id === 'string'
+          ? item.data.id
+          : null,
+    });
+
+  // viewabilityConfig must be stable for the lifetime of the FlatList.
+  const viewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 60,
+    minimumViewTime: 250,
+  });
 
   const loadAds = async (feedPosition: number) => {
     try {
@@ -135,6 +173,13 @@ export default function HomeScreen() {
       if (refresh) {
         setPosts(newPosts);
         setAds(new Map());
+        // A refresh swaps the feed, so reset impression dedupe and clear the
+        // "new posts" indicator, anchoring on the freshest visible post id.
+        resetViewTracking();
+        setNewPostCount(0);
+        if (newPosts.length > 0 && typeof newPosts[0]?.id === 'string') {
+          newestPostIdRef.current = newPosts[0].id;
+        }
         // Load ads for initial positions
         newPosts.forEach((_: any, index: number) => {
           if ((index + 1) % 5 === 0) {
@@ -190,6 +235,58 @@ export default function HomeScreen() {
     }
   };
 
+  // Scroll the feed to the top and reload the latest posts. Shared by the
+  // "load latest" pill and the soft-reset (re-press active tab) gesture.
+  const scrollToTopAndRefresh = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setScrolledDown(false);
+    handleRefresh();
+  }, []);
+
+  // Soft reset: re-pressing the Home tab scrolls to top and reloads.
+  useEffect(() => {
+    const unlisten = listenSoftReset(scrollToTopAndRefresh);
+    return unlisten;
+  }, [scrollToTopAndRefresh]);
+
+  // Lightweight background poll for fresher content. Compares the newest post
+  // id against what is currently anchored at the top of the feed.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const response = await postService.getPosts(1, 5);
+        const latest = response.posts || [];
+        const anchor = newestPostIdRef.current;
+        if (!anchor) {
+          return;
+        }
+        const anchorIndex = latest.findIndex(
+          (p: any) => p?.id === anchor,
+        );
+        // Posts ahead of the anchor are new arrivals. If the anchor fell off
+        // the first page entirely, treat the whole page as new.
+        const count = anchorIndex === -1 ? latest.length : anchorIndex;
+        if (count > 0) {
+          setNewPostCount(count);
+        }
+      } catch (error) {
+        logger.error('Poll latest posts error:', error);
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      setScrolledDown((prev) => {
+        const next = offsetY > LOAD_LATEST_OFFSET;
+        return prev === next ? prev : next;
+      });
+    },
+    [],
+  );
+
   if (loading && posts.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -210,7 +307,7 @@ export default function HomeScreen() {
 
   // Combine posts, repos, and ads into a single feed array
   const feedItems = useMemo(() => {
-    const items: Array<{ type: 'post' | 'ad' | 'repo'; data: any; index: number }> = [];
+    const items: FeedItem[] = [];
 
     // Add trending repos at the start
     trendingRepos.forEach((repo, idx) => {
@@ -230,7 +327,7 @@ export default function HomeScreen() {
     return items;
   }, [posts, ads, trendingRepos]);
 
-  const renderItem = useCallback(({ item }: { item: { type: 'post' | 'ad' | 'repo'; data: any; index: number } }) => {
+  const renderItem = useCallback(({ item }: { item: FeedItem }) => {
     if (item.type === 'ad') {
       return <AdCard ad={item.data} />;
     }
@@ -240,7 +337,7 @@ export default function HomeScreen() {
     return <PostCard post={item.data} />;
   }, []);
 
-  const keyExtractor = useCallback((item: { type: 'post' | 'ad' | 'repo'; data: any; index: number }) => {
+  const keyExtractor = useCallback((item: FeedItem) => {
     if (item.type === 'ad') return `ad-${item.data.id}`;
     if (item.type === 'repo') return `repo-${item.data.id || item.data.fullName}`;
     return item.data.id;
@@ -280,7 +377,15 @@ export default function HomeScreen() {
       </View>
 
       {/* Main Content Feed */}
+      <View style={styles.feedContainer}>
+      <LoadLatestButton
+        visible={scrolledDown || newPostCount > 0}
+        showIndicator={newPostCount > 0}
+        label={newPostCount > 0 ? String(newPostCount) : undefined}
+        onPress={scrollToTopAndRefresh}
+      />
       <FlatList
+        ref={listRef}
         data={feedItems}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
@@ -289,6 +394,10 @@ export default function HomeScreen() {
         updateCellsBatchingPeriod={50}
         initialNumToRender={10}
         windowSize={10}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfigRef.current}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
@@ -336,6 +445,7 @@ export default function HomeScreen() {
           ) : null
         }
       />
+      </View>
 
       <QuickActionSheet
         visible={createSheetVisible}
@@ -395,6 +505,10 @@ const styles = StyleSheet.create({
   },
   headerButtonIcon: {
     fontSize: 20,
+  },
+  feedContainer: {
+    flex: 1,
+    position: 'relative',
   },
   listContent: {
     paddingBottom: 80, // Space for bottom tab bar

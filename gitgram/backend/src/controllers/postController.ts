@@ -14,6 +14,7 @@ import type { AitmCheckpointRef } from '../services/aitmService';
 import { getCachedComments, setCachedComments, invalidateCommentCache } from '../utils/commentCache';
 import { tuneFeed, type TunableFeedItem } from '../services/feedTuner';
 import { normalizeSelfLabels, decideSelfLabel } from '../services/selfLabels';
+import { computeMutedFeedFlags } from '../services/mutedWordsService';
 
 export const createPost = asyncHandler(async (req: AuthRequest, res: Response) => {
   const {
@@ -272,6 +273,31 @@ function applySelfLabelBehavior(
   });
 }
 
+/**
+ * Mark each feed item with `isMutedWord` so `tuneFeed`'s removeMutedWords step
+ * drops posts matching the viewer's muted words/tags (Bluesky `hasMutedWord`
+ * parity for the feed read path). Returns a new array; inputs are not mutated.
+ */
+async function applyMutedWords(
+  items: TunableFeedItem[],
+  viewerId: string
+): Promise<TunableFeedItem[]> {
+  if (items.length === 0) return items;
+
+  const flags = await computeMutedFeedFlags(
+    viewerId,
+    items.map(item => ({
+      id: item.id,
+      text: typeof item.content === 'string' ? item.content : '',
+      authorId: item.authorId,
+    }))
+  );
+
+  return items.map(item =>
+    flags.get(item.id) ? { ...item, isMutedWord: true } : item
+  );
+}
+
 export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
   const { page = 1, limit = 20, cursor } = req.query;
@@ -290,10 +316,11 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
       cursor.trim(),
       Number(limit)
     );
-    const tunedPosts = applySelfLabelBehavior(
-      tuneFeed((result.posts as Record<string, unknown>[]).map(toTunableItem)),
-      labelOpts
+    const markedCursorItems = await applyMutedWords(
+      (result.posts as Record<string, unknown>[]).map(toTunableItem),
+      userId
     );
+    const tunedPosts = applySelfLabelBehavior(tuneFeed(markedCursorItems), labelOpts);
     res.json({ ...result, posts: tunedPosts });
     return;
   }
@@ -311,10 +338,11 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
     return;
   }
 
-  const tunedPosts = applySelfLabelBehavior(
-    tuneFeed((posts as Record<string, unknown>[]).map(toTunableItem)),
-    labelOpts
+  const markedItems = await applyMutedWords(
+    (posts as Record<string, unknown>[]).map(toTunableItem),
+    userId
   );
+  const tunedPosts = applySelfLabelBehavior(tuneFeed(markedItems), labelOpts);
 
   res.json({ posts: tunedPosts, isDiscover: false });
 });

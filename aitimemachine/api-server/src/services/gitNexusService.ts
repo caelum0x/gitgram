@@ -60,6 +60,10 @@ const METHOD_ALIASES: Readonly<Record<string, string>> = {
   gn_symbol_search: "query",
   gn_ping: "list_repos",
   gn_detect_changes: "detect_changes",
+  gn_api_impact: "api_impact",
+  gn_trace: "trace",
+  gn_shape_check: "shape_check",
+  gn_explain: "explain",
   // Bare aliases (idempotent passthrough).
   context: "context",
   impact: "impact",
@@ -68,6 +72,10 @@ const METHOD_ALIASES: Readonly<Record<string, string>> = {
   symbol_search: "query",
   ping: "list_repos",
   detect_changes: "detect_changes",
+  api_impact: "api_impact",
+  trace: "trace",
+  shape_check: "shape_check",
+  explain: "explain",
 };
 
 function resolveToolName(method: string): string {
@@ -146,6 +154,141 @@ export interface ChangeAnalysis {
   /** Human-readable risk/summary text, when provided. */
   summary: string | null;
   /** The unnormalised backend payload for callers that need full detail. */
+  raw: unknown;
+}
+
+/** Risk classification returned by the GitNexus `api_impact` tool. */
+export type ApiImpactRisk = "LOW" | "MEDIUM" | "HIGH";
+
+/**
+ * Pre-change blast-radius / risk report for an API route handler, combining the
+ * `route_map`, `shape_check`, and `impact` signals into a single verdict. This
+ * is the decision-useful signal AITM agents need at checkpoint / PR time.
+ *
+ * The structured fields below are normalised from the backend payload; the full
+ * (possibly richer) response is preserved under {@link ApiImpactReport.raw}.
+ */
+export interface ApiImpactReport {
+  /** Overall risk level, when the engine provides one (LOW | MEDIUM | HIGH). */
+  riskLevel: ApiImpactRisk | null;
+  /** Number of distinct route matches in the report. */
+  total: number;
+  /** Per-route entries (one when a single route matched). */
+  routes: ApiImpactRoute[];
+  /** The unnormalised backend payload. */
+  raw: unknown;
+}
+
+/** A single route entry within an {@link ApiImpactReport}. */
+export interface ApiImpactRoute {
+  method: string;
+  path: string;
+  handler: string;
+  file: string;
+  /** Files/components that consume this route. */
+  consumers: string[];
+  /** Response fields consumers access. */
+  accessedFields: string[];
+  /** Middleware wrapper chain protecting the route (e.g. withAuth). */
+  middleware: string[];
+  /** Shape-drift mismatches between the route response and its consumers. */
+  mismatches: unknown[];
+  /** Per-route risk level when the engine attaches one. */
+  riskLevel: ApiImpactRisk | null;
+  /** Free-form raw entry for callers needing full detail. */
+  raw: unknown;
+}
+
+/** A single hop in a {@link TraceResult} path. */
+export interface TraceHop {
+  symbol: string;
+  file: string;
+  line: number;
+  /** Edge type linking this hop to the next (e.g. "CALLS", "HAS_METHOD"). */
+  edge: string | null;
+  /** Edge confidence, when provided. */
+  confidence: number | null;
+}
+
+/** Result of tracing the shortest path between two symbols. */
+export interface TraceResult {
+  /** Whether a complete path from source to target was found. */
+  found: boolean;
+  /** Ordered hops from source to target (or to the furthest reachable node). */
+  hops: TraceHop[];
+  /** True when a traversal cap was hit before exhausting the search. */
+  truncated: boolean;
+  /** The unnormalised backend payload. */
+  raw: unknown;
+}
+
+/** A consumer entry within a {@link ShapeCheckEntry}. */
+export interface ShapeCheckConsumer {
+  file: string;
+  /** Response keys this consumer accesses. */
+  accessedKeys: string[];
+  /** Keys the consumer accesses that the route does not return. */
+  missingKeys: string[];
+  status: "OK" | "MISMATCH";
+}
+
+/** Per-route shape-drift entry from the `shape_check` tool. */
+export interface ShapeCheckEntry {
+  method: string;
+  path: string;
+  /** Top-level keys the route returns (e.g. data, pagination, error). */
+  responseKeys: string[];
+  consumers: ShapeCheckConsumer[];
+  status: "OK" | "MISMATCH";
+}
+
+/** Result of a `shape_check` run across one or all routes. */
+export interface ShapeCheckResult {
+  entries: ShapeCheckEntry[];
+  /** Count of routes reporting a MISMATCH. */
+  mismatchCount: number;
+  /** The unnormalised backend payload. */
+  raw: unknown;
+}
+
+/** Sink category for a taint finding. */
+export type TaintCategory =
+  | "command-injection"
+  | "code-injection"
+  | "path-traversal"
+  | "sql-injection"
+  | "xss"
+  | string;
+
+/** A single source→sink taint finding from the `explain` tool. */
+export interface TaintFinding {
+  category: TaintCategory;
+  /** Source location/symbol of the tainted flow. */
+  source: string;
+  /** Sink location/symbol of the tainted flow. */
+  sink: string;
+  /** True when the flow crosses function boundaries (TAINT_PATH). */
+  interprocedural: boolean;
+  /** Ordered hop descriptions of the flow. */
+  hops: string[];
+  /** The unnormalised finding for callers needing full detail. */
+  raw: unknown;
+}
+
+/** Result of an `explain` (taint/security) query. */
+export interface ExplainResult {
+  findings: TaintFinding[];
+  /** Total matched findings (may exceed findings.length when truncated). */
+  totalFindings: number;
+  /** True when the result page is smaller than the full matched set. */
+  truncated: boolean;
+  /**
+   * True when the repo lacks the persisted taint layer (`gitnexus analyze
+   * --pdg`). Callers should surface a "no taint layer" hint rather than an
+   * empty-but-clean result.
+   */
+  noTaintLayer: boolean;
+  /** The unnormalised backend payload. */
   raw: unknown;
 }
 
@@ -456,6 +599,386 @@ export async function detectChanges(
     typeof result["summary"] === "string" ? (result["summary"] as string) : null;
 
   return { changedSymbols, affectedProcesses, riskLevel, summary, raw: result };
+}
+
+// ============================================================================
+// Normalisation helpers for the richer code-intelligence reports
+// ============================================================================
+
+/** Coerce a value to a string[], mapping objects via a `name`/`file` field. */
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((v) => {
+    if (typeof v === "string") {
+      return v;
+    }
+    if (isRecord(v)) {
+      if (typeof v["name"] === "string") return v["name"];
+      if (typeof v["file"] === "string") return v["file"];
+      if (typeof v["path"] === "string") return v["path"];
+    }
+    return String(v);
+  });
+}
+
+function toRisk(value: unknown): ApiImpactRisk | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const upper = value.toUpperCase();
+  return upper === "LOW" || upper === "MEDIUM" || upper === "HIGH"
+    ? (upper as ApiImpactRisk)
+    : null;
+}
+
+function normalizeApiImpactRoute(entry: unknown): ApiImpactRoute {
+  if (!isRecord(entry)) {
+    return {
+      method: "",
+      path: "",
+      handler: "",
+      file: "",
+      consumers: [],
+      accessedFields: [],
+      middleware: [],
+      mismatches: [],
+      riskLevel: null,
+      raw: entry,
+    };
+  }
+  return {
+    method: typeof entry["method"] === "string" ? entry["method"] : "",
+    path: typeof entry["path"] === "string" ? entry["path"] : "",
+    handler: typeof entry["handler"] === "string" ? entry["handler"] : "",
+    file: typeof entry["file"] === "string" ? entry["file"] : "",
+    consumers: toStringArray(entry["consumers"]),
+    accessedFields: toStringArray(
+      entry["accessedFields"] ?? entry["accessed_fields"] ?? entry["accessedKeys"]
+    ),
+    middleware: toStringArray(entry["middleware"]),
+    mismatches: Array.isArray(entry["mismatches"]) ? entry["mismatches"] : [],
+    riskLevel: toRisk(entry["riskLevel"] ?? entry["risk_level"] ?? entry["risk"]),
+    raw: entry,
+  };
+}
+
+// ============================================================================
+// Pre-change blast-radius / risk report (api_impact)
+// ============================================================================
+
+/**
+ * Produces a pre-change risk report for an API route handler by combining
+ * route_map + shape_check + impact via the GitNexus `api_impact` tool. Pass
+ * either `route` (path) or `file` (handler file); at least one is required by
+ * the backend.
+ *
+ * The backend returns either a single route object or `{ routes: [...], total }`.
+ * Both shapes are normalised into {@link ApiImpactReport}.
+ */
+export async function apiImpact(params: {
+  route?: string;
+  file?: string;
+  repo?: string;
+}): Promise<ApiImpactReport> {
+  const toolParams: Record<string, unknown> = {};
+  if (params.route) toolParams["route"] = params.route;
+  if (params.file) toolParams["file"] = params.file;
+  if (params.repo) toolParams["repo"] = params.repo;
+
+  const result = await callGitNexus("gn_api_impact", toolParams);
+
+  if (isRecord(result) && Array.isArray(result["routes"])) {
+    const routes = (result["routes"] as unknown[]).map(normalizeApiImpactRoute);
+    const total =
+      typeof result["total"] === "number" ? result["total"] : routes.length;
+    return {
+      riskLevel: toRisk(result["riskLevel"] ?? result["risk_level"] ?? result["risk"]),
+      total,
+      routes,
+      raw: result,
+    };
+  }
+
+  if (isRecord(result)) {
+    const route = normalizeApiImpactRoute(result);
+    return { riskLevel: route.riskLevel, total: 1, routes: [route], raw: result };
+  }
+
+  logger.error("gitNexus: unexpected shape from api_impact", undefined, {
+    result: String(result),
+  });
+  return { riskLevel: null, total: 0, routes: [], raw: result };
+}
+
+// ============================================================================
+// Shortest call/member path between two symbols (trace)
+// ============================================================================
+
+/**
+ * Finds the shortest directed path between two symbols over call and
+ * class-member edges via the GitNexus `trace` tool. Either a symbol name or a
+ * UID may be supplied for each endpoint (UIDs are zero-ambiguity).
+ */
+export async function traceSymbols(params: {
+  from?: string;
+  fromUid?: string;
+  fromFile?: string;
+  to?: string;
+  toUid?: string;
+  toFile?: string;
+  maxDepth?: number;
+  includeTests?: boolean;
+  repo?: string;
+}): Promise<TraceResult> {
+  const toolParams: Record<string, unknown> = {};
+  if (params.from) toolParams["from"] = params.from;
+  if (params.fromUid) toolParams["from_uid"] = params.fromUid;
+  if (params.fromFile) toolParams["from_file"] = params.fromFile;
+  if (params.to) toolParams["to"] = params.to;
+  if (params.toUid) toolParams["to_uid"] = params.toUid;
+  if (params.toFile) toolParams["to_file"] = params.toFile;
+  if (typeof params.maxDepth === "number") toolParams["maxDepth"] = params.maxDepth;
+  if (typeof params.includeTests === "boolean") {
+    toolParams["includeTests"] = params.includeTests;
+  }
+  if (params.repo) toolParams["repo"] = params.repo;
+
+  const result = await callGitNexus("gn_trace", toolParams);
+
+  const empty: TraceResult = { found: false, hops: [], truncated: false, raw: result };
+
+  if (!isRecord(result)) {
+    logger.error("gitNexus: unexpected shape from trace", undefined, {
+      result: String(result),
+    });
+    return empty;
+  }
+
+  const rawHops = Array.isArray(result["hops"])
+    ? (result["hops"] as unknown[])
+    : Array.isArray(result["path"])
+      ? (result["path"] as unknown[])
+      : [];
+  const rawEdges = Array.isArray(result["edges"])
+    ? (result["edges"] as unknown[])
+    : [];
+
+  const hops: TraceHop[] = rawHops.map((hop, index) => {
+    const node = isRecord(hop) ? hop : {};
+    const edge = isRecord(rawEdges[index]) ? (rawEdges[index] as Record<string, unknown>) : null;
+    return {
+      symbol:
+        typeof node["symbol"] === "string"
+          ? node["symbol"]
+          : typeof node["name"] === "string"
+            ? node["name"]
+            : "",
+      file: typeof node["file"] === "string" ? node["file"] : "",
+      line: typeof node["line"] === "number" ? node["line"] : 0,
+      edge:
+        edge && typeof edge["type"] === "string"
+          ? edge["type"]
+          : typeof node["edge"] === "string"
+            ? node["edge"]
+            : null,
+      confidence:
+        edge && typeof edge["confidence"] === "number" ? edge["confidence"] : null,
+    };
+  });
+
+  const found =
+    typeof result["found"] === "boolean" ? result["found"] : hops.length > 0;
+  const truncated =
+    typeof result["truncated"] === "boolean" ? result["truncated"] : false;
+
+  return { found, hops, truncated, raw: result };
+}
+
+// ============================================================================
+// API response-shape drift (shape_check)
+// ============================================================================
+
+function normalizeShapeCheckEntry(entry: unknown): ShapeCheckEntry {
+  if (!isRecord(entry)) {
+    return { method: "", path: "", responseKeys: [], consumers: [], status: "OK" };
+  }
+  const consumersRaw = Array.isArray(entry["consumers"])
+    ? (entry["consumers"] as unknown[])
+    : [];
+  const consumers: ShapeCheckConsumer[] = consumersRaw.map((c) => {
+    const rec = isRecord(c) ? c : {};
+    const missingKeys = toStringArray(rec["missingKeys"] ?? rec["missing_keys"]);
+    const status =
+      rec["status"] === "MISMATCH" || missingKeys.length > 0 ? "MISMATCH" : "OK";
+    return {
+      file: typeof rec["file"] === "string" ? rec["file"] : "",
+      accessedKeys: toStringArray(rec["accessedKeys"] ?? rec["accessed_keys"]),
+      missingKeys,
+      status,
+    };
+  });
+  const status =
+    entry["status"] === "MISMATCH" ||
+    consumers.some((c) => c.status === "MISMATCH")
+      ? "MISMATCH"
+      : "OK";
+  return {
+    method: typeof entry["method"] === "string" ? entry["method"] : "",
+    path: typeof entry["path"] === "string" ? entry["path"] : "",
+    responseKeys: toStringArray(entry["responseKeys"] ?? entry["response_keys"]),
+    consumers,
+    status,
+  };
+}
+
+/**
+ * Checks API response-shape drift between routes and their consumers via the
+ * GitNexus `shape_check` tool, reporting MISMATCH when a consumer accesses keys
+ * the route does not return. Pass `route` to scope to one route, or omit to
+ * check all routes.
+ */
+export async function shapeCheck(params: {
+  route?: string;
+  repo?: string;
+}): Promise<ShapeCheckResult> {
+  const toolParams: Record<string, unknown> = {};
+  if (params.route) toolParams["route"] = params.route;
+  if (params.repo) toolParams["repo"] = params.repo;
+
+  const result = await callGitNexus("gn_shape_check", toolParams);
+
+  const rows = Array.isArray(result)
+    ? result
+    : isRecord(result) && Array.isArray(result["routes"])
+      ? (result["routes"] as unknown[])
+      : isRecord(result) && Array.isArray(result["results"])
+        ? (result["results"] as unknown[])
+        : null;
+
+  if (rows === null) {
+    logger.error("gitNexus: unexpected shape from shape_check", undefined, {
+      result: String(result),
+    });
+    return { entries: [], mismatchCount: 0, raw: result };
+  }
+
+  const entries = rows.map(normalizeShapeCheckEntry);
+  const mismatchCount = entries.filter((e) => e.status === "MISMATCH").length;
+  return { entries, mismatchCount, raw: result };
+}
+
+// ============================================================================
+// Persisted taint / security findings (explain)
+// ============================================================================
+
+function normalizeTaintFinding(entry: unknown): TaintFinding {
+  if (!isRecord(entry)) {
+    return {
+      category: "",
+      source: "",
+      sink: "",
+      interprocedural: false,
+      hops: [],
+      raw: entry,
+    };
+  }
+  return {
+    category: typeof entry["category"] === "string" ? entry["category"] : "",
+    source:
+      typeof entry["source"] === "string"
+        ? entry["source"]
+        : typeof entry["sourceFunction"] === "string"
+          ? entry["sourceFunction"]
+          : "",
+    sink:
+      typeof entry["sink"] === "string"
+        ? entry["sink"]
+        : typeof entry["sinkFunction"] === "string"
+          ? entry["sinkFunction"]
+          : "",
+    interprocedural:
+      typeof entry["interprocedural"] === "boolean" ? entry["interprocedural"] : false,
+    hops: toStringArray(entry["hops"] ?? entry["path"] ?? entry["chain"]),
+    raw: entry,
+  };
+}
+
+/**
+ * Returns persisted taint / security findings (source→sink data flows) from the
+ * GitNexus `explain` tool. Pass `target` (file path or symbol) to anchor, or
+ * omit to enumerate all findings for the repo.
+ *
+ * Requires the repo to be indexed with `gitnexus analyze --pdg`. When that
+ * layer is absent the backend returns a "no taint layer" note rather than an
+ * error; this is surfaced via {@link ExplainResult.noTaintLayer}.
+ */
+export async function explainTaint(params: {
+  target?: string;
+  limit?: number;
+  repo?: string;
+}): Promise<ExplainResult> {
+  const toolParams: Record<string, unknown> = {};
+  if (params.target) toolParams["target"] = params.target;
+  if (typeof params.limit === "number") toolParams["limit"] = params.limit;
+  if (params.repo) toolParams["repo"] = params.repo;
+
+  const result = await callGitNexus("gn_explain", toolParams);
+
+  // The backend may return a plain note string when the PDG/taint layer is
+  // missing. Detect that and surface it explicitly rather than as an error.
+  if (typeof result === "string") {
+    const noLayer = /no taint layer|--pdg|no pdg layer/i.test(result);
+    return {
+      findings: [],
+      totalFindings: 0,
+      truncated: false,
+      noTaintLayer: noLayer,
+      raw: result,
+    };
+  }
+
+  if (!isRecord(result)) {
+    logger.error("gitNexus: unexpected shape from explain", undefined, {
+      result: String(result),
+    });
+    return {
+      findings: [],
+      totalFindings: 0,
+      truncated: false,
+      noTaintLayer: false,
+      raw: result,
+    };
+  }
+
+  const rows = Array.isArray(result["findings"])
+    ? (result["findings"] as unknown[])
+    : Array.isArray(result["results"])
+      ? (result["results"] as unknown[])
+      : [];
+  const findings = rows.map(normalizeTaintFinding);
+
+  const noteText =
+    typeof result["note"] === "string"
+      ? result["note"]
+      : typeof result["message"] === "string"
+        ? result["message"]
+        : "";
+  const noTaintLayer =
+    result["noTaintLayer"] === true ||
+    /no taint layer|--pdg|no pdg layer/i.test(noteText);
+
+  const totalFindings =
+    typeof result["totalFindings"] === "number"
+      ? result["totalFindings"]
+      : typeof result["total"] === "number"
+        ? result["total"]
+        : findings.length;
+  const truncated =
+    typeof result["truncated"] === "boolean" ? result["truncated"] : false;
+
+  return { findings, totalFindings, truncated, noTaintLayer, raw: result };
 }
 
 // ============================================================================

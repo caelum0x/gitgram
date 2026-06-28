@@ -20,47 +20,115 @@ import {
 import { readOnlyAnnotations, mutatingAnnotations, idempotentMutationAnnotations } from '../lib/tool-annotations.js';
 import { jsonResponse } from '../lib/tool-responses.js';
 import { aitmApiRequest } from '../lib/aitm-api-client.js';
+import {
+  projectBeadsPayload,
+  type BeadsProjectionOptions,
+} from '../lib/beads-projection.js';
 
 const LABEL = 'Beads API';
 
+/**
+ * Shared zod fields for context-efficient output trimming, mirroring the Beads
+ * MCP server's brief / fields / max_description_length params. Spread into a
+ * tool's schema so every read/mutation can opt into a smaller response.
+ */
+const projectionSchema = {
+  brief: z
+    .boolean()
+    .optional()
+    .describe('When true, return only {id, title, status, priority} per task (smallest output).'),
+  fields: z
+    .array(z.string())
+    .optional()
+    .describe('Return only these fields per task (custom projection). Ignored when brief is set.'),
+  maxDescriptionLength: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Truncate each task description to this many characters to save context.'),
+} as const;
+
+/** Schema fields controlling list compaction (preview + count for large lists). */
+const listProjectionSchema = {
+  ...projectionSchema,
+  compactionThreshold: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Compact lists longer than this to a preview + total count (default 20).'),
+  previewCount: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('How many tasks to include in a compacted preview (default 5).'),
+} as const;
+
+/** Extract the projection options shared by every read/mutation tool. */
+function pickProjection(
+  args: Partial<{
+    brief: boolean;
+    fields: string[];
+    maxDescriptionLength: number;
+    compactionThreshold: number;
+    previewCount: number;
+  }>,
+  listLabel?: string
+): BeadsProjectionOptions {
+  return {
+    brief: args.brief,
+    fields: args.fields,
+    maxDescriptionLength: args.maxDescriptionLength,
+    compactionThreshold: args.compactionThreshold,
+    previewCount: args.previewCount,
+    listLabel,
+  };
+}
+
 async function beadsGet(
-  endpoint: string
+  endpoint: string,
+  projection?: BeadsProjectionOptions
 ): Promise<ReturnType<typeof jsonResponse>> {
   const data = await aitmApiRequest(LABEL, `/beads${endpoint}`);
-  return jsonResponse(data);
+  return jsonResponse(projectBeadsPayload(data, projection));
 }
 
 async function beadsPost(
   endpoint: string,
-  body: unknown
+  body: unknown,
+  projection?: BeadsProjectionOptions
 ): Promise<ReturnType<typeof jsonResponse>> {
   const data = await aitmApiRequest(LABEL, `/beads${endpoint}`, {
     method: 'POST',
     body,
   });
-  return jsonResponse(data);
+  return jsonResponse(projectBeadsPayload(data, projection));
 }
 
 async function beadsPatch(
   endpoint: string,
-  body?: unknown
+  body?: unknown,
+  projection?: BeadsProjectionOptions
 ): Promise<ReturnType<typeof jsonResponse>> {
   const data = await aitmApiRequest(LABEL, `/beads${endpoint}`, {
     method: 'PATCH',
     body,
   });
-  return jsonResponse(data);
+  return jsonResponse(projectBeadsPayload(data, projection));
 }
 
 async function beadsPut(
   endpoint: string,
-  body?: unknown
+  body?: unknown,
+  projection?: BeadsProjectionOptions
 ): Promise<ReturnType<typeof jsonResponse>> {
   const data = await aitmApiRequest(LABEL, `/beads${endpoint}`, {
     method: 'PUT',
     body,
   });
-  return jsonResponse(data);
+  return jsonResponse(projectBeadsPayload(data, projection));
 }
 
 /**
@@ -94,10 +162,12 @@ function buildQuery(
 export const registerBeadsTools = createToolRegistrar([
   defineTool({
     name: 'beads_list_tasks',
-    description: 'List all tasks in the Beads DAG task tracker, showing each task\'s status, dependencies, and position in the execution graph.',
-    schema: {},
+    description: 'List all tasks in the Beads DAG task tracker, showing each task\'s status, dependencies, and position in the execution graph. Supports brief/fields/maxDescriptionLength projection and preview compaction for large lists.',
+    schema: {
+      ...listProjectionSchema,
+    },
     annotations: readOnlyAnnotations(),
-    run: async () => beadsGet('/tasks'),
+    run: async (args) => beadsGet('/tasks', pickProjection(args, 'tasks')),
   }),
 
   defineTool({
@@ -106,9 +176,15 @@ export const registerBeadsTools = createToolRegistrar([
     schema: {
       title: z.string().describe('Human-readable title for the task'),
       deps: z.array(z.string()).optional().describe('Array of task IDs that this task depends on (must complete first)'),
+      ...projectionSchema,
     },
     annotations: mutatingAnnotations(),
-    run: async (args) => beadsPost('/tasks', args),
+    run: async (args) =>
+      beadsPost(
+        '/tasks',
+        { title: args.title, deps: args.deps },
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -116,9 +192,15 @@ export const registerBeadsTools = createToolRegistrar([
     description: 'Mark a Beads task as ready to execute. The task must have all its dependencies already completed.',
     schema: {
       id: z.string().describe('The ID of the task to mark as ready'),
+      ...projectionSchema,
     },
     annotations: idempotentMutationAnnotations(),
-    run: async (args) => beadsPut(`/tasks/${encodeURIComponent(args.id)}/ready`),
+    run: async (args) =>
+      beadsPut(
+        `/tasks/${encodeURIComponent(args.id)}/ready`,
+        undefined,
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -126,19 +208,30 @@ export const registerBeadsTools = createToolRegistrar([
     description: 'Mark a Beads task as done (completed). This will unblock any downstream tasks that depend on this task.',
     schema: {
       id: z.string().describe('The ID of the task to mark as done'),
+      ...projectionSchema,
     },
     annotations: idempotentMutationAnnotations(),
-    run: async (args) => beadsPut(`/tasks/${encodeURIComponent(args.id)}/done`),
+    run: async (args) =>
+      beadsPut(
+        `/tasks/${encodeURIComponent(args.id)}/done`,
+        undefined,
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
     name: 'beads_get_task',
-    description: 'Get the full details of a specific Beads task by ID, including its status, dependencies, and any metadata.',
+    description: 'Get the full details of a specific Beads task by ID, including its status, dependencies, and any metadata. Use brief/fields/maxDescriptionLength to trim the response.',
     schema: {
       id: z.string().describe('The ID of the task to retrieve'),
+      ...projectionSchema,
     },
     annotations: readOnlyAnnotations(),
-    run: async (args) => beadsGet(`/tasks/${encodeURIComponent(args.id)}`),
+    run: async (args) =>
+      beadsGet(
+        `/tasks/${encodeURIComponent(args.id)}`,
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -180,6 +273,7 @@ export const registerBeadsTools = createToolRegistrar([
         .enum(['priority', 'hybrid', 'oldest'])
         .optional()
         .describe('Sort policy for the returned ready tasks'),
+      ...listProjectionSchema,
     },
     annotations: readOnlyAnnotations(),
     run: async (args) =>
@@ -192,17 +286,20 @@ export const registerBeadsTools = createToolRegistrar([
           labelsAny: args.labelsAny,
           limit: args.limit,
           sort: args.sort,
-        })}`
+        })}`,
+        pickProjection(args, 'ready tasks')
       ),
   }),
 
   defineTool({
     name: 'beads_blocked',
     description:
-      'List Beads tasks that are currently blocked, along with the dependencies blocking each one. Use this to see what is stuck in the DAG and why, so an operator or agent can unblock autonomous work.',
-    schema: {},
+      'List Beads tasks that are currently blocked, along with the dependencies blocking each one. Use this to see what is stuck in the DAG and why, so an operator or agent can unblock autonomous work. Supports brief/fields/maxDescriptionLength projection and preview compaction.',
+    schema: {
+      ...listProjectionSchema,
+    },
     annotations: readOnlyAnnotations(),
-    run: async () => beadsGet('/blocked'),
+    run: async (args) => beadsGet('/blocked', pickProjection(args, 'blocked tasks')),
   }),
 
   defineTool({
@@ -227,13 +324,18 @@ export const registerBeadsTools = createToolRegistrar([
         .enum(['blocks', 'related', 'parent-child', 'discovered-from'])
         .optional()
         .describe('The kind of dependency edge to create (default: blocks)'),
+      ...projectionSchema,
     },
     annotations: mutatingAnnotations(),
     run: async (args) =>
-      beadsPost(`/tasks/${encodeURIComponent(args.id)}/deps`, {
-        dependsOn: args.dependsOn,
-        type: args.type,
-      }),
+      beadsPost(
+        `/tasks/${encodeURIComponent(args.id)}/deps`,
+        {
+          dependsOn: args.dependsOn,
+          type: args.type,
+        },
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -262,16 +364,21 @@ export const registerBeadsTools = createToolRegistrar([
         .array(z.string())
         .optional()
         .describe('Replace the full set of labels with this list'),
+      ...projectionSchema,
     },
     annotations: mutatingAnnotations(),
     run: async (args) =>
-      beadsPatch(`/tasks/${encodeURIComponent(args.id)}`, {
-        title: args.title,
-        priority: args.priority,
-        assignee: args.assignee,
-        status: args.status,
-        labels: args.labels,
-      }),
+      beadsPatch(
+        `/tasks/${encodeURIComponent(args.id)}`,
+        {
+          title: args.title,
+          priority: args.priority,
+          assignee: args.assignee,
+          status: args.status,
+          labels: args.labels,
+        },
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -284,12 +391,17 @@ export const registerBeadsTools = createToolRegistrar([
         .string()
         .optional()
         .describe('Why the task is being closed (default: "Completed")'),
+      ...projectionSchema,
     },
     annotations: idempotentMutationAnnotations(),
     run: async (args) =>
-      beadsPost(`/tasks/${encodeURIComponent(args.id)}/close`, {
-        reason: args.reason,
-      }),
+      beadsPost(
+        `/tasks/${encodeURIComponent(args.id)}/close`,
+        {
+          reason: args.reason,
+        },
+        pickProjection(args)
+      ),
   }),
 
   defineTool({
@@ -302,12 +414,17 @@ export const registerBeadsTools = createToolRegistrar([
         .string()
         .optional()
         .describe('Why the task is being reopened'),
+      ...projectionSchema,
     },
     annotations: idempotentMutationAnnotations(),
     run: async (args) =>
-      beadsPost(`/tasks/${encodeURIComponent(args.id)}/reopen`, {
-        reason: args.reason,
-      }),
+      beadsPost(
+        `/tasks/${encodeURIComponent(args.id)}/reopen`,
+        {
+          reason: args.reason,
+        },
+        pickProjection(args)
+      ),
   }),
 ]);
 

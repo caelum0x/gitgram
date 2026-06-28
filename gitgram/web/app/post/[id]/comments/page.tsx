@@ -4,7 +4,12 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { postService } from '@/services/postService'
+import {
+  postService,
+  normalizeReplyPermission,
+  type ReplyPermission,
+} from '@/services/postService'
+import { WhoCanReplyNotice } from '@/components/WhoCanReply'
 
 export default function PostCommentsPage() {
   const params = useParams()
@@ -13,9 +18,11 @@ export default function PostCommentsPage() {
   const [commentText, setCommentText] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [replyPermission, setReplyPermission] = useState<ReplyPermission>('everyone')
 
   useEffect(() => {
     loadComments()
+    loadReplyPermission()
   }, [postId])
 
   const loadComments = async () => {
@@ -28,6 +35,17 @@ export default function PostCommentsPage() {
       setLoading(false)
     }
   }
+
+  const loadReplyPermission = async () => {
+    try {
+      const post = await postService.getPost(postId)
+      setReplyPermission(normalizeReplyPermission(post?.replyPermission))
+    } catch (error) {
+      console.error('Load reply permission error:', error)
+    }
+  }
+
+  const repliesDisabled = replyPermission === 'nobody'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,22 +76,34 @@ export default function PostCommentsPage() {
       <div className="max-w-2xl mx-auto py-8 px-4">
         <h1 className="text-2xl font-bold text-foreground mb-6">Comments</h1>
 
-        <form onSubmit={handleSubmit} className="mb-6">
-          <textarea
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder="Add a comment..."
-            className="w-full px-4 py-3 bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-accent mb-3"
-            rows={3}
-          />
-          <button
-            type="submit"
-            disabled={submitting || !commentText.trim()}
-            className="px-6 py-2 bg-accent text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50"
-          >
-            {submitting ? 'Posting...' : 'Post Comment'}
-          </button>
-        </form>
+        {replyPermission !== 'everyone' && (
+          <div className="mb-4">
+            <WhoCanReplyNotice permission={replyPermission} />
+          </div>
+        )}
+
+        {repliesDisabled ? (
+          <p className="mb-6 rounded-lg bg-surface border border-border px-4 py-3 text-sm text-foreground-secondary">
+            The author has turned off replies for this post.
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} className="mb-6">
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Add a comment..."
+              className="w-full px-4 py-3 bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-accent mb-3"
+              rows={3}
+            />
+            <button
+              type="submit"
+              disabled={submitting || !commentText.trim()}
+              className="px-6 py-2 bg-accent text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50"
+            >
+              {submitting ? 'Posting...' : 'Post Comment'}
+            </button>
+          </form>
+        )}
 
         <div className="space-y-4">
           {comments.map((comment) => (

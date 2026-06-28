@@ -41,6 +41,15 @@ export const messageService = {
     return response.data;
   },
 
+  // Marks every message in a conversation as read. Backed by
+  // POST /messages/conversations/:id/read.
+  markConversationAsRead: async (conversationId: string) => {
+    const response = await api.post(
+      `/messages/conversations/${conversationId}/read`,
+    );
+    return response.data;
+  },
+
   getMessageRequests: async () => {
     const response = await api.get('/messages/requests');
     return response.data;

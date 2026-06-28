@@ -1,6 +1,24 @@
 import { Tabs } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { emitSoftReset } from '../../utils/events';
+
+/**
+ * Fires a soft reset (scroll-to-top + refresh) when the user taps the tab that
+ * is already focused. React Navigation still navigates on a normal tab switch,
+ * so we gate on `navigation.isFocused()` to only react to a re-press.
+ */
+const softResetListeners = ({
+  navigation,
+}: {
+  navigation: { isFocused: () => boolean };
+}) => ({
+  tabPress: () => {
+    if (navigation.isFocused()) {
+      emitSoftReset();
+    }
+  },
+});
 
 export default function TabsLayout() {
   return (
@@ -25,6 +43,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="home"
+        listeners={softResetListeners}
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
@@ -49,6 +68,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="explore"
+        listeners={softResetListeners}
         options={{
           title: 'Explore',
           tabBarIcon: ({ color, size }) => (
@@ -67,6 +87,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="notifications"
+        listeners={softResetListeners}
         options={{
           title: 'Notifications',
           tabBarIcon: ({ color, size }) => (

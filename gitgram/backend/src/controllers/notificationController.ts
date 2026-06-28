@@ -7,6 +7,7 @@ import {
   groupNotifications,
   type RawNotification,
 } from '../services/notificationService';
+import { filterMutedNotifications } from '../services/mutedWordsService';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 
 const NOTIFICATION_TITLES: Record<string, string> = {
@@ -114,8 +115,20 @@ export const getNotifications = asyncHandler(async (req: AuthRequest, res: Respo
 
   const enrichedNotifications = await enrichNotifications(notifications);
 
+  // Hide notifications whose subject post matches the viewer's muted words/tags.
+  // Mirrors the feed's removeMutedWords step (Bluesky's shouldFilterNotif).
+  const visibleNotifications = await filterMutedNotifications(
+    userId,
+    enrichedNotifications.map((n) => ({
+      ...n,
+      actorId: n.actorId ?? null,
+      postId: n.post?.id ?? null,
+      postText: n.post?.content ?? null,
+    }))
+  );
+
   res.json({
-    notifications: enrichedNotifications,
+    notifications: visibleNotifications,
     pagination: {
       page: Number(page),
       limit: Number(limit),

@@ -16,6 +16,7 @@ import {
   formatHiddenFamiliesWarning,
   getConfiguredButHiddenFamilies,
 } from './lib/tool-diagnostics.js';
+import { buildHandshakeInstructions } from './lib/handshake-instructions.js';
 import type { ToolRuntimeContext, SessionServerLike } from './lib/tool-runtime.js';
 import { registerCoreTools } from './tools/register-core-tools.js';
 import { registerSessionTools } from './tools/register-session-tools.js';
@@ -32,6 +33,7 @@ import { registerBeadsTools } from './tools/register-beads-tools.js';
 import { registerGitHubTools } from './tools/register-github-tools.js';
 import { registerClaudeTools } from './tools/register-claude-tools.js';
 import { registerAnalysisTools } from './tools/register-analysis-tools.js';
+import { registerMetaTools } from './tools/register-meta-tools.js';
 import { registerResources } from './resources/register-resources.js';
 import { registerPrompts } from './prompts/register-prompts.js';
 
@@ -109,10 +111,20 @@ async function loadLib() {
   };
 }
 
-const server = new McpServer({
-  name: 'ai-time-machine-mcp',
-  version: '2.0.0',
-});
+const server = new McpServer(
+  {
+    name: 'ai-time-machine-mcp',
+    version: '2.0.0',
+  },
+  {
+    // Advertise short usage guidance to the MCP client at initialize time so an
+    // agent knows how to navigate the server's ~90 tools (discovery path,
+    // experimental gating, before/after-action checkpoint protocol) without
+    // first burning context probing every schema. Derived from the live tool
+    // policy so the hints reflect what is actually enabled in this process.
+    instructions: buildHandshakeInstructions(TOOL_SELECTION_OPTIONS),
+  }
+);
 
 const skippedToolNames = new Map<string, string>();
 const originalToolRegistration = server.tool.bind(server);
@@ -211,6 +223,7 @@ if (process.env.ANTHROPIC_API_KEY) {
   registerClaudeTools(server, runtime);
 }
 registerAnalysisTools(server, runtime);
+registerMetaTools(server, runtime);
 registerResources(server, runtime, {
   experimentalEnabled: EXPERIMENTAL_ENABLED,
   toolSelectionOptions: TOOL_SELECTION_OPTIONS,

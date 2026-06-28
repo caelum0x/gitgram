@@ -13,6 +13,8 @@ export interface GridPost {
   comments: number
   createdAt: string
   thumbnailUrl?: string
+  /** Author-supplied alt text for the thumbnail (accessibility). */
+  thumbnailAlt?: string
 }
 
 export interface PostGridProps {
@@ -93,8 +95,8 @@ function PostCell({ post }: { post: GridPost }) {
       {post.thumbnailUrl ? (
         <img
           src={post.thumbnailUrl}
-          alt=""
-          aria-hidden="true"
+          alt={post.thumbnailAlt?.trim() || ''}
+          aria-hidden={post.thumbnailAlt?.trim() ? undefined : 'true'}
           style={{
             position: 'absolute',
             inset: 0,

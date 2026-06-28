@@ -60,6 +60,7 @@ import switchRoutes from './routes/switch';
 import interactionsRoutes from './routes/interactions';
 import snippetsRoutes from './routes/snippets';
 import notificationPreferencesRoutes from './routes/notificationPreferences';
+import mutedWordsRoutes from './routes/mutedWords';
 import githubWebhookRoutes from './routes/githubWebhook';
 import commentActionsRoutes from './routes/commentActions';
 import followRequestsRoutes from './routes/followRequests';
@@ -280,6 +281,9 @@ app.use('/api/v1/notifications', notificationRoutes);
 
 // Notification preferences routes
 app.use('/api/v1/notifications/preferences', notificationPreferencesRoutes);
+
+// Muted words / tags routes (per-user keyword muting)
+app.use('/api/v1/muted-words', mutedWordsRoutes);
 
 // Push notifications routes
 app.use('/api/v1/push-notifications', pushNotificationRoutes);

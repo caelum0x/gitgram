@@ -2103,3 +2103,35 @@ model AdPreferences {
 
   @@index([userId])
 }
+
+// ============================================
+// MUTED WORDS: per-user keyword / hashtag muting.
+//
+// Ported from Bluesky's MutedWord moderation primitive (AppBskyActorDefs.MutedWord
+// + hasMutedWord). A user adds a word, phrase, or hashtag; matching posts and
+// notifications are hidden from their feed by services/mutedWordsService.ts.
+//
+//  - value:       the muted token. A leading "#" marks it as a hashtag (matched
+//                 against post tags only) regardless of `targets`.
+//  - targets:     which surfaces the word applies to: "content" (post text + tags)
+//                 and/or "tag" (tags only). Mirrors Bluesky's MutedWord.targets.
+//  - actorTarget: "all" applies to everyone; "exclude-following" skips authors the
+//                 viewer follows (so you still see muted words from friends).
+//  - expiresAt:   optional expiry; an expired entry is ignored by the matcher and
+//                 surfaced to the client so it can be renewed.
+// ============================================
+
+model MutedWord {
+  id          String    @id @default(cuid())
+  userId      String
+  value       String // normalized muted token (lowercased, "#" stripped for tags)
+  targets     String[]  @default(["content"]) // subset of: "content", "tag"
+  actorTarget String    @default("all") // "all" | "exclude-following"
+  expiresAt   DateTime? // null = never expires
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, value])
+  @@index([userId])
+  @@index([expiresAt])
+}

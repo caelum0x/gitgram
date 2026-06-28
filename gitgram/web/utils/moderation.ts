@@ -219,3 +219,69 @@ export function filterMutedPosts<T extends ModeratablePost>(
 ): T[] {
   return posts.filter((post) => !isPostMuted(post, state))
 }
+
+// ---------------------------------------------------------------------------
+// Self-labels / content warnings
+// ---------------------------------------------------------------------------
+
+/**
+ * Author-applied content warnings, ported from Bluesky's self-labels to a
+ * lightweight content-embedded marker (no backend field required). A post can
+ * carry one self-label; flagged content is soft-hidden behind a reveal overlay
+ * rather than removed outright.
+ */
+export type SelfLabel = 'sensitive' | 'spoiler' | 'nsfw'
+
+export const SELF_LABELS: readonly SelfLabel[] = ['sensitive', 'spoiler', 'nsfw'] as const
+
+interface SelfLabelMeta {
+  /** Short word shown on the overlay badge. */
+  label: string
+  /** Sentence explaining why the content is hidden. */
+  description: string
+}
+
+export const SELF_LABEL_META: Record<SelfLabel, SelfLabelMeta> = {
+  sensitive: {
+    label: 'Sensitive content',
+    description: 'The author marked this content as sensitive.',
+  },
+  spoiler: {
+    label: 'Spoiler',
+    description: 'The author marked this as a spoiler.',
+  },
+  nsfw: {
+    label: 'Adult content',
+    description: 'The author marked this as adult content.',
+  },
+}
+
+// Marker embedded at the start of a post's content, e.g. `[cw:spoiler]`.
+// Mirrors the `aitm-change-story` fenced-block convention already used in feed.
+const SELF_LABEL_MARKER = /^\s*\[cw:(sensitive|spoiler|nsfw)\]\s*/i
+
+export function isSelfLabel(value: string): value is SelfLabel {
+  return (SELF_LABELS as readonly string[]).includes(value)
+}
+
+/**
+ * Prefix a content string with a self-label marker. Removes any existing marker
+ * first so toggling is idempotent. Passing `null` strips the marker entirely.
+ */
+export function applySelfLabel(content: string, label: SelfLabel | null): string {
+  const stripped = content.replace(SELF_LABEL_MARKER, '')
+  if (!label) return stripped
+  return `[cw:${label}] ${stripped}`
+}
+
+/**
+ * Extract a self-label (if any) from a post's content and return the cleaned
+ * text with the marker removed.
+ */
+export function parseSelfLabel(content: string): { label: SelfLabel | null; cleanContent: string } {
+  const match = content.match(SELF_LABEL_MARKER)
+  if (!match) return { label: null, cleanContent: content }
+  const raw = match[1].toLowerCase()
+  const label = isSelfLabel(raw) ? raw : null
+  return { label, cleanContent: content.replace(SELF_LABEL_MARKER, '') }
+}

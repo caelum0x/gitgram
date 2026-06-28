@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,11 @@ import {
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import GestureActionView from '../../components/common/GestureActionView';
 import { notificationService } from '../../services/notificationService';
 import { userService } from '../../services/userService';
 import { useToast } from '../../hooks/useToast';
+import { listenSoftReset } from '../../utils/events';
 
 interface Notification {
   id: string;
@@ -38,10 +40,21 @@ export default function NotificationsScreen() {
   const [followingUsers, setFollowingUsers] = useState<Set<string>>(new Set());
   const [followLoading, setFollowLoading] = useState<Set<string>>(new Set());
   const { showToast, ToastComponent } = useToast();
+  const listRef = useRef<FlatList<Notification>>(null);
 
   useEffect(() => {
     loadNotifications();
     loadUnreadCount();
+  }, []);
+
+  // Soft reset: re-pressing the Notifications tab scrolls to top and reloads.
+  useEffect(() => {
+    const unlisten = listenSoftReset(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      loadNotifications();
+      loadUnreadCount();
+    });
+    return unlisten;
   }, []);
 
   const loadNotifications = async () => {
@@ -78,16 +91,41 @@ export default function NotificationsScreen() {
   };
 
   const handleDelete = async (notificationId: string) => {
+    const snapshot = notifications;
+    // Optimistic removal so the swiped row disappears immediately.
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
     try {
       await notificationService.deleteNotification(notificationId);
-      setNotifications((prev) =>
-        prev.filter((n) => n.id !== notificationId)
-      );
       showToast('Notification deleted', 'success');
     } catch (error) {
+      setNotifications(snapshot);
       showToast('Failed to delete notification', 'error');
     }
   };
+
+  // Optimistic single-item mark-as-read used by the swipe action. Avoids the
+  // full reload that handleMarkAsRead performs.
+  const handleMarkOneRead = useCallback(
+    async (notification: Notification) => {
+      if (notification.isRead) {
+        return;
+      }
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notification.id ? { ...n, isRead: true } : n,
+        ),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      try {
+        await notificationService.markAsRead([notification.id]);
+      } catch (error) {
+        showToast('Failed to mark as read', 'error');
+        loadNotifications();
+        loadUnreadCount();
+      }
+    },
+    [showToast],
+  );
 
   const handleFollow = async (userId: string) => {
     if (!userId || followLoading.has(userId)) return;
@@ -203,6 +241,24 @@ export default function NotificationsScreen() {
     const isLoading = userId ? followLoading.has(userId) : false;
 
     return (
+      <GestureActionView
+        actions={{
+          left: item.isRead
+            ? undefined
+            : {
+                color: Colors.info,
+                icon: 'done',
+                label: 'Read',
+                action: () => handleMarkOneRead(item),
+              },
+          right: {
+            color: Colors.error,
+            icon: 'delete',
+            label: 'Delete',
+            action: () => handleDelete(item.id),
+          },
+        }}
+      >
       <TouchableOpacity
         style={[styles.notificationItem, !item.isRead && styles.unreadNotification]}
         onPress={() => handleNotificationPress(item)}
@@ -245,6 +301,7 @@ export default function NotificationsScreen() {
           </View>
         )}
       </TouchableOpacity>
+      </GestureActionView>
     );
   };
 
@@ -308,6 +365,7 @@ export default function NotificationsScreen() {
 
       {/* Notifications List */}
       <FlatList
+        ref={listRef}
         data={filteredNotifications}
         renderItem={renderNotification}
         keyExtractor={(item) => item.id}

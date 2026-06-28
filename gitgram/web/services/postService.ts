@@ -6,6 +6,42 @@ interface CursorFeedResponse<T> {
   nextCursor: string | null
 }
 
+/**
+ * Who is allowed to reply to a post (threadgate), ported from Bluesky's
+ * reply-control settings. `everyone` is the default; the others progressively
+ * restrict replies. Stored as a single field on the post.
+ */
+export type ReplyPermission = 'everyone' | 'followers' | 'mentioned' | 'nobody'
+
+export const REPLY_PERMISSIONS: readonly ReplyPermission[] = [
+  'everyone',
+  'followers',
+  'mentioned',
+  'nobody',
+] as const
+
+interface ReplyPermissionMeta {
+  label: string
+  /** Notice shown on the post for viewers. */
+  notice: string
+}
+
+export const REPLY_PERMISSION_META: Record<ReplyPermission, ReplyPermissionMeta> = {
+  everyone: { label: 'Everyone', notice: 'Everybody can reply' },
+  followers: { label: 'Followers', notice: 'Only followers can reply' },
+  mentioned: { label: 'Mentioned only', notice: 'Only mentioned users can reply' },
+  nobody: { label: 'Nobody', notice: 'Replies are disabled' },
+}
+
+export function isReplyPermission(value: unknown): value is ReplyPermission {
+  return typeof value === 'string' && (REPLY_PERMISSIONS as readonly string[]).includes(value)
+}
+
+/** Normalizes an unknown reply-permission value to a safe default. */
+export function normalizeReplyPermission(value: unknown): ReplyPermission {
+  return isReplyPermission(value) ? value : 'everyone'
+}
+
 export const postService = {
   getFeed: async (page = 1, limit = 10) => {
     const { data } = await api.get('/posts/feed', { params: { page, limit } })
@@ -38,8 +74,17 @@ export const postService = {
     return data
   },
 
-  updatePost: async (id: string, updates: { content?: string; visibility?: string; hashtags?: string[] }) => {
+  updatePost: async (
+    id: string,
+    updates: { content?: string; visibility?: string; hashtags?: string[]; replyPermission?: ReplyPermission },
+  ) => {
     const { data } = await api.put(`/posts/${id}`, updates)
+    return data
+  },
+
+  /** Update who is allowed to reply to a post (threadgate). */
+  setReplyPermission: async (id: string, replyPermission: ReplyPermission) => {
+    const { data } = await api.put(`/posts/${id}`, { replyPermission })
     return data
   },
 

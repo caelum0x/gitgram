@@ -5,6 +5,8 @@ import { useAuthStore } from '@/store/authStore'
 import Link from 'next/link'
 import api from '@/services/api'
 import { linkifyText } from '@/utils/linkify'
+import { WhoCanReplyNotice } from '@/components/WhoCanReply'
+import { normalizeReplyPermission, type ReplyPermission } from '@/services/postService'
 
 interface Comment {
   id: string
@@ -30,6 +32,8 @@ interface CommentThreadProps {
   comments: Comment[]
   onCommentAdded?: (comment: Comment) => void
   onCommentDeleted?: (commentId: string) => void
+  /** Threadgate — who may reply. Defaults to everyone when unset. */
+  replyPermission?: ReplyPermission
 }
 
 export default function CommentThread({
@@ -37,8 +41,11 @@ export default function CommentThread({
   comments,
   onCommentAdded,
   onCommentDeleted,
+  replyPermission,
 }: CommentThreadProps) {
   const { user, isAuthenticated } = useAuthStore()
+  const effectiveReplyPermission = normalizeReplyPermission(replyPermission)
+  const repliesDisabled = effectiveReplyPermission === 'nobody'
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [replyContent, setReplyContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -197,7 +204,7 @@ export default function CommentThread({
                 {comment.likesCount || comment._count?.likes || 0}
               </button>
 
-              {isAuthenticated && depth < 3 && (
+              {isAuthenticated && depth < 3 && !repliesDisabled && (
                 <button
                   onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
                   className="text-xs text-muted hover:text-foreground transition-colors"
@@ -275,8 +282,15 @@ export default function CommentThread({
   const rootComments = sortedComments.filter(c => !c.parentId)
 
   return (
-    <div className="divide-y divide-border">
-      {rootComments.map(comment => renderComment(comment))}
+    <div>
+      {effectiveReplyPermission !== 'everyone' && (
+        <div className="mb-3">
+          <WhoCanReplyNotice permission={effectiveReplyPermission} />
+        </div>
+      )}
+      <div className="divide-y divide-border">
+        {rootComments.map(comment => renderComment(comment))}
+      </div>
     </div>
   )
 }

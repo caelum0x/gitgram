@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,17 +10,22 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { ThemedView } from '../../components/ui/ThemedView';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { Input } from '../../components/ui/Input';
 import { Colors } from '../../constants/Colors';
+import GestureActionView from '../../components/common/GestureActionView';
 import { messageService } from '../../services/messageService';
 import { userService } from '../../services/userService';
 import { useAuthStore } from '../../store/authStore';
+import { useToast } from '../../hooks/useToast';
 import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { logger } from '../../utils/logger';
+
+const MUTED_CONVERSATIONS_KEY = 'messages:mutedConversations';
 
 interface ChatParticipant {
   id: string;
@@ -39,7 +44,9 @@ interface Conversation {
 export default function MessagesScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const { showToast, ToastComponent } = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [mutedIds, setMutedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -51,6 +58,7 @@ export default function MessagesScreen() {
 
   useEffect(() => {
     loadConversations();
+    loadMutedIds();
   }, []);
 
   const loadConversations = async () => {
@@ -63,6 +71,64 @@ export default function MessagesScreen() {
       setLoading(false);
     }
   };
+
+  // Muted conversations are a client-side preference (no per-conversation mute
+  // endpoint exists), persisted across launches via AsyncStorage.
+  const loadMutedIds = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(MUTED_CONVERSATIONS_KEY);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setMutedIds(new Set(parsed.filter((id): id is string => typeof id === 'string')));
+        }
+      }
+    } catch (error) {
+      logger.error('Load muted conversations error:', error);
+    }
+  };
+
+  const persistMutedIds = async (ids: Set<string>) => {
+    try {
+      await AsyncStorage.setItem(
+        MUTED_CONVERSATIONS_KEY,
+        JSON.stringify([...ids]),
+      );
+    } catch (error) {
+      logger.error('Persist muted conversations error:', error);
+    }
+  };
+
+  const handleMarkConversationRead = useCallback(
+    async (conversationId: string) => {
+      try {
+        await messageService.markConversationAsRead(conversationId);
+        showToast('Marked as read', 'success');
+      } catch (error) {
+        logger.error('Mark conversation read error:', error);
+        showToast('Failed to mark as read', 'error');
+      }
+    },
+    [showToast],
+  );
+
+  const handleToggleMute = useCallback(
+    (conversationId: string) => {
+      setMutedIds((prev) => {
+        const next = new Set(prev);
+        const wasMuted = next.has(conversationId);
+        if (wasMuted) {
+          next.delete(conversationId);
+        } else {
+          next.add(conversationId);
+        }
+        void persistMutedIds(next);
+        showToast(wasMuted ? 'Unmuted' : 'Muted', 'success');
+        return next;
+      });
+    },
+    [showToast],
+  );
 
   // Search users for new chat
   const searchUsers = async (query: string) => {
@@ -120,39 +186,70 @@ export default function MessagesScreen() {
 
   const renderItem = ({ item }: { item: Conversation }) => {
     const otherUser = item.participants.find((p) => p.id !== user?.id);
+    const isMuted = mutedIds.has(item.id);
     return (
-      <TouchableOpacity
-        style={styles.item}
-        onPress={() => otherUser && router.push(`/chat/${otherUser.id}`)}
+      <GestureActionView
+        actions={{
+          left: {
+            color: Colors.info,
+            icon: 'done-all',
+            label: 'Read',
+            action: () => handleMarkConversationRead(item.id),
+          },
+          right: {
+            color: isMuted ? Colors.success : Colors.warning,
+            icon: isMuted ? 'notifications-active' : 'notifications-off',
+            label: isMuted ? 'Unmute' : 'Mute',
+            action: () => handleToggleMute(item.id),
+          },
+        }}
       >
-        <View style={styles.avatarContainer}>
-          {otherUser?.avatar ? (
-            <Image source={{ uri: otherUser.avatar }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <ThemedText style={styles.avatarText}>
-                {otherUser?.username[0].toUpperCase()}
+        <TouchableOpacity
+          style={[styles.item, styles.itemSurface]}
+          onPress={() => otherUser && router.push(`/chat/${otherUser.id}`)}
+        >
+          <View style={styles.avatarContainer}>
+            {otherUser?.avatar ? (
+              <Image source={{ uri: otherUser.avatar }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <ThemedText style={styles.avatarText}>
+                  {otherUser?.username[0].toUpperCase()}
+                </ThemedText>
+              </View>
+            )}
+          </View>
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <View style={styles.nameRow}>
+                <ThemedText type="defaultSemiBold">
+                  {otherUser?.username}
+                </ThemedText>
+                {isMuted && (
+                  <Icon
+                    name="notifications-off"
+                    size={14}
+                    color={Colors.textSecondary}
+                    style={styles.mutedIcon}
+                  />
+                )}
+              </View>
+              <ThemedText type="caption">
+                {new Date(item.lastMessageAt).toLocaleDateString()}
               </ThemedText>
             </View>
-          )}
-        </View>
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="defaultSemiBold">{otherUser?.username}</ThemedText>
-            <ThemedText type="caption">
-              {new Date(item.lastMessageAt).toLocaleDateString()}
+            <ThemedText numberOfLines={1} style={styles.messagePreview}>
+              {item.lastMessage?.content || 'Start a conversation'}
             </ThemedText>
           </View>
-          <ThemedText numberOfLines={1} style={styles.messagePreview}>
-            {item.lastMessage?.content || 'Start a conversation'}
-          </ThemedText>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </GestureActionView>
     );
   };
 
   return (
     <ThemedView style={styles.container}>
+      {ToastComponent}
       <View style={styles.headerBar}>
         <ThemedText type="title">Messages</ThemedText>
         <TouchableOpacity onPress={handleOpenNewChat}>
@@ -290,6 +387,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 16,
     paddingHorizontal: 20,
+  },
+  itemSurface: {
+    // Opaque so the swipe action color behind the row never shows through.
+    backgroundColor: Colors.background,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mutedIcon: {
+    marginLeft: 6,
   },
   avatarContainer: {
     marginRight: 16,

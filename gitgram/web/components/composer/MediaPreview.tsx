@@ -4,18 +4,24 @@ import { useState, useRef } from 'react'
 
 interface MediaPreviewProps {
   images: string[]
+  /** Per-image alt text, parallel to `images`. */
+  imageAlts?: string[]
   videoSrc: string | null
   videoThumbnail: string | null
   onRemoveImage: (index: number) => void
   onRemoveVideo: () => void
+  /** Called with the preview src of the image whose alt text should be edited. */
+  onEditAlt?: (previewSrc: string) => void
 }
 
 export default function MediaPreview({
   images,
+  imageAlts = [],
   videoSrc,
   videoThumbnail,
   onRemoveImage,
   onRemoveVideo,
+  onEditAlt,
 }: MediaPreviewProps) {
   const [currentImage, setCurrentImage] = useState(0)
   const [videoPlaying, setVideoPlaying] = useState(false)
@@ -83,13 +89,25 @@ export default function MediaPreview({
 
   // Single image
   if (images.length === 1) {
+    const alt = imageAlts[0] || ''
     return (
       <div className="relative rounded-xl overflow-hidden">
         <img
           src={images[0]}
-          alt="Upload preview"
+          alt={alt || 'Upload preview'}
           className="w-full max-h-96 object-cover rounded-xl"
         />
+        {onEditAlt && (
+          <button
+            onClick={() => onEditAlt(images[0])}
+            aria-label={alt ? 'Edit image description' : 'Add image description'}
+            className={`absolute bottom-2 left-2 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+              alt ? 'bg-primary text-white' : 'bg-black/60 text-white hover:bg-black/80'
+            }`}
+          >
+            ALT
+          </button>
+        )}
         <button
           onClick={() => onRemoveImage(0)}
           className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors"

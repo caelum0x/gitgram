@@ -1,15 +1,18 @@
 'use client';
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import RepoCard from './RepoCard';
 import RichContent from './RichContent';
 import AitmChangeStoryCard from './AitmChangeStoryCard';
 import BookmarkButton from './BookmarkButton';
+import LoadLatestButton from './LoadLatestButton';
 import { parseAitmChangeStoryBlock } from '@/utils/aitmChangeStory';
+import ContentHider from './moderation/ContentHider';
 import { useModeration } from '@/hooks/useModeration';
-import { isPostMuted } from '@/utils/moderation';
+import { isPostMuted, parseSelfLabel } from '@/utils/moderation';
+import { realtimeService } from '@/services/realtimeService';
 import api from '@/services/api';
 
 interface Post {
@@ -61,6 +64,19 @@ async function fetchFeedPage(cursor?: string): Promise<FeedPage> {
   return { posts: data.posts || [], nextCursor: data.nextCursor ?? null };
 }
 
+/**
+ * Lightweight poll for the very latest post ids at the top of the feed. Used to
+ * detect content published after the feed rendered without disturbing the
+ * existing infinite-query cache. Returns ids newest-first.
+ */
+async function fetchLatestPostIds(): Promise<string[]> {
+  const res = await api.get('/v1/posts/feed', { params: { limit: '20' } });
+  const data = res.data as FeedPage;
+  return (data.posts ?? []).map((p) => p.id);
+}
+
+const NEW_POSTS_POLL_INTERVAL_MS = 60_000;
+
 const ACCOUNT_BADGES = {
   USER: { color: 'bg-blue-500', icon: '👤' },
   REPOSITORY: { color: 'bg-purple-500', icon: '📦' },
@@ -99,6 +115,55 @@ export default function Feed() {
       ),
   );
   const mutedCount = allPosts.length - posts.length;
+
+  // ── "New posts" pill: surface content published after the feed rendered ────
+  const [newPostCount, setNewPostCount] = useState(0);
+  const loadedIds = useRef<Set<string>>(new Set());
+  loadedIds.current = new Set(allPosts.map((p) => p.id));
+
+  const checkForNewPosts = useCallback(async () => {
+    // Don't bother on the discover fallback — it isn't a chronological feed.
+    if (isDiscover) return;
+    try {
+      const latestIds = await fetchLatestPostIds();
+      const known = loadedIds.current;
+      const fresh = latestIds.filter((id) => !known.has(id)).length;
+      if (fresh > 0) setNewPostCount(fresh);
+    } catch {
+      // Polling failures are non-fatal — keep the existing feed intact.
+    }
+  }, [isDiscover]);
+
+  // Poll on an interval while the tab is visible.
+  useEffect(() => {
+    if (status !== 'success') return;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void checkForNewPosts();
+    };
+    const interval = setInterval(tick, NEW_POSTS_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [status, checkForNewPosts]);
+
+  // React immediately to realtime like activity as a cheap "something changed"
+  // signal, then confirm with a targeted poll.
+  useEffect(() => {
+    const unsubscribe = realtimeService.onNotification((n) => {
+      if (n.type === 'post' || n.type === 'mention' || n.type === 'new_post') {
+        void checkForNewPosts();
+      }
+    });
+    return unsubscribe;
+  }, [checkForNewPosts]);
+
+  const handleLoadLatest = useCallback(async () => {
+    setNewPostCount(0);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // Refetch the first page so freshly-published posts are prepended.
+    await queryClient.invalidateQueries({ queryKey: ['feed'] });
+  }, [queryClient]);
 
   // ── Intersection Observer for infinite scroll ──────────────────────────────
   const onIntersect = useCallback(
@@ -224,6 +289,8 @@ export default function Feed() {
 
   return (
     <div className="space-y-6">
+      <LoadLatestButton count={newPostCount} onPress={handleLoadLatest} />
+
       {isDiscover && (
         <p className="text-xs text-center text-gray-400 dark:text-gray-500">
           Showing popular posts — follow more people to personalize your feed
@@ -250,7 +317,8 @@ export default function Feed() {
 
       {posts.map((post) => {
         const badge = ACCOUNT_BADGES[post.account.type] ?? ACCOUNT_BADGES.USER;
-        const { story, cleanContent } = parseAitmChangeStoryBlock(post.content || '');
+        const { label: selfLabel, cleanContent: labelledContent } = parseSelfLabel(post.content || '');
+        const { story, cleanContent } = parseAitmChangeStoryBlock(labelledContent);
         return (
           <article
             key={post.id}
@@ -278,8 +346,10 @@ export default function Feed() {
             </div>
 
             <div className="text-gray-800 dark:text-gray-200 mb-4">
-              {story && <AitmChangeStoryCard story={story} />}
-              <RichContent content={cleanContent} />
+              <ContentHider label={selfLabel}>
+                {story && <AitmChangeStoryCard story={story} />}
+                <RichContent content={cleanContent} />
+              </ContentHider>
             </div>
 
             <div className="flex gap-6 text-sm text-gray-600 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-4">

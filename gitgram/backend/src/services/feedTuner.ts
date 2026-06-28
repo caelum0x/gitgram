@@ -59,6 +59,14 @@ export interface TunableFeedItem {
    */
   isThreadMuted?: boolean;
   /**
+   * When true, this item matched one of the viewer's muted words/tags and should
+   * be dropped by `removeMutedWords`. Callers compute this via
+   * services/mutedWordsService.ts (`hasMutedWord`) before tuning, since the
+   * tuner itself is content-agnostic. Items without text/tag data leave this
+   * undefined.
+   */
+  isMutedWord?: boolean;
+  /**
    * When true, this item is a reply whose parent/root context could not be
    * resolved (an "orphan"). `removeOrphans` drops these so the feed never shows
    * a dangling reply with no visible context.
@@ -161,6 +169,15 @@ export interface FeedTunerOptions {
   removeMutedThreads?: boolean;
 
   /**
+   * When true, drop items flagged `isMutedWord` (the item matched one of the
+   * viewer's muted words/tags). Mirrors Bluesky's `hasMutedWord` filtering that
+   * runs alongside thread muting. Callers compute the flag via
+   * services/mutedWordsService.ts before tuning.
+   * @default true
+   */
+  removeMutedWords?: boolean;
+
+  /**
    * When true, drop items flagged `isOrphan` (replies whose context could not
    * be resolved). Ported from Bluesky's `FeedTuner.removeOrphans`.
    * @default true
@@ -181,6 +198,7 @@ const DEFAULT_DIVERSITY_PENALTY_AFTER = 3;
 const DEFAULT_DIVERSITY_PENALTY_MULTIPLIER = 0.5;
 const DEFAULT_DEDUPE_THREADS = true;
 const DEFAULT_REMOVE_MUTED_THREADS = true;
+const DEFAULT_REMOVE_MUTED_WORDS = true;
 const DEFAULT_REMOVE_ORPHANS = true;
 
 // ---------------------------------------------------------------------------
@@ -497,6 +515,15 @@ function dropOrphans(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
   return items.filter(item => item.isOrphan !== true);
 }
 
+/**
+ * Drop items flagged `isMutedWord` (matched one of the viewer's muted
+ * words/tags). Mirrors Bluesky's `hasMutedWord` feed filtering. Returns a new
+ * array.
+ */
+function dropMutedWords(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[] {
+  return items.filter(item => item.isMutedWord !== true);
+}
+
 // ---------------------------------------------------------------------------
 // FeedTuner class
 // ---------------------------------------------------------------------------
@@ -525,6 +552,7 @@ export class FeedTuner {
       sponsoredItems: options.sponsoredItems ?? [],
       dedupeThreads: options.dedupeThreads ?? DEFAULT_DEDUPE_THREADS,
       removeMutedThreads: options.removeMutedThreads ?? DEFAULT_REMOVE_MUTED_THREADS,
+      removeMutedWords: options.removeMutedWords ?? DEFAULT_REMOVE_MUTED_WORDS,
       removeOrphans: options.removeOrphans ?? DEFAULT_REMOVE_ORPHANS,
     };
   }
@@ -536,13 +564,14 @@ export class FeedTuner {
    *  1. Deduplicate by id
    *  2. Drop orphaned replies (removeOrphans)
    *  3. Drop muted threads (removeMutedThreads)
-   *  4. Apply score adjustments (trending boost + diversity penalty)
-   *  5. Re-sort by adjusted score
-   *  6. Collapse threads by root (dedupThreads) — keeps the highest-scoring
+   *  4. Drop muted words/tags (removeMutedWords)
+   *  5. Apply score adjustments (trending boost + diversity penalty)
+   *  6. Re-sort by adjusted score
+   *  7. Collapse threads by root (dedupThreads) — keeps the highest-scoring
    *     entry per thread, so it runs after the sort
-   *  7. Enforce author run limit
-   *  8. Interleave content types
-   *  9. Inject sponsored items
+   *  8. Enforce author run limit
+   *  9. Interleave content types
+   * 10. Inject sponsored items
    *
    * @param posts - Raw feed items (not mutated).
    * @returns New array of tuned feed items.
@@ -552,9 +581,12 @@ export class FeedTuner {
 
     const deduped = deduplicateById(posts);
     const withoutOrphans = this.options.removeOrphans ? dropOrphans(deduped) : deduped;
-    const withoutMuted = this.options.removeMutedThreads
+    const withoutMutedThreads = this.options.removeMutedThreads
       ? dropMutedThreads(withoutOrphans)
       : withoutOrphans;
+    const withoutMuted = this.options.removeMutedWords
+      ? dropMutedWords(withoutMutedThreads)
+      : withoutMutedThreads;
     const adjusted = applyScoreAdjustments(withoutMuted, this.options);
     const sorted = sortByScore(adjusted);
     const threadDeduped = this.options.dedupeThreads

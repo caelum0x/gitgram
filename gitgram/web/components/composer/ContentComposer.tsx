@@ -17,6 +17,11 @@ import SchedulePicker from './SchedulePicker'
 import DraftManager from './DraftManager'
 import MediaPreview from './MediaPreview'
 import SortableMediaGrid, { type SortableMediaItem } from './SortableMediaGrid'
+import ImageAltTextDialog from './ImageAltTextDialog'
+import { isAltTextRequired, normalizeAltText } from '@/utils/altText'
+import { applySelfLabel, SELF_LABELS, SELF_LABEL_META, type SelfLabel } from '@/utils/moderation'
+import { WhoCanReplySelector } from '@/components/WhoCanReply'
+import type { ReplyPermission } from '@/services/postService'
 
 export type ContentType = 'POST' | 'REEL' | 'STORY'
 
@@ -48,6 +53,8 @@ export interface ComposerState {
   content: string
   mediaFiles: File[]
   mediaPreviews: string[]
+  /** Per-image alt text, parallel to mediaFiles / mediaPreviews. */
+  mediaAlts: string[]
   videoFile: File | null
   videoPreview: string | null
   videoThumbnail: string | null
@@ -58,6 +65,10 @@ export interface ComposerState {
   scheduledAt: Date | null
   isDraft: boolean
   draftId: string | null
+  /** Author-applied content warning, or null when unrestricted. */
+  selfLabel: SelfLabel | null
+  /** Who is allowed to reply to this post (threadgate). */
+  replyPermission: ReplyPermission
 }
 
 const initialState: ComposerState = {
@@ -65,6 +76,7 @@ const initialState: ComposerState = {
   content: '',
   mediaFiles: [],
   mediaPreviews: [],
+  mediaAlts: [],
   videoFile: null,
   videoPreview: null,
   videoThumbnail: null,
@@ -75,6 +87,8 @@ const initialState: ComposerState = {
   scheduledAt: null,
   isDraft: false,
   draftId: null,
+  selfLabel: null,
+  replyPermission: 'everyone',
 }
 
 const MAX_IMAGES = 10
@@ -104,6 +118,10 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
   const [showDrafts, setShowDrafts] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [autoSaveTimer, setAutoSaveTimer] = useState<NodeJS.Timeout | null>(null)
+  // Preview id of the image whose alt text is currently being edited.
+  const [editingAltFor, setEditingAltFor] = useState<string | null>(null)
+  // Whether the content-warning self-label menu is open.
+  const [showLabelMenu, setShowLabelMenu] = useState(false)
 
   // Auto-save draft every 30 seconds if content exists
   useEffect(() => {
@@ -136,7 +154,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
     // Clear media if switching between incompatible types
     if (type === 'REEL' && state.mediaFiles.length > 0) {
       // Keep only video or clear
-      updateState({ contentType: type, mediaFiles: [], mediaPreviews: [] })
+      updateState({ contentType: type, mediaFiles: [], mediaPreviews: [], mediaAlts: [] })
     } else if (type === 'STORY') {
       updateState({
         contentType: type,
@@ -179,8 +197,24 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
     updateState({
       mediaFiles: [...state.mediaFiles, ...validFiles],
       mediaPreviews: [...state.mediaPreviews, ...previews],
+      mediaAlts: [...state.mediaAlts, ...validFiles.map(() => '')],
     })
   }
+
+  // Update the alt text for a single image (keyed by its preview URL).
+  const setAltText = useCallback(
+    (previewId: string, value: string) => {
+      setState((prev) => {
+        const index = prev.mediaPreviews.indexOf(previewId)
+        if (index === -1) return prev
+        const nextAlts = [...prev.mediaAlts]
+        nextAlts[index] = value
+        return { ...prev, mediaAlts: nextAlts }
+      })
+      setErrors([])
+    },
+    [],
+  )
 
   const handleVideoSelected = (file: File) => {
     if (!file.type.startsWith('video/')) {
@@ -215,6 +249,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
           videoThumbnail: thumbnail,
           mediaFiles: [],
           mediaPreviews: [],
+          mediaAlts: [],
         })
       }
     })
@@ -228,16 +263,19 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
   const removeImage = (index: number) => {
     const newFiles = [...state.mediaFiles]
     const newPreviews = [...state.mediaPreviews]
+    const newAlts = [...state.mediaAlts]
 
     // Revoke the object URL
     URL.revokeObjectURL(newPreviews[index])
 
     newFiles.splice(index, 1)
     newPreviews.splice(index, 1)
+    newAlts.splice(index, 1)
 
     updateState({
       mediaFiles: newFiles,
       mediaPreviews: newPreviews,
+      mediaAlts: newAlts,
     })
   }
 
@@ -260,25 +298,32 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
   const reorderImages = useCallback(
     (ordered: SortableMediaItem[]) => {
       const previewToFile = new Map<string, File>()
+      const previewToAlt = new Map<string, string>()
       state.mediaPreviews.forEach((preview, i) => {
         previewToFile.set(preview, state.mediaFiles[i])
+        previewToAlt.set(preview, state.mediaAlts[i] ?? '')
       })
 
       const nextPreviews = ordered.map((item) => item.id)
       const nextFiles = ordered
         .map((item) => previewToFile.get(item.id))
         .filter((file): file is File => file !== undefined)
+      const nextAlts = ordered.map((item) => previewToAlt.get(item.id) ?? '')
 
       // Guard: only apply if every preview still maps to a file.
       if (nextFiles.length !== nextPreviews.length) return
 
-      updateState({ mediaFiles: nextFiles, mediaPreviews: nextPreviews })
+      updateState({ mediaFiles: nextFiles, mediaPreviews: nextPreviews, mediaAlts: nextAlts })
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.mediaPreviews, state.mediaFiles, updateState],
+    [state.mediaPreviews, state.mediaFiles, state.mediaAlts, updateState],
   )
 
-  const sortableItems: SortableMediaItem[] = state.mediaPreviews.map((src) => ({ id: src, src }))
+  const sortableItems: SortableMediaItem[] = state.mediaPreviews.map((src, i) => ({
+    id: src,
+    src,
+    alt: state.mediaAlts[i] ?? '',
+  }))
 
   const removeVideo = () => {
     if (state.videoPreview) URL.revokeObjectURL(state.videoPreview)
@@ -430,6 +475,16 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
       errs.push('Scheduled time must be in the future')
     }
 
+    // Accessibility: optionally require a description for every image.
+    if (state.mediaFiles.length > 0 && isAltTextRequired()) {
+      const missing = state.mediaFiles.filter((_, i) => !normalizeAltText(state.mediaAlts[i] ?? '')).length
+      if (missing > 0) {
+        errs.push(
+          `Add alt text to ${missing} image${missing === 1 ? '' : 's'}, or turn off "Require alt text" in Accessibility settings.`,
+        )
+      }
+    }
+
     return errs
   }
 
@@ -446,11 +501,13 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
 
     try {
       const hashtags = extractHashtags(state.content)
+      // Embed the content-warning marker (if any) so viewers see a reveal overlay.
+      const labelledContent = applySelfLabel(state.content, state.selfLabel)
 
       if (state.scheduledAt) {
         // Scheduled post
         await api.post('/v1/scheduled-posts', {
-          content: state.content,
+          content: labelledContent,
           scheduledFor: state.scheduledAt.toISOString(),
           mediaType: state.videoFile ? 'video' : state.mediaFiles.length > 0 ? 'image' : state.codeSnippet ? 'code' : 'text',
           hashtags,
@@ -458,6 +515,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
           language: state.codeSnippet?.language,
           repoOwner: state.linkedRepo?.owner,
           repoName: state.linkedRepo?.name,
+          replyPermission: state.replyPermission,
         })
         showToast('Post scheduled successfully', 'success')
         router.push('/scheduled')
@@ -467,7 +525,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
       if (state.contentType === 'REEL') {
         const formData = new FormData()
         if (state.videoFile) formData.append('video', state.videoFile)
-        formData.append('caption', state.content)
+        formData.append('caption', labelledContent)
         if (hashtags.length > 0) formData.append('hashtags', JSON.stringify(hashtags))
         if (state.linkedRepo) {
           formData.append('repoOwner', state.linkedRepo.owner)
@@ -479,7 +537,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
         router.push('/reels')
       } else if (state.contentType === 'STORY') {
         const formData = new FormData()
-        if (state.content) formData.append('caption', state.content)
+        if (labelledContent) formData.append('caption', labelledContent)
         if (state.mediaFiles.length > 0) {
           formData.append('media', state.mediaFiles[0])
         } else if (state.videoFile) {
@@ -496,13 +554,18 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
       } else {
         // Regular POST
         const formData = new FormData()
-        formData.append('content', state.content)
+        formData.append('content', labelledContent)
 
         if (state.mediaFiles.length > 0) {
           state.mediaFiles.forEach((file) => {
             formData.append('media', file)
           })
           formData.append('mediaType', 'image')
+          // Per-image alt text, ordered to match the appended media files.
+          formData.append(
+            'mediaAlts',
+            JSON.stringify(state.mediaFiles.map((_, i) => normalizeAltText(state.mediaAlts[i] ?? ''))),
+          )
         } else if (state.videoFile) {
           formData.append('media', state.videoFile)
           formData.append('mediaType', 'video')
@@ -520,6 +583,9 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
         if (hashtags.length > 0) {
           formData.append('hashtags', JSON.stringify(hashtags))
         }
+
+        // Threadgate — who is allowed to reply to this post.
+        formData.append('replyPermission', state.replyPermission)
 
         if (state.linkedRepo) {
           formData.append('repoOwner', state.linkedRepo.owner)
@@ -706,10 +772,12 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
           <div className="mb-4">
             <MediaPreview
               images={state.mediaPreviews}
+              imageAlts={state.mediaAlts}
               videoSrc={state.videoPreview}
               videoThumbnail={state.videoThumbnail}
               onRemoveImage={removeImage}
               onRemoveVideo={removeVideo}
+              onEditAlt={setEditingAltFor}
             />
           </div>
         ) : state.mediaPreviews.length > 1 ? (
@@ -721,6 +789,7 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
               items={sortableItems}
               onReorder={reorderImages}
               onRemove={removeImageByPreview}
+              onEditAlt={setEditingAltFor}
             />
           </div>
         ) : null}
@@ -958,6 +1027,63 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
               </button>
             )}
 
+            {/* Content warning / self-label */}
+            <div className="relative">
+              <button
+                onClick={() => setShowLabelMenu((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={showLabelMenu}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  state.selfLabel
+                    ? 'text-primary bg-primary/10'
+                    : 'text-foreground-secondary hover:bg-surface-secondary'
+                }`}
+                title="Add content warning"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                </svg>
+                <span className="hidden sm:inline">
+                  {state.selfLabel ? SELF_LABEL_META[state.selfLabel].label : 'Warning'}
+                </span>
+              </button>
+
+              {showLabelMenu && (
+                <div
+                  role="menu"
+                  className="absolute left-0 top-full z-30 mt-1 w-48 rounded-lg border border-border bg-surface p-1 shadow-lg"
+                >
+                  <button
+                    role="menuitemradio"
+                    aria-checked={state.selfLabel === null}
+                    onClick={() => {
+                      updateState({ selfLabel: null })
+                      setShowLabelMenu(false)
+                    }}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-surface-secondary"
+                  >
+                    None
+                    {state.selfLabel === null && <span className="text-primary">✓</span>}
+                  </button>
+                  {SELF_LABELS.map((labelKey: SelfLabel) => (
+                    <button
+                      key={labelKey}
+                      role="menuitemradio"
+                      aria-checked={state.selfLabel === labelKey}
+                      onClick={() => {
+                        updateState({ selfLabel: labelKey })
+                        setShowLabelMenu(false)
+                      }}
+                      className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-surface-secondary"
+                    >
+                      {SELF_LABEL_META[labelKey].label}
+                      {state.selfLabel === labelKey && <span className="text-primary">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Save Draft */}
             <button
               onClick={handleSaveDraft}
@@ -972,6 +1098,16 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
             </button>
           </div>
         </div>
+
+        {/* Reply controls (threadgate) — not applicable to stories */}
+        {state.contentType !== 'STORY' && (
+          <div className="mb-4">
+            <WhoCanReplySelector
+              value={state.replyPermission}
+              onChange={(perm) => updateState({ replyPermission: perm })}
+            />
+          </div>
+        )}
 
         {/* Errors */}
         {errors.length > 0 && (
@@ -1062,6 +1198,23 @@ export default function ContentComposer({ initialContentType }: ContentComposerP
             onClose={() => setShowDrafts(false)}
           />
         )}
+
+        {/* Per-image alt-text editor */}
+        {editingAltFor && (() => {
+          const altIndex = state.mediaPreviews.indexOf(editingAltFor)
+          if (altIndex === -1) return null
+          return (
+            <ImageAltTextDialog
+              src={editingAltFor}
+              initialAlt={state.mediaAlts[altIndex] ?? ''}
+              onSave={(alt) => {
+                setAltText(editingAltFor, alt)
+                setEditingAltFor(null)
+              }}
+              onClose={() => setEditingAltFor(null)}
+            />
+          )
+        })()}
 
         {/* Checkpoint Picker Modal */}
         {showCheckpointPicker && (

@@ -5,7 +5,13 @@ import {
   ingestTask,
   addDependency,
   listDependencies,
+  listDependencyTree,
   findDependencyCycles,
+  compactIssues,
+  remember,
+  recall,
+  listMemories,
+  forget,
   type BeadsTask,
 } from "../services/memoryService.js";
 import { resolveBeadsBinary } from "../services/engineManager.js";
@@ -353,6 +359,172 @@ router.get("/deps/cycles", async (_req: Request, res: Response) => {
       success: false,
       error:
         err instanceof Error ? err.message : "Failed to detect dependency cycles",
+    });
+  }
+});
+
+// GET /beads/deps/tree?id=:id&direction=down|up|both&maxDepth=:n
+// Recursive transitive dependency tree rooted at :id (vs the flat one-hop
+// edge list from /beads/deps). Lets an agent plan multi-step work in one call.
+//   direction=down (default): the transitive blockers :id depends on
+//   direction=up:             the transitive dependents that depend on :id
+//   direction=both:           both directions
+router.get("/deps/tree", async (req: Request, res: Response) => {
+  const id = cleanId(req.query.id);
+  if (!id) {
+    return res
+      .status(400)
+      .json({ success: false, error: "id query param is required" });
+  }
+
+  const dir = singleQueryValue(req.query.direction);
+  const direction: "up" | "down" | "both" =
+    dir === "up" ? "up" : dir === "both" ? "both" : "down";
+
+  const maxDepth = boundedInt(req.query.maxDepth, 1, 100);
+
+  try {
+    const data = await listDependencyTree(id, direction, maxDepth);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error:
+        err instanceof Error ? err.message : "Failed to build dependency tree",
+    });
+  }
+});
+
+// POST /beads/compact — semantic memory decay: summarise old closed issues to
+// keep the DAG (and agent context window) from growing unbounded.
+// body: { mode?: "stats"|"analyze"|"auto", dryRun?, all?, id?, limit? }
+// Defaults to read-only stats; "auto" defaults to a dry-run unless dryRun=false.
+router.post("/compact", async (req: Request, res: Response) => {
+  const body = req.body as {
+    mode?: unknown;
+    dryRun?: unknown;
+    all?: unknown;
+    id?: unknown;
+    limit?: unknown;
+  };
+
+  const mode =
+    body.mode === "analyze" || body.mode === "auto" || body.mode === "stats"
+      ? body.mode
+      : "stats";
+
+  const options: Parameters<typeof compactIssues>[0] = {
+    stats: mode === "stats",
+    analyze: mode === "analyze",
+  };
+
+  if (mode === "auto") {
+    options.dryRun = body.dryRun === false ? false : true;
+    options.all = body.all === true;
+    const id = cleanId(body.id);
+    if (id) {
+      options.id = id;
+    }
+  }
+
+  const limit = boundedInt(body.limit, 1, 10000);
+  if (limit !== undefined) {
+    options.limit = limit;
+  }
+
+  try {
+    const data = await compactIssues(options);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to compact issues",
+    });
+  }
+});
+
+// POST /beads/memory — store a durable insight that survives context resets.
+// body: { insight: string, key?: string }
+router.post("/memory", async (req: Request, res: Response) => {
+  const body = req.body as { insight?: unknown; key?: unknown };
+  const insight =
+    typeof body.insight === "string" ? body.insight.trim() : "";
+  if (insight.length === 0) {
+    return res
+      .status(400)
+      .json({ success: false, error: "insight is required" });
+  }
+
+  const key = cleanId(body.key) ?? undefined;
+
+  try {
+    const data = await remember(insight, key);
+    res.status(201).json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to store memory",
+    });
+  }
+});
+
+// GET /beads/memory?search=:term — list (or keyword-search) persistent memories.
+router.get("/memory", async (req: Request, res: Response) => {
+  const search = singleQueryValue(req.query.search);
+
+  try {
+    const data = await listMemories(search);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to list memories",
+    });
+  }
+});
+
+// GET /beads/memory/:key — retrieve a single memory (404 when absent).
+router.get("/memory/:key", async (req: Request, res: Response) => {
+  const key = cleanId(req.params.key);
+  if (!key) {
+    return res.status(400).json({ success: false, error: "key is required" });
+  }
+
+  try {
+    const data = await recall(key);
+    if (!data.found) {
+      return res
+        .status(404)
+        .json({ success: false, error: `No memory with key '${key}'` });
+    }
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to recall memory",
+    });
+  }
+});
+
+// DELETE /beads/memory/:key — forget a memory (404 when absent).
+router.delete("/memory/:key", async (req: Request, res: Response) => {
+  const key = cleanId(req.params.key);
+  if (!key) {
+    return res.status(400).json({ success: false, error: "key is required" });
+  }
+
+  try {
+    const data = await forget(key);
+    if (!data.deleted) {
+      return res
+        .status(404)
+        .json({ success: false, error: `No memory with key '${key}'` });
+    }
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to forget memory",
     });
   }
 });
