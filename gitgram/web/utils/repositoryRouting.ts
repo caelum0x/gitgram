@@ -58,6 +58,68 @@ export const parseRepositoryInput = (input: string): ParsedRepositoryRef | null 
 export const buildRepoPath = (owner: string, name: string) =>
   `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 
+export const buildOwnerPath = (owner: string) => `/${encodeURIComponent(owner.trim())}`
+
+export type GithubRefType = 'user' | 'repo'
+
+export interface GithubRef {
+  /** 'user' when the URL points at a GitHub account, 'repo' when it points at a repository. */
+  type: GithubRefType
+  owner: string
+  /** Repository name — only present when type === 'repo'. */
+  name?: string
+  /** The canonical Gitgram path this GitHub URL maps to (each account/repo is a Gitgram profile). */
+  gitgramPath: string
+}
+
+/**
+ * Transform a GitHub URL (or owner / owner/repo shorthand) into the Gitgram account it maps to.
+ * Every GitHub account and repository is a first-class Gitgram profile that can host the project's
+ * posts, demos, photos, reels, and snippets:
+ *   https://github.com/caelum0x            -> { type:'user', owner:'caelum0x', gitgramPath:'/caelum0x' }
+ *   https://github.com/caelum0x/settlekit  -> { type:'repo', owner:'caelum0x', name:'settlekit', gitgramPath:'/caelum0x/settlekit' }
+ */
+export const parseGithubUrl = (input: string): GithubRef | null => {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  // Repository form (URL, ssh, or owner/repo shorthand) — reuse the existing parser.
+  const repo = parseRepositoryInput(trimmed)
+  if (repo) {
+    return {
+      type: 'repo',
+      owner: repo.owner,
+      name: repo.name,
+      gitgramPath: buildRepoPath(repo.owner, repo.name),
+    }
+  }
+
+  // Owner-only GitHub URL, e.g. https://github.com/caelum0x
+  const directUrlCandidate = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  try {
+    const url = new URL(directUrlCandidate)
+    if (url.hostname === 'github.com' || url.hostname === 'www.github.com') {
+      const segments = url.pathname.split('/').filter(Boolean)
+      const owner = segments[0]
+      if (segments.length === 1 && owner && !isReservedRepoAliasSegment(owner)) {
+        return { type: 'user', owner, gitgramPath: buildOwnerPath(owner) }
+      }
+    }
+  } catch {
+    // Fall through to bare-username shorthand.
+  }
+
+  // Bare username / @handle shorthand, e.g. "caelum0x" or "@caelum0x"
+  const bare = trimmed.match(/^@?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})?)$/)
+  if (bare && !isReservedRepoAliasSegment(bare[1])) {
+    return { type: 'user', owner: bare[1], gitgramPath: buildOwnerPath(bare[1]) }
+  }
+
+  return null
+}
+
 export const buildLegacyRepoPath = (owner: string, name: string) =>
   `/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 
