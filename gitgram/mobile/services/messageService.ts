@@ -1,5 +1,15 @@
 import api from './api';
 
+/**
+ * Aggregated reaction for a single emoji on a message, as returned by the
+ * backend (count across all participants plus whether the current user reacted).
+ */
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 export const messageService = {
   getConversations: async () => {
     const response = await api.get('/messages/conversations');
@@ -38,6 +48,31 @@ export const messageService = {
 
   markAsRead: async (messageId: string) => {
     const response = await api.put(`/messages/${messageId}/read`);
+    return response.data;
+  },
+
+  // Add an emoji reaction to a message. Returns the message's updated aggregated
+  // reactions (each distinct emoji with its count and whether the current user
+  // reacted). Backed by POST /messages/:messageId/reactions.
+  addReaction: async (
+    messageId: string,
+    emoji: string,
+  ): Promise<{ messageId: string; reactions: MessageReaction[] }> => {
+    const response = await api.post(`/messages/${messageId}/reactions`, {
+      emoji,
+    });
+    return response.data;
+  },
+
+  // Remove a previously-added emoji reaction. Backed by
+  // DELETE /messages/:messageId/reactions/:emoji.
+  removeReaction: async (
+    messageId: string,
+    emoji: string,
+  ): Promise<{ messageId: string; reactions: MessageReaction[] }> => {
+    const response = await api.delete(
+      `/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`,
+    );
     return response.data;
   },
 

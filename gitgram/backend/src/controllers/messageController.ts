@@ -80,6 +80,9 @@ export const getMessages = asyncHandler(async (req: AuthRequest, res: Response) 
     include: {
       sender: {
         select: { id: true, username: true, avatar: true }
+      },
+      reactions: {
+        select: { emoji: true, userId: true }
       }
     },
     orderBy: { createdAt: 'desc' },
@@ -87,9 +90,10 @@ export const getMessages = asyncHandler(async (req: AuthRequest, res: Response) 
     take: Number(limit)
   });
 
-  // Format messages with read receipt status
+  // Format messages with read receipt status and aggregated reactions
   const formattedMessages = messages.map(msg => ({
     ...msg,
+    reactions: aggregateReactions(msg.reactions, userId),
     readAt: msg.readAt?.toISOString() || null,
     deliveredAt: msg.deliveredAt?.toISOString() || null,
     status: msg.read ? 'read' : (msg.deliveredAt ? 'delivered' : 'sent')
@@ -628,6 +632,166 @@ export const getUnreadCount = asyncHandler(async (req: AuthRequest, res: Respons
   });
 
   res.json({ unreadCount: count });
+});
+
+// Allowed reaction emoji. Mirrors the Bluesky quick-reaction set plus a small
+// curated extra; anything outside this list is rejected at the controller so we
+// never persist arbitrary user-supplied strings as "emoji".
+const ALLOWED_REACTIONS = ['❤️', '👍', '😆', '👀', '😢', '🎉', '🔥', '👎'];
+// Maximum distinct emoji a single user may attach to one message.
+const MAX_REACTIONS_PER_USER = 5;
+
+/**
+ * Assert the current user participates in the conversation the message belongs
+ * to (DM sender/receiver or a member of the group chat). Throws otherwise.
+ */
+async function assertMessageAccess(
+  message: { senderId: string; receiverId: string; chatId: string | null },
+  userId: string,
+): Promise<void> {
+  if (message.senderId === userId || message.receiverId === userId) {
+    return;
+  }
+  if (message.chatId) {
+    const membership = await prisma.chatMember.findFirst({
+      where: { chatId: message.chatId, userId },
+    });
+    if (membership) {
+      return;
+    }
+  }
+  throw Errors.forbidden('Not authorized to react to this message');
+}
+
+/**
+ * Shape returned to clients: each distinct emoji with its count and whether the
+ * current user has reacted with it. This is the aggregation Bluesky derives from
+ * its reaction list (getReactionInfo) computed server-side here instead.
+ */
+function aggregateReactions(
+  reactions: { emoji: string; userId: string }[],
+  currentUserId: string,
+): { emoji: string; count: number; reactedByMe: boolean }[] {
+  const map = new Map<string, { count: number; reactedByMe: boolean }>();
+  for (const r of reactions) {
+    const entry = map.get(r.emoji) ?? { count: 0, reactedByMe: false };
+    entry.count += 1;
+    if (r.userId === currentUserId) {
+      entry.reactedByMe = true;
+    }
+    map.set(r.emoji, entry);
+  }
+  return Array.from(map.entries()).map(([emoji, { count, reactedByMe }]) => ({
+    emoji,
+    count,
+    reactedByMe,
+  }));
+}
+
+/**
+ * Add an emoji reaction to a message (idempotent per emoji/user).
+ * POST /api/v1/messages/:messageId/reactions  { emoji }
+ */
+export const addReaction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.userId!;
+  const { messageId } = req.params;
+  const { emoji } = req.body;
+
+  if (!emoji || typeof emoji !== 'string' || !ALLOWED_REACTIONS.includes(emoji)) {
+    throw Errors.badRequest('Invalid reaction emoji');
+  }
+
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) {
+    throw Errors.notFound('Message');
+  }
+
+  await assertMessageAccess(message, userId);
+
+  // Enforce the per-user reaction cap, but allow re-adding an emoji the user
+  // already has (idempotent) so the cap can't lock a user out of a no-op.
+  const existing = await prisma.messageReaction.findUnique({
+    where: { messageId_userId_emoji: { messageId, userId, emoji } },
+  });
+
+  if (!existing) {
+    const distinctCount = await prisma.messageReaction.count({
+      where: { messageId, userId },
+    });
+    if (distinctCount >= MAX_REACTIONS_PER_USER) {
+      throw Errors.badRequest(
+        `You can add at most ${MAX_REACTIONS_PER_USER} reactions to a message`,
+      );
+    }
+    await prisma.messageReaction.create({
+      data: { messageId, userId, emoji },
+    });
+  }
+
+  const reactions = await prisma.messageReaction.findMany({
+    where: { messageId },
+    select: { emoji: true, userId: true },
+  });
+  const aggregated = aggregateReactions(reactions, userId);
+
+  // Notify the other participant(s) so reactions appear in real time.
+  if (global.io) {
+    const payload = { messageId, userId, emoji, reactions: aggregated };
+    if (message.receiverId) {
+      global.io.to(`user:${message.receiverId}`).emit('message:reaction', payload);
+    }
+    global.io.to(`user:${message.senderId}`).emit('message:reaction', payload);
+    if (message.chatId) {
+      global.io.to(`chat:${message.chatId}`).emit('message:reaction', payload);
+    }
+  }
+
+  res.json({ messageId, reactions: aggregated });
+});
+
+/**
+ * Remove an emoji reaction from a message.
+ * DELETE /api/v1/messages/:messageId/reactions/:emoji
+ */
+export const removeReaction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.userId!;
+  const { messageId, emoji } = req.params;
+
+  // Express has already URL-decoded the path param, so compare it directly
+  // against the allow-list rather than decoding again (which would mangle it).
+  if (!ALLOWED_REACTIONS.includes(emoji)) {
+    throw Errors.badRequest('Invalid reaction emoji');
+  }
+
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) {
+    throw Errors.notFound('Message');
+  }
+
+  await assertMessageAccess(message, userId);
+
+  await prisma.messageReaction.deleteMany({
+    where: { messageId, userId, emoji },
+  });
+
+  const reactions = await prisma.messageReaction.findMany({
+    where: { messageId },
+    select: { emoji: true, userId: true },
+  });
+  const aggregated = aggregateReactions(reactions, userId);
+
+  if (global.io) {
+    const payload = { messageId, userId, emoji, removed: true, reactions: aggregated };
+    if (message.receiverId) {
+      global.io.to(`user:${message.receiverId}`).emit('message:reaction', payload);
+    }
+    global.io.to(`user:${message.senderId}`).emit('message:reaction', payload);
+    if (message.chatId) {
+      global.io.to(`chat:${message.chatId}`).emit('message:reaction', payload);
+    }
+  }
+
+  res.json({ messageId, reactions: aggregated });
 });
 
 /**

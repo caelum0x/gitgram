@@ -10,18 +10,31 @@ import {
   Platform,
   Image,
   Animated,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Colors } from '../../constants/Colors';
-import { messageService } from '../../services/messageService';
+import { messageService, type MessageReaction } from '../../services/messageService';
 import { initializeSocket, disconnectSocket } from '../../services/socketService';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
+import { DateDivider } from '../../components/chat/DateDivider';
+import { SwipeToReply } from '../../components/chat/SwipeToReply';
+import { NewMessagesPill } from '../../components/chat/NewMessagesPill';
+import { EmojiReactionPicker } from '../../components/chat/EmojiReactionPicker';
 import * as ImagePicker from 'expo-image-picker';
 import { logger } from '../../utils/logger';
 import { useHaptics } from '../../hooks/useHaptics';
 
 const TYPING_DEBOUNCE_MS = 2000; // Stop typing after 2 seconds of no input
+// How far from the bottom (offset 0 in an inverted list) the user can be before
+// an incoming message shows the "new messages" pill instead of auto-scrolling.
+const NEAR_BOTTOM_THRESHOLD = 80;
+// Maximum distinct reactions a single user may add to one message (mirrors the
+// backend cap).
+const MAX_REACTIONS_PER_USER = 5;
 
 // Animated typing indicator component
 const TypingIndicator = () => {
@@ -105,6 +118,7 @@ interface Message {
   recipientId: string;
   isRead: boolean;
   createdAt: string;
+  reactions?: MessageReaction[];
   sender?: {
     id: string;
     username: string;
@@ -112,19 +126,73 @@ interface Message {
   };
 }
 
+// A list row is either a real message or a day divider injected between days.
+type ChatRow =
+  | { type: 'message'; message: Message }
+  | { type: 'divider'; id: string; date: string };
+
+/** True when two timestamps fall on different calendar days. */
+function isDifferentDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() !== db.getFullYear() ||
+    da.getMonth() !== db.getMonth() ||
+    da.getDate() !== db.getDate()
+  );
+}
+
+/**
+ * Builds the inverted FlatList data: messages newest-first, with a date divider
+ * inserted before the first message of each calendar day. Because the list is
+ * inverted, the divider must sit *after* the day's oldest message in array order
+ * so it renders visually above the day's messages.
+ */
+function buildRows(messagesNewestFirst: Message[]): ChatRow[] {
+  const rows: ChatRow[] = [];
+  for (let i = 0; i < messagesNewestFirst.length; i++) {
+    const msg = messagesNewestFirst[i];
+    rows.push({ type: 'message', message: msg });
+    const older = messagesNewestFirst[i + 1];
+    const isDayBoundary = !older || isDifferentDay(msg.createdAt, older.createdAt);
+    if (isDayBoundary) {
+      rows.push({
+        type: 'divider',
+        id: `divider-${msg.id}`,
+        date: msg.createdAt,
+      });
+    }
+  }
+  return rows;
+}
+
 export default function ChatScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
-  const router = useRouter();
   const haptics = useHaptics();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
-  const socketRef = useRef<any>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [reactionTarget, setReactionTarget] = useState<Message | null>(null);
+  const [showNewMessagesPill, setShowNewMessagesPill] = useState(false);
+  const flatListRef = useRef<FlatList<ChatRow>>(null);
+  const socketRef = useRef<ReturnType<typeof initializeSocket>>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+  // Tracks whether the list is pinned near the newest message; used to decide
+  // between auto-scrolling and showing the "new messages" pill.
+  const isNearBottomRef = useRef(true);
+
+  // Canonical inverted-list order is newest-first (index 0 = newest = the
+  // visual bottom). Sorting a copy by createdAt makes ordering robust whether a
+  // message arrived from the initial fetch (oldest-first) or a socket prepend
+  // (newest-first), and gives buildRows a stable basis for day dividers.
+  const orderedMessages = [...messages].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  const rows = buildRows(orderedMessages);
 
   // Emit typing start event
   const emitTypingStart = useCallback(() => {
@@ -144,43 +212,51 @@ export default function ChatScreen() {
 
   // Handle typing with debounce
   const handleTypingDebounce = useCallback(() => {
-    // Emit typing start
     emitTypingStart();
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set timeout to emit typing stop after 2 seconds of no typing
     typingTimeoutRef.current = setTimeout(() => {
       emitTypingStop();
     }, TYPING_DEBOUNCE_MS);
   }, [emitTypingStart, emitTypingStop]);
 
+  // Apply a reaction update pushed from the server (or returned by our own
+  // mutation) to the matching message.
+  const applyReactions = useCallback(
+    (messageId: string, reactions: MessageReaction[]) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, reactions } : msg)),
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     loadMessages();
 
-    // Initialize socket connection
     const socket = initializeSocket();
     socketRef.current = socket;
 
     if (socket) {
-      // Join user's room
       socket.emit('join', userId);
 
-      // Listen for new messages
       socket.on('message', (message: Message) => {
         if (message.senderId === userId || message.recipientId === userId) {
           setMessages((prev) => [message, ...prev]);
-          // Mark as read if it's from the other user
           if (message.senderId === userId) {
             messageService.markAsRead(message.id);
+            // An incoming message from the other user while the viewer is
+            // reading history should surface the pill, not yank the list.
+            if (!isNearBottomRef.current) {
+              setShowNewMessagesPill(true);
+            }
           }
         }
       });
 
-      // Listen for message read receipts
       socket.on('messageRead', (messageId: string) => {
         setMessages((prev) =>
           prev.map((msg) =>
@@ -189,21 +265,27 @@ export default function ChatScreen() {
         );
       });
 
-      // Listen for typing status from the other user
       socket.on('typing:status', (data: { userId: string; isTyping: boolean }) => {
-        // Only show typing indicator if it's from the user we're chatting with
         if (data.userId === userId) {
           setIsOtherUserTyping(data.isTyping);
         }
       });
+
+      // Real-time reaction updates from other participants.
+      socket.on(
+        'message:reaction',
+        (data: { messageId: string; reactions: MessageReaction[] }) => {
+          if (data.reactions) {
+            applyReactions(data.messageId, data.reactions);
+          }
+        },
+      );
     }
 
     return () => {
-      // Clean up typing timeout
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
-      // Emit typing stop when leaving the chat
       if (socketRef.current && isTypingRef.current) {
         socketRef.current.emit('typing:stop', { recipientId: userId });
       }
@@ -212,6 +294,7 @@ export default function ChatScreen() {
         disconnectSocket();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const loadMessages = async () => {
@@ -219,12 +302,17 @@ export default function ChatScreen() {
       setLoading(true);
       const response = await messageService.getMessages(userId);
       setMessages(response.messages || []);
-    } catch (error) {
+    } catch {
       // Error handled silently
     } finally {
       setLoading(false);
     }
   };
+
+  const scrollToBottom = useCallback(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setShowNewMessagesPill(false);
+  }, []);
 
   const handleSend = async () => {
     if (!messageText.trim() && !sending) return;
@@ -233,7 +321,6 @@ export default function ChatScreen() {
       setSending(true);
       haptics('Light');
 
-      // Stop typing indicator when sending
       emitTypingStop();
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -242,10 +329,8 @@ export default function ChatScreen() {
 
       const response = await messageService.sendMessage(userId, messageText.trim());
 
-      // Add message to list optimistically
       setMessages((prev) => [response.message, ...prev]);
 
-      // Emit via socket
       if (socketRef.current) {
         socketRef.current.emit('sendMessage', {
           recipientId: userId,
@@ -254,7 +339,10 @@ export default function ChatScreen() {
       }
 
       setMessageText('');
-    } catch (error) {
+      // Sending our own message always returns focus to the newest message.
+      setReplyingTo(null);
+      scrollToBottom();
+    } catch {
       // Error handled silently
     } finally {
       setSending(false);
@@ -281,7 +369,6 @@ export default function ChatScreen() {
         const ext = asset.uri.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
         const mimeType = asset.mimeType || (isVideo ? `video/${ext}` : `image/${ext}`);
 
-        // recipientId/content are appended by messageService.sendMessage.
         const formData = new FormData();
         formData.append('media', {
           uri: asset.uri,
@@ -299,6 +386,7 @@ export default function ChatScreen() {
             mediaUrl: response.message.mediaUrl,
           });
         }
+        scrollToBottom();
       }
     } catch (error) {
       logger.error('Send media error:', error);
@@ -307,9 +395,66 @@ export default function ChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const handleReply = useCallback((message: Message) => {
+    haptics('Light');
+    setReplyingTo(message);
+  }, [haptics]);
+
+  // Toggle a reaction: remove it if the user already reacted with this emoji,
+  // otherwise add it. The server returns the authoritative aggregated list.
+  const handleSelectReaction = useCallback(
+    async (emoji: string) => {
+      const target = reactionTarget;
+      if (!target) return;
+      const alreadyReacted = target.reactions?.some(
+        (r) => r.emoji === emoji && r.reactedByMe,
+      );
+      try {
+        const response = alreadyReacted
+          ? await messageService.removeReaction(target.id, emoji)
+          : await messageService.addReaction(target.id, emoji);
+        applyReactions(target.id, response.reactions);
+      } catch (error) {
+        logger.error('Reaction error:', error);
+      }
+    },
+    [reactionTarget, applyReactions],
+  );
+
+  // Tapping an existing reaction chip toggles the current user's reaction.
+  const handleToggleReactionChip = useCallback(
+    async (message: Message, reaction: MessageReaction) => {
+      haptics('Light');
+      try {
+        const response = reaction.reactedByMe
+          ? await messageService.removeReaction(message.id, reaction.emoji)
+          : await messageService.addReaction(message.id, reaction.emoji);
+        applyReactions(message.id, response.reactions);
+      } catch (error) {
+        logger.error('Reaction error:', error);
+      }
+    },
+    [haptics, applyReactions],
+  );
+
+  // Track whether the user is near the newest message so incoming socket
+  // messages know whether to auto-scroll or show the pill.
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offset = event.nativeEvent.contentOffset.y;
+      const nearBottom = offset <= NEAR_BOTTOM_THRESHOLD;
+      isNearBottomRef.current = nearBottom;
+      if (nearBottom && showNewMessagesPill) {
+        setShowNewMessagesPill(false);
+      }
+    },
+    [showNewMessagesPill],
+  );
+
+  const renderMessageBubble = (item: Message) => {
     const isSent = item.senderId !== userId;
     const isCurrentUser = !isSent;
+    const reactions = item.reactions ?? [];
 
     return (
       <View
@@ -337,9 +482,61 @@ export default function ChatScreen() {
             minute: '2-digit',
           })}
         </Text>
+        {reactions.length > 0 && (
+          <View style={styles.reactionRow}>
+            {reactions.map((reaction) => (
+              <TouchableOpacity
+                key={reaction.emoji}
+                onPress={() => handleToggleReactionChip(item, reaction)}
+                style={[
+                  styles.reactionChip,
+                  reaction.reactedByMe && styles.reactionChipActive,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${reaction.emoji} ${reaction.count} reaction${
+                  reaction.count === 1 ? '' : 's'
+                }`}
+              >
+                <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+                {reaction.count > 1 && (
+                  <Text style={styles.reactionCount}>{reaction.count}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
     );
   };
+
+  const renderRow = ({ item }: { item: ChatRow }) => {
+    if (item.type === 'divider') {
+      return <DateDivider date={item.date} />;
+    }
+    const message = item.message;
+    const isFromSelf = message.senderId !== userId;
+    // Optimistic/temporary messages can have a generated id; still allow swipe.
+    return (
+      <SwipeToReply isFromSelf={isFromSelf} onReply={() => handleReply(message)}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={() => {
+            haptics('Medium');
+            setReactionTarget(message);
+          }}
+          delayLongPress={300}
+        >
+          {renderMessageBubble(message)}
+        </TouchableOpacity>
+      </SwipeToReply>
+    );
+  };
+
+  const myReactedEmojis =
+    reactionTarget?.reactions
+      ?.filter((r) => r.reactedByMe)
+      .map((r) => r.emoji) ?? [];
+  const reactionLimitReached = myReactedEmojis.length >= MAX_REACTIONS_PER_USER;
 
   if (loading) {
     return <LoadingSpinner fullScreen />;
@@ -351,22 +548,53 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={90}
     >
-      <FlatList
-        ref={flatListRef}
-        data={[...messages].reverse()}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item.id}
-        inverted
-        ListEmptyComponent={
-          <EmptyState
-            title="No messages yet"
-            message="Start the conversation!"
-            icon="💬"
-          />
-        }
-        ListHeaderComponent={isOtherUserTyping ? <TypingIndicator /> : null}
-        onContentSizeChange={() => flatListRef.current?.scrollToOffset({ offset: 0 })}
-      />
+      <View style={styles.listWrap}>
+        <FlatList
+          ref={flatListRef}
+          data={rows}
+          renderItem={renderRow}
+          keyExtractor={(item) =>
+            item.type === 'divider' ? item.id : item.message.id
+          }
+          inverted
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          ListEmptyComponent={
+            <EmptyState
+              title="No messages yet"
+              message="Start the conversation!"
+              icon="💬"
+            />
+          }
+          ListHeaderComponent={isOtherUserTyping ? <TypingIndicator /> : null}
+        />
+        <NewMessagesPill visible={showNewMessagesPill} onPress={scrollToBottom} />
+      </View>
+
+      {replyingTo && (
+        <View style={styles.replyBanner}>
+          <View style={styles.replyBannerBar} />
+          <View style={styles.replyBannerContent}>
+            <Text style={styles.replyBannerLabel}>
+              Replying to{' '}
+              {replyingTo.senderId === userId
+                ? replyingTo.sender?.username || 'them'
+                : 'yourself'}
+            </Text>
+            <Text style={styles.replyBannerText} numberOfLines={1}>
+              {replyingTo.content || (replyingTo.mediaUrl ? 'Media' : '')}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setReplyingTo(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel reply"
+            style={styles.replyBannerClose}
+          >
+            <Icon name="close" size={18} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.inputContainer}>
         <TouchableOpacity onPress={handleSendMedia} style={styles.mediaButton}>
@@ -396,6 +624,14 @@ export default function ChatScreen() {
           <Text style={styles.sendButtonText}>Send</Text>
         </TouchableOpacity>
       </View>
+
+      <EmojiReactionPicker
+        visible={reactionTarget !== null}
+        reactedEmojis={myReactedEmojis}
+        limitReached={reactionLimitReached}
+        onClose={() => setReactionTarget(null)}
+        onSelect={handleSelectReaction}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -405,19 +641,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  listWrap: {
+    flex: 1,
+    position: 'relative',
+  },
   messageContainer: {
-    maxWidth: '75%',
+    maxWidth: '100%',
     marginVertical: 4,
     marginHorizontal: 16,
     padding: 12,
     borderRadius: 16,
   },
   sentMessage: {
-    alignSelf: 'flex-end',
     backgroundColor: Colors.accent,
   },
   receivedMessage: {
-    alignSelf: 'flex-start',
     backgroundColor: Colors.surface,
   },
   messageText: {
@@ -440,6 +678,68 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 4,
     alignSelf: 'flex-end',
+  },
+  reactionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 6,
+  },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  reactionChipActive: {
+    backgroundColor: `${Colors.primary}33`,
+    borderColor: Colors.primary,
+  },
+  reactionEmoji: {
+    fontSize: 13,
+  },
+  reactionCount: {
+    fontSize: 12,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  replyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  replyBannerBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: Colors.accent,
+    marginRight: 10,
+  },
+  replyBannerContent: {
+    flex: 1,
+  },
+  replyBannerLabel: {
+    color: Colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  replyBannerText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+  },
+  replyBannerClose: {
+    padding: 6,
+    marginLeft: 8,
   },
   inputContainer: {
     flexDirection: 'row',

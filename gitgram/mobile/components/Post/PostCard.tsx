@@ -23,6 +23,7 @@ import RichContent from '../common/RichContent';
 import LikeBounceAnimation, {
   LikeBounceAnimationHandle,
 } from '../common/LikeBounceAnimation';
+import CountWheel from '../common/CountWheel';
 import { useLightbox } from '../common/Lightbox';
 
 const DOUBLE_PRESS_DELAY = 300;
@@ -67,6 +68,9 @@ export default function PostCard({ post, onLike, showFullContent = false, onHide
   const { showToast, ToastComponent } = useToast();
   const [isLiked, setIsLiked] = useState(post.isLiked);
   const [likesCount, setLikesCount] = useState(post.likesCount);
+  // Stays false until the viewer toggles the like at least once, so the count
+  // wheel never animates on first mount (matching Bluesky's behaviour).
+  const [hasToggledLike, setHasToggledLike] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -145,6 +149,7 @@ export default function PostCard({ post, onLike, showFullContent = false, onHide
     const previousIsLiked = isLiked;
     const previousLikesCount = likesCount;
 
+    setHasToggledLike(true);
     setIsLiked(!isLiked);
     setLikesCount(prev => !previousIsLiked ? prev + 1 : prev - 1);
     setLoading(true);
@@ -278,7 +283,26 @@ export default function PostCard({ post, onLike, showFullContent = false, onHide
 
       {/* Engagement & Info */}
       <View style={styles.engagement}>
-        <Text style={styles.likesText}>{likesCount.toLocaleString()} likes</Text>
+        <View style={styles.likesRow}>
+          {likesCount > 0 ? (
+            <>
+              <CountWheel
+                count={likesCount}
+                isToggled={isLiked}
+                hasBeenToggled={hasToggledLike}
+                renderCount={({ count }) => (
+                  <Text style={styles.likesText}>{count.toLocaleString()}</Text>
+                )}
+              />
+              <Text style={styles.likesText}>
+                {' '}
+                {likesCount === 1 ? 'like' : 'likes'}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.likesText}>0 likes</Text>
+          )}
+        </View>
         {post.content && (
           <View style={styles.captionContainer}>
             <Text style={styles.captionUsername}>{post.user.username} </Text>
@@ -424,11 +448,15 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 8,
   },
+  likesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   likesText: {
     color: Colors.text,
     fontSize: 14,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
   captionContainer: {
     flexDirection: 'row',

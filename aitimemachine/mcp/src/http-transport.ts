@@ -25,6 +25,7 @@ import {
   type HttpAuthConfig,
 } from './lib/http-auth.js';
 import { invokeMcpTool, resolveMcpToolFailure } from './lib/mcp-tool-call.js';
+import { installTransportArgAliasing } from './lib/tool-arg-aliasing.js';
 import {
   attachRequestIdHeader,
   buildRequestContext,
@@ -558,6 +559,10 @@ export async function startHttpTransport(
   const mcpTransport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
+  // Rewrite hallucinated arg names to canonical schema keys before the SDK's
+  // Zod validation runs. MUST be installed before connect() so our onmessage
+  // hook sits first in the chain the SDK builds on top of it.
+  installTransportArgAliasing(mcpTransport);
   await mcpServer.connect(mcpTransport);
 
   app.all('/mcp', async (req, res) => {

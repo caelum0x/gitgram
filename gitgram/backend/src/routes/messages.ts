@@ -143,6 +143,34 @@ const chatIdParam = [
     .withMessage('Chat ID must be a string'),
 ];
 
+const addReactionValidator = [
+  param('messageId')
+    .notEmpty()
+    .withMessage('Message ID is required')
+    .isString()
+    .withMessage('Message ID must be a string'),
+  body('emoji')
+    .notEmpty()
+    .withMessage('Emoji is required')
+    .isString()
+    .withMessage('Emoji must be a string')
+    .isLength({ min: 1, max: 16 })
+    .withMessage('Emoji must be between 1 and 16 characters'),
+];
+
+const removeReactionValidator = [
+  param('messageId')
+    .notEmpty()
+    .withMessage('Message ID is required')
+    .isString()
+    .withMessage('Message ID must be a string'),
+  param('emoji')
+    .notEmpty()
+    .withMessage('Emoji is required')
+    .isString()
+    .withMessage('Emoji must be a string'),
+];
+
 /**
  * @swagger
  * /api/v1/messages:
@@ -656,5 +684,77 @@ router.delete('/:messageId', authenticate, validate(messageIdParam), messageCont
  *         description: Message not found
  */
 router.post('/:messageId/report', authenticate, interactionLimiter, userReportLimit, spamCheckReport, validate(reportMessageValidator), messageController.reportMessage);
+
+/**
+ * @swagger
+ * /api/v1/messages/{messageId}/reactions:
+ *   post:
+ *     summary: Add an emoji reaction to a message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - emoji
+ *             properties:
+ *               emoji:
+ *                 type: string
+ *                 description: One of the allowed reaction emoji
+ *     responses:
+ *       200:
+ *         description: Updated aggregated reactions for the message
+ *       400:
+ *         description: Invalid emoji or reaction limit reached
+ *       401:
+ *         description: Not authenticated
+ *       403:
+ *         description: Not a participant in this conversation
+ *       404:
+ *         description: Message not found
+ */
+router.post('/:messageId/reactions', authenticate, interactionLimiter, validate(addReactionValidator), messageController.addReaction);
+
+/**
+ * @swagger
+ * /api/v1/messages/{messageId}/reactions/{emoji}:
+ *   delete:
+ *     summary: Remove an emoji reaction from a message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: emoji
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: URL-encoded reaction emoji to remove
+ *     responses:
+ *       200:
+ *         description: Updated aggregated reactions for the message
+ *       401:
+ *         description: Not authenticated
+ *       403:
+ *         description: Not a participant in this conversation
+ *       404:
+ *         description: Message not found
+ */
+router.delete('/:messageId/reactions/:emoji', authenticate, interactionLimiter, validate(removeReactionValidator), messageController.removeReaction);
 
 export default router;

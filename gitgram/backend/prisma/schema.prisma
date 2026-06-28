@@ -61,6 +61,8 @@ model Account {
   sentMessages     Message[] @relation("MessageSender")
   receivedMessages Message[] @relation("MessageReceiver")
 
+  messageReactions MessageReaction[]
+
   @@index([type])
   @@index([username])
 }
@@ -581,11 +583,32 @@ model Message {
   receiver Account @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
   chat     Chat?   @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
+  reactions MessageReaction[]
+
   @@index([senderId])
   @@index([receiverId])
   @@index([chatId])
   @@index([createdAt])
   @@index([read])
+}
+
+// Emoji reactions on a direct/group message. A user may add at most one of each
+// distinct emoji to a given message (enforced by the unique constraint), and the
+// total number of distinct reactions per user per message is capped in the
+// controller (mirroring Bluesky's per-message reaction limit).
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    Account @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
 }
 
 // ============================================

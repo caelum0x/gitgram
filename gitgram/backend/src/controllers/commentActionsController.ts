@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { prisma } from '../utils/prisma';
 import logger from '../utils/logger';
 import { createNotification } from '../services/notificationService';
-import { processMentionsForComment } from '../services/mentionService';
+import { processMentionsForComment, parseMentions } from '../services/mentionService';
 import { asyncHandler, Errors, ApiError } from '../middleware/errorHandler';
 import { invalidateCommentCache } from '../utils/commentCache';
 
@@ -94,15 +94,44 @@ export const updateComment = asyncHandler(async (req: AuthRequest, res: Response
     throw Errors.forbidden('Not authorized to edit this comment');
   }
 
+  const newContent = content.trim();
+
   const updatedComment = await prisma.comment.update({
     where: { id: commentId },
-    data: { content: content.trim() },
+    data: { content: newContent },
     include: {
       user: {
         select: { id: true, username: true, avatar: true }
       }
     }
   });
+
+  // Re-process @mentions on edit so newly-added mentions trigger notifications.
+  // Adapted from munia's isUpdate flow (delete-then-recreate). Since Gitgram's
+  // mention system is notification-based, we diff against the original content
+  // and only notify usernames that were NOT already present before the edit —
+  // avoiding duplicate notifications for users who were mentioned previously.
+  if (updatedComment.user?.username) {
+    const previousUsernames = new Set(parseMentions(comment.content));
+    const addedUsernames = parseMentions(newContent).filter(
+      username => !previousUsernames.has(username)
+    );
+
+    if (addedUsernames.length > 0) {
+      try {
+        await processMentionsForComment(
+          addedUsernames.map(username => `@${username}`).join(' '),
+          comment.postId,
+          updatedComment.id,
+          userId,
+          updatedComment.user.username
+        );
+      } catch (mentionError) {
+        // Log but don't fail the edit if mention processing fails
+        logger.error('Error processing mentions for edited comment:', mentionError);
+      }
+    }
+  }
 
   res.json(updatedComment);
 });

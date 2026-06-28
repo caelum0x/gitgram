@@ -460,6 +460,74 @@ export async function compactIssues(
 }
 
 // ============================================================================
+// Beads admin / health diagnostics (DAG self-check & repair)
+//
+// `bd doctor` is the bundled binary's health-check surface. It detects orphaned
+// dependency references, duplicate issues, test pollution, git-conflict cruft,
+// and (in --deep mode) full graph-integrity problems — and can auto-repair the
+// fixable ones. For an always-on swarm of agents this keeps a corrupted task
+// DAG from silently degrading. Thin execFile wrapper over `bd doctor --json`.
+// ============================================================================
+
+/** The focused diagnostic checks `bd doctor --check <name>` supports. */
+export const BEADS_DOCTOR_CHECKS = [
+  "validate",
+  "pollution",
+  "artifacts",
+] as const;
+export type BeadsDoctorCheck = (typeof BEADS_DOCTOR_CHECKS)[number];
+
+export interface BeadsDoctorOptions {
+  /**
+   * Run a single focused check (validate | pollution | artifacts) instead of
+   * the full installation sanity sweep.
+   */
+  check?: BeadsDoctorCheck;
+  /** Apply auto-repairs for fixable validate findings (orphans, conflicts). */
+  fix?: boolean;
+  /** Delete detected test pollution / stale artifacts (with check). */
+  clean?: boolean;
+  /** Run the slower full graph-integrity validation. */
+  deep?: boolean;
+}
+
+/**
+ * Run `bd doctor` for DAG health diagnostics and optional repair. Returns the
+ * parsed `--json` report. Defaults to a read-only full sanity check; mutating
+ * behaviour requires an explicit `fix`/`clean` flag so an accidental call never
+ * alters the store.
+ *
+ * Note: `bd doctor` exits non-zero when it finds problems even though it still
+ * emits a useful JSON report, so we read the body tolerantly and only re-throw
+ * when no JSON was produced (a genuine invocation failure).
+ */
+export async function runBeadsDoctor(
+  options: BeadsDoctorOptions = {}
+): Promise<unknown> {
+  const args: string[] = ["doctor", "--json"];
+
+  if (options.check) {
+    args.push("--check", options.check);
+  }
+  if (options.fix) {
+    args.push("--fix");
+  }
+  if (options.clean) {
+    args.push("--clean");
+  }
+  if (options.deep) {
+    args.push("--deep");
+  }
+
+  const stdout = await execBeadsTolerant(args);
+  const parsed = parseBeadsJson(stdout);
+  if (parsed === null) {
+    throw new Error("bd doctor produced no report (invocation failed)");
+  }
+  return parsed;
+}
+
+// ============================================================================
 // Beads persistent memory (remember / recall / memories / forget)
 //
 // A durable per-project key→insight store the `bd` binary injects at `bd prime`.

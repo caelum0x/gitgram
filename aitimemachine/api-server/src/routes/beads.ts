@@ -8,6 +8,9 @@ import {
   listDependencyTree,
   findDependencyCycles,
   compactIssues,
+  runBeadsDoctor,
+  BEADS_DOCTOR_CHECKS,
+  type BeadsDoctorCheck,
   remember,
   recall,
   listMemories,
@@ -115,6 +118,34 @@ const DEPENDENCY_TYPES = [
   "discovered-from",
 ] as const;
 type DependencyType = (typeof DEPENDENCY_TYPES)[number];
+
+// Issue types the bundled `bd` binary accepts on create/update. Aliases
+// (enhancement/feat→feature, dec/adr→decision) are resolved by the CLI itself.
+const ISSUE_TYPES = [
+  "bug",
+  "feature",
+  "task",
+  "epic",
+  "chore",
+  "decision",
+] as const;
+type IssueType = (typeof ISSUE_TYPES)[number];
+
+function isIssueType(value: unknown): value is IssueType {
+  return (
+    typeof value === "string" &&
+    (ISSUE_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/** A trimmed non-empty string body field, or null when absent/blank. */
+function cleanText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 function isDependencyType(value: unknown): value is DependencyType {
   return (
@@ -529,19 +560,88 @@ router.delete("/memory/:key", async (req: Request, res: Response) => {
   }
 });
 
-// POST /beads/tasks — create a task
-// body: { title: string, deps?: string[] }
+// POST /beads/tasks — create a task with the full issue model.
+// body: {
+//   title: string,
+//   deps?: string[],
+//   description?, design?, acceptanceCriteria?, notes?, externalRef?: string,
+//   priority?: number (0-4),
+//   issueType?: bug|feature|task|epic|chore|decision
+// }
+// Only title is required; the rest are forwarded to the `bd add` flags the CLI
+// natively supports, so agents can capture full design/acceptance context at
+// creation time instead of losing it.
 router.post("/tasks", async (req: Request, res: Response) => {
-  const { title, deps } = req.body as { title?: string; deps?: string[] };
+  const body = req.body as {
+    title?: unknown;
+    deps?: unknown;
+    description?: unknown;
+    design?: unknown;
+    acceptanceCriteria?: unknown;
+    notes?: unknown;
+    externalRef?: unknown;
+    priority?: unknown;
+    issueType?: unknown;
+  };
 
-  if (!title || typeof title !== "string" || title.trim().length === 0) {
+  const title = cleanText(body.title);
+  if (!title) {
     return res.status(400).json({ success: false, error: "title is required" });
   }
 
-  const args: string[] = ["add", "--title", title.trim()];
+  const deps = Array.isArray(body.deps)
+    ? body.deps.filter((d): d is string => typeof d === "string" && d.trim().length > 0)
+    : [];
 
-  if (Array.isArray(deps) && deps.length > 0) {
+  const args: string[] = ["add", "--title", title];
+
+  if (deps.length > 0) {
     args.push("--deps", deps.join(","));
+  }
+
+  const description = cleanText(body.description);
+  if (description) {
+    args.push("--description", description);
+  }
+
+  const design = cleanText(body.design);
+  if (design) {
+    args.push("--design", design);
+  }
+
+  const acceptanceCriteria = cleanText(body.acceptanceCriteria);
+  if (acceptanceCriteria) {
+    args.push("--acceptance", acceptanceCriteria);
+  }
+
+  const notes = cleanText(body.notes);
+  if (notes) {
+    args.push("--notes", notes);
+  }
+
+  const externalRef = cleanText(body.externalRef);
+  if (externalRef) {
+    args.push("--external-ref", externalRef);
+  }
+
+  if (body.priority !== undefined) {
+    const priority = boundedInt(body.priority, 0, 4);
+    if (priority === undefined) {
+      return res
+        .status(400)
+        .json({ success: false, error: "priority must be an integer 0-4" });
+    }
+    args.push("--priority", String(priority));
+  }
+
+  if (body.issueType !== undefined) {
+    if (!isIssueType(body.issueType)) {
+      return res.status(400).json({
+        success: false,
+        error: `issueType must be one of: ${ISSUE_TYPES.join(", ")}`,
+      });
+    }
+    args.push("--type", body.issueType);
   }
 
   try {
@@ -636,8 +736,12 @@ router.put("/tasks/:id/done", async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /beads/tasks/:id — edit task fields (title/priority/assignee/status/
-// labels). Only provided fields are applied; at least one must be present.
+// PATCH /beads/tasks/:id — edit task fields. Only provided fields are applied;
+// at least one must be present. Beyond the core editable fields (title,
+// priority, assignee, status, labels) this also forwards the rich issue model
+// the `bd update` CLI supports: description, design, acceptanceCriteria, notes,
+// externalRef, and issueType — so agents can refine full task specs after
+// creation instead of losing that context.
 router.patch("/tasks/:id", async (req: Request, res: Response) => {
   const id = cleanId(req.params.id);
   if (!id) {
@@ -650,6 +754,12 @@ router.patch("/tasks/:id", async (req: Request, res: Response) => {
     assignee?: unknown;
     status?: unknown;
     labels?: unknown;
+    description?: unknown;
+    design?: unknown;
+    acceptanceCriteria?: unknown;
+    notes?: unknown;
+    externalRef?: unknown;
+    issueType?: unknown;
   };
 
   const args: string[] = ["update", id];
@@ -692,10 +802,53 @@ router.patch("/tasks/:id", async (req: Request, res: Response) => {
     changed = true;
   }
 
+  const description = cleanText(body.description);
+  if (description) {
+    args.push("--description", description);
+    changed = true;
+  }
+
+  const design = cleanText(body.design);
+  if (design) {
+    args.push("--design", design);
+    changed = true;
+  }
+
+  const acceptanceCriteria = cleanText(body.acceptanceCriteria);
+  if (acceptanceCriteria) {
+    args.push("--acceptance", acceptanceCriteria);
+    changed = true;
+  }
+
+  const notes = cleanText(body.notes);
+  if (notes) {
+    args.push("--notes", notes);
+    changed = true;
+  }
+
+  const externalRef = cleanText(body.externalRef);
+  if (externalRef) {
+    args.push("--external-ref", externalRef);
+    changed = true;
+  }
+
+  if (body.issueType !== undefined) {
+    if (!isIssueType(body.issueType)) {
+      return res.status(400).json({
+        success: false,
+        error: `issueType must be one of: ${ISSUE_TYPES.join(", ")}`,
+      });
+    }
+    args.push("--type", body.issueType);
+    changed = true;
+  }
+
   if (!changed) {
     return res.status(400).json({
       success: false,
-      error: "at least one of title, priority, assignee, status, labels is required",
+      error:
+        "at least one of title, priority, assignee, status, labels, description, " +
+        "design, acceptanceCriteria, notes, externalRef, issueType is required",
     });
   }
 
@@ -809,6 +962,53 @@ router.get("/stale", async (req: Request, res: Response) => {
   }
 });
 
+// POST /beads/admin — DAG health diagnostics and optional repair.
+//
+// Runs `bd doctor` to surface orphaned dependency references, duplicate issues,
+// test pollution, git-conflict cruft, and (with deep=true) full graph-integrity
+// problems. Read-only by default; mutating repair requires explicit flags so an
+// accidental call never alters the store. body:
+//   { check?: "validate"|"pollution"|"artifacts",
+//     fix?: boolean,    // auto-repair fixable validate findings
+//     clean?: boolean,  // delete detected pollution / stale artifacts
+//     deep?: boolean }  // slower full graph-integrity validation
+router.post("/admin", async (req: Request, res: Response) => {
+  const body = req.body as {
+    check?: unknown;
+    fix?: unknown;
+    clean?: unknown;
+    deep?: unknown;
+  };
+
+  let check: BeadsDoctorCheck | undefined;
+  if (body.check !== undefined) {
+    const raw = singleQueryValue(body.check);
+    if (!raw || !(BEADS_DOCTOR_CHECKS as readonly string[]).includes(raw)) {
+      return res.status(400).json({
+        success: false,
+        error: `check must be one of: ${BEADS_DOCTOR_CHECKS.join(", ")}`,
+      });
+    }
+    check = raw as BeadsDoctorCheck;
+  }
+
+  try {
+    const data = await runBeadsDoctor({
+      check,
+      fix: body.fix === true,
+      clean: body.clean === true,
+      deep: body.deep === true,
+    });
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error:
+        err instanceof Error ? err.message : "Failed to run beads diagnostics",
+    });
+  }
+});
+
 // GET /beads/prime — AI-optimized workflow context as markdown.
 //
 // Bootstraps an agent at session start with the current Beads workflow state
@@ -849,6 +1049,305 @@ router.get("/prime", async (req: Request, res: Response) => {
       error:
         err instanceof Error ? err.message : "Failed to prime agent context",
     });
+  }
+});
+
+// GET /beads/search?q=:query — full-text search across the issue DAG.
+//
+// Complements the work-queue routes (ready/blocked/stale) and the unified-memory
+// search by exposing `bd search`, which scans ALL issues in the DAG — including
+// arbitrary or closed issues that were never write-through-ingested into the
+// memory layer. ID-like queries (e.g. "bd-5q") use fast exact/prefix matching;
+// text queries match titles. This is the core "has someone already filed this?"
+// retrieval primitive for a swarm of agents before opening duplicate work.
+//
+// Query params (all optional except q):
+//   q | query           — the search query (required)
+//   status              — open|in_progress|blocked|deferred|closed|all
+//                         (default excludes closed; use 'all' to include them)
+//   assignee            — filter by assignee
+//   type                — bug|feature|task|epic|chore|decision|merge-request|molecule|gate
+//   labels              — AND filter (comma-separated or repeated)
+//   labelsAny           — OR filter (comma-separated or repeated)
+//   limit               — max results (1-1000, default 50)
+//   sort                — priority|created|updated|closed|status|id|title|type|assignee
+//   reverse             — reverse sort order (1/true)
+//   descContains        — description substring (case-insensitive)
+//   notesContains       — notes substring (case-insensitive)
+//   priorityMin         — minimum priority, inclusive (0-4)
+//   priorityMax         — maximum priority, inclusive (0-4)
+//   createdAfter        — YYYY-MM-DD or RFC3339
+//   createdBefore       — YYYY-MM-DD or RFC3339
+//   noAssignee          — only issues with no assignee (1/true)
+//   noLabels            — only issues with no labels (1/true)
+const SEARCH_STATUSES = [
+  "open",
+  "in_progress",
+  "blocked",
+  "deferred",
+  "closed",
+  "all",
+] as const;
+
+const SEARCH_SORT_FIELDS = [
+  "priority",
+  "created",
+  "updated",
+  "closed",
+  "status",
+  "id",
+  "title",
+  "type",
+  "assignee",
+] as const;
+
+const SEARCH_ISSUE_TYPES = [
+  "bug",
+  "feature",
+  "task",
+  "epic",
+  "chore",
+  "decision",
+  "merge-request",
+  "molecule",
+  "gate",
+] as const;
+
+/** A YYYY-MM-DD or RFC3339 date string, validated; null when absent/invalid. */
+function dateFlag(value: unknown): string | null {
+  const raw = singleQueryValue(value);
+  if (!raw) {
+    return null;
+  }
+  // Accept plain dates (YYYY-MM-DD) and full RFC3339 timestamps. Anything the
+  // binary cannot parse would be rejected downstream; pre-validate here so we
+  // return a 400 instead of leaking a CLI parse error as a 500.
+  const isValidShape =
+    /^\d{4}-\d{2}-\d{2}$/.test(raw) ||
+    !Number.isNaN(Date.parse(raw));
+  return isValidShape ? raw : null;
+}
+
+function isTruthyFlag(value: unknown): boolean {
+  const v = singleQueryValue(value);
+  return v === "1" || v === "true";
+}
+
+router.get("/search", async (req: Request, res: Response) => {
+  const query = singleQueryValue(req.query.q) ?? singleQueryValue(req.query.query);
+  if (!query) {
+    return res
+      .status(400)
+      .json({ success: false, error: "q (search query) is required" });
+  }
+
+  // Put the positional query after `--` so a query that begins with `-`
+  // (e.g. "-flag") is not misparsed as a CLI flag by the binary.
+  const args: string[] = ["search", "--json"];
+
+  const status = singleQueryValue(req.query.status);
+  if (status !== undefined) {
+    if (!(SEARCH_STATUSES as readonly string[]).includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `status must be one of: ${SEARCH_STATUSES.join(", ")}`,
+      });
+    }
+    args.push("--status", status);
+  }
+
+  const assignee = singleQueryValue(req.query.assignee);
+  if (assignee) {
+    args.push("--assignee", assignee);
+  }
+
+  const issueType = singleQueryValue(req.query.type);
+  if (issueType !== undefined) {
+    if (!(SEARCH_ISSUE_TYPES as readonly string[]).includes(issueType)) {
+      return res.status(400).json({
+        success: false,
+        error: `type must be one of: ${SEARCH_ISSUE_TYPES.join(", ")}`,
+      });
+    }
+    args.push("--type", issueType);
+  }
+
+  for (const label of labelList(req.query.labels)) {
+    args.push("--label", label);
+  }
+  for (const label of labelList(req.query.labelsAny)) {
+    args.push("--label-any", label);
+  }
+
+  const limit = boundedInt(req.query.limit, 1, 1000);
+  if (limit !== undefined) {
+    args.push("--limit", String(limit));
+  }
+
+  const sort = singleQueryValue(req.query.sort);
+  if (sort !== undefined) {
+    if (!(SEARCH_SORT_FIELDS as readonly string[]).includes(sort)) {
+      return res.status(400).json({
+        success: false,
+        error: `sort must be one of: ${SEARCH_SORT_FIELDS.join(", ")}`,
+      });
+    }
+    args.push("--sort", sort);
+  }
+
+  if (isTruthyFlag(req.query.reverse)) {
+    args.push("--reverse");
+  }
+
+  const descContains = singleQueryValue(req.query.descContains);
+  if (descContains) {
+    args.push("--desc-contains", descContains);
+  }
+
+  const notesContains = singleQueryValue(req.query.notesContains);
+  if (notesContains) {
+    args.push("--notes-contains", notesContains);
+  }
+
+  const priorityMin = boundedInt(req.query.priorityMin, 0, 4);
+  if (priorityMin !== undefined) {
+    args.push("--priority-min", String(priorityMin));
+  }
+  const priorityMax = boundedInt(req.query.priorityMax, 0, 4);
+  if (priorityMax !== undefined) {
+    args.push("--priority-max", String(priorityMax));
+  }
+
+  if (req.query.createdAfter !== undefined) {
+    const createdAfter = dateFlag(req.query.createdAfter);
+    if (!createdAfter) {
+      return res.status(400).json({
+        success: false,
+        error: "createdAfter must be a YYYY-MM-DD or RFC3339 date",
+      });
+    }
+    args.push("--created-after", createdAfter);
+  }
+  if (req.query.createdBefore !== undefined) {
+    const createdBefore = dateFlag(req.query.createdBefore);
+    if (!createdBefore) {
+      return res.status(400).json({
+        success: false,
+        error: "createdBefore must be a YYYY-MM-DD or RFC3339 date",
+      });
+    }
+    args.push("--created-before", createdBefore);
+  }
+
+  if (isTruthyFlag(req.query.noAssignee)) {
+    args.push("--no-assignee");
+  }
+  if (isTruthyFlag(req.query.noLabels)) {
+    args.push("--no-labels");
+  }
+
+  // Terminate flag parsing before the positional query.
+  args.push("--", query);
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), args);
+    res.json({ success: true, data: parseBeadsJson(stdout) ?? [] });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to search issues",
+    });
+  }
+});
+
+// GET /beads/tasks/:id/comments — list the discussion/audit comments on an issue.
+// Backed by `bd comments <id> --json`. Returns [] when the issue has none.
+router.get("/tasks/:id/comments", async (req: Request, res: Response) => {
+  const id = cleanId(req.params.id);
+  if (!id) {
+    return res.status(400).json({ success: false, error: "task id is required" });
+  }
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), ["comments", id, "--json"]);
+    res.json({ success: true, data: parseBeadsJson(stdout) ?? [] });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Failed to list comments";
+    // The CLI exits non-zero when the issue does not exist. Surface that as a
+    // 404 rather than a generic server fault so callers can distinguish.
+    const notFound = /not found/i.test(message);
+    res.status(notFound ? 404 : 500).json({ success: false, error: message });
+  }
+});
+
+// POST /beads/tasks/:id/comments — attach a comment to an issue's audit trail.
+// body: { text: string }
+// For a fleet of agents, comments record why an agent did something and hand-off
+// notes between agents. Backed by `bd comment <id> <text> --json`.
+router.post("/tasks/:id/comments", async (req: Request, res: Response) => {
+  const id = cleanId(req.params.id);
+  if (!id) {
+    return res.status(400).json({ success: false, error: "task id is required" });
+  }
+
+  const body = req.body as { text?: unknown };
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (text.length === 0) {
+    return res
+      .status(400)
+      .json({ success: false, error: "text (comment body) is required" });
+  }
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), [
+      "comment",
+      id,
+      "--json",
+      "--",
+      text,
+    ]);
+    res.status(201).json({ success: true, data: parseBeadsJson(stdout) });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Failed to add comment";
+    const notFound = /not found/i.test(message);
+    res.status(notFound ? 404 : 500).json({ success: false, error: message });
+  }
+});
+
+// POST /beads/tasks/:id/notes — append a durable working note to an issue.
+// body: { text: string }
+// The lightweight "leave a breadcrumb on this task" primitive: agents record
+// progress/findings without overwriting the description. Backed by
+// `bd note <id> <text> --json` (which appends to the issue's notes field).
+router.post("/tasks/:id/notes", async (req: Request, res: Response) => {
+  const id = cleanId(req.params.id);
+  if (!id) {
+    return res.status(400).json({ success: false, error: "task id is required" });
+  }
+
+  const body = req.body as { text?: unknown };
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (text.length === 0) {
+    return res
+      .status(400)
+      .json({ success: false, error: "text (note body) is required" });
+  }
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), [
+      "note",
+      id,
+      "--json",
+      "--",
+      text,
+    ]);
+    res.status(201).json({ success: true, data: parseBeadsJson(stdout) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to add note";
+    const notFound = /not found/i.test(message);
+    res.status(notFound ? 404 : 500).json({ success: false, error: message });
   }
 });
 

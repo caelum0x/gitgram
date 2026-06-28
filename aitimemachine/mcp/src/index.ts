@@ -17,6 +17,7 @@ import {
   getConfiguredButHiddenFamilies,
 } from './lib/tool-diagnostics.js';
 import { buildHandshakeInstructions } from './lib/handshake-instructions.js';
+import { installTransportArgAliasing } from './lib/tool-arg-aliasing.js';
 import type { ToolRuntimeContext, SessionServerLike } from './lib/tool-runtime.js';
 import { registerCoreTools } from './tools/register-core-tools.js';
 import { registerSessionTools } from './tools/register-session-tools.js';
@@ -361,6 +362,10 @@ async function main() {
     process.on('SIGTERM', handleShutdown);
   } else {
     const transport = new StdioServerTransport();
+    // Rewrite hallucinated arg names to canonical schema keys before the SDK's
+    // Zod validation runs. MUST be installed before connect() so our onmessage
+    // hook sits first in the chain the SDK builds on top of it.
+    installTransportArgAliasing(transport);
     await server.connect(transport);
     console.error('Gitgram TimeMachine MCP server started (stdio)');
   }
