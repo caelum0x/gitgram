@@ -8,11 +8,11 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Colors } from '../../constants/Colors';
-import Header from '../../components/navigation/Header';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import { logger } from '../../utils/logger';
-import { settingsService } from '../../services/settingsService';
+import { Colors } from '../../../constants/Colors';
+import Header from '../../../components/navigation/Header';
+import LoadingSpinner from '../../../components/common/LoadingSpinner';
+import { logger } from '../../../utils/logger';
+import { settingsService } from '../../../services/settingsService';
 
 export default function NotificationSettingsScreen() {
   const [settings, setSettings] = useState({

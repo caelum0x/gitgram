@@ -145,7 +145,7 @@ router.get('/suggestions', socialController.getFollowSuggestions);
  *         description: ID of the user to follow
  *     responses:
  *       200:
- *         description: Follow toggled (returns { following: true })
+ *         description: "Follow toggled (returns following: true)"
  *       400:
  *         description: Cannot follow yourself or invalid userId
  *       401:
@@ -166,7 +166,7 @@ router.get('/suggestions', socialController.getFollowSuggestions);
  *         description: ID of the user to unfollow
  *     responses:
  *       200:
- *         description: Unfollowed (returns { following: false })
+ *         description: "Unfollowed (returns following: false)"
  *       400:
  *         description: Not currently following this user
  *       401:

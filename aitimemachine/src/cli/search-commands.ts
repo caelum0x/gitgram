@@ -8,6 +8,74 @@ import { Command } from 'commander';
 import { TimeMachineEngine } from '../core/engine.js';
 import { C, timeAgo, formatDate, fail, warn } from './cli-helpers.js';
 
+interface KbSearchOptions {
+  limit?: string;
+  json?: boolean;
+}
+
+/**
+ * Local fallback for `kb-search` when the cloud KB is not configured. Runs the
+ * built-in full-text search engine over the current project's checkpoints and
+ * file contents so the command is usable out of the box on a fresh install.
+ */
+async function runLocalKbSearch(query: string, options: KbSearchOptions): Promise<void> {
+  const limit = parseInt(options.limit ?? '20', 10) || 20;
+  const { SearchEngine } = await import('../core/search-engine.js');
+  const { TimelineIndex } = await import('../core/timeline-index.js');
+  const { EventStore } = await import('../core/event-store.js');
+
+  const engine = new TimeMachineEngine(process.cwd());
+  const eventStore = new EventStore(process.cwd());
+  eventStore.load();
+  const timeline = new TimelineIndex(engine);
+  const searchEngine = new SearchEngine(eventStore, timeline);
+
+  const results = searchEngine.search({ query, type: 'all', limit });
+  const files = results.filter((r) => r.type === 'file');
+  const checkpoints = results.filter((r) => r.type === 'checkpoint');
+
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        {
+          source: 'local',
+          query,
+          files: files.map((r) => ({ file_path: r.filePath, snippet: r.context || r.content, checkpoint_id: r.checkpointId })),
+          checkpoints: checkpoints.map((r) => ({ id: r.id, snippet: r.context || r.content })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  console.log(`\n${C.bright}KB Search${C.reset} "${query}" ${C.dim}(local fallback — cloud KB not configured)${C.reset}`);
+  console.log(`${C.dim}Total results: ${results.length}${C.reset}\n`);
+
+  if (files.length > 0) {
+    console.log(`${C.bright}Files${C.reset}`);
+    for (const r of files) {
+      console.log(`  ${C.cyan}${r.filePath ?? r.id}${C.reset}`);
+      const snippet = (r.context || r.content).replace(/\n/g, ' ').slice(0, 160);
+      if (snippet) console.log(`    ${C.dim}${snippet}${C.reset}`);
+    }
+    console.log();
+  }
+  if (checkpoints.length > 0) {
+    console.log(`${C.bright}Checkpoints${C.reset}`);
+    for (const r of checkpoints) {
+      console.log(`  ${C.cyan}${r.id.slice(0, 16)}${C.reset} ${C.dim}${timeAgo(r.timestamp)}${C.reset}`);
+      const snippet = (r.context || r.content).replace(/\n/g, ' ').slice(0, 160);
+      if (snippet) console.log(`    ${C.dim}${snippet}${C.reset}`);
+    }
+    console.log();
+  }
+  if (results.length === 0) {
+    warn('No local KB results found', ['Configure the cloud KB with AITM_API_URL + AITM_API_KEY for unified search']);
+  }
+}
+
 export function registerSearchCommands(program: Command): void {
 
   // Enhanced search with fuzzy matching
@@ -25,14 +93,17 @@ export function registerSearchCommands(program: Command): void {
     .option('-j, --json', 'Output as JSON')
     .option('--project-id <id>', 'Filter by project ID (semantic mode)')
     .action(async (query, options) => {
-      // Semantic search mode
+      // Semantic search mode (cloud). Falls through to local fuzzy search below
+      // when the cloud API is not configured, so the command still works.
       if (options.semantic) {
         const { createCloudSyncClient } = await import('../cloud/sync-client.js');
         const client = createCloudSyncClient();
         if (!client) {
-          fail('Cloud API not configured', ['Set AITM_API_URL and AITM_API_KEY in your environment']);
-          return;
-        }
+          warn('Cloud API not configured — using local fuzzy search', [
+            'Set AITM_API_URL and AITM_API_KEY for cloud semantic search',
+          ]);
+          // Fall through to the local fuzzy search below.
+        } else {
         try {
           const result = await client.semanticSearch(query, {
             projectId: options.projectId,
@@ -55,9 +126,10 @@ export function registerSearchCommands(program: Command): void {
           fail(`Semantic search failed: ${(err as Error).message}`);
           return;
         }
+        } // end cloud-configured branch
       }
 
-      // Local fuzzy search mode (original)
+      // Local fuzzy search mode (original, also used as semantic fallback)
       const { SearchEngine } = await import('../core/search-engine.js');
       const { TimelineIndex } = await import('../core/timeline-index.js');
       const { EventStore } = await import('../core/event-store.js');
@@ -139,17 +211,22 @@ export function registerSearchCommands(program: Command): void {
   // KB search
   program
     .command('kb-search <query>')
-    .description('Unified search across cloud knowledge base (files, artifacts, embeddings)')
+    .description('Unified search across knowledge base (cloud when configured, else local checkpoints/files)')
     .option('--repository-id <id>', 'Filter by repository ID')
     .option('--project-id <id>', 'Filter by project ID')
-    .option('--kb-only', 'Alias for unified KB search (no local sources)')
+    .option('--kb-only', 'Require the cloud KB (error instead of local fallback)')
     .option('-n, --limit <n>', 'Limit results', '20')
     .option('-j, --json', 'Output as JSON')
     .action(async (query, options) => {
       const { createCloudSyncClient } = await import('../cloud/sync-client.js');
       const client = createCloudSyncClient();
       if (!client) {
-        fail('Cloud API not configured', ['Set AITM_API_URL and AITM_API_KEY in your environment']);
+        // --kb-only opts out of the local fallback and requires the cloud KB.
+        if (options.kbOnly) {
+          fail('Cloud KB not configured', ['Set AITM_API_URL and AITM_API_KEY in your environment']);
+          return;
+        }
+        await runLocalKbSearch(query, options);
         return;
       }
       try {

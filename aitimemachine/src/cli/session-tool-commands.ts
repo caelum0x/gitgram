@@ -2,12 +2,17 @@
  * Session Tool Commands
  *
  * exec, replay, compare, restore-pattern, file-diff, timeline-query,
- * file-history, bisect, auto-checkpoint, watch
+ * file-version-history, bisect, auto-checkpoint, watch-cmd
+ *
+ * Note: `file-version-history` and `watch-cmd` use distinct names so they do not
+ * collide with the `file-history` (git-enhanced-commands) and `watch`
+ * (watch-commands) top-level commands. Each name has exactly one owner, so the
+ * commands are reachable rather than silently shadowed.
  */
 
 import { Command } from 'commander';
 import { TimeMachineEngine } from '../core/engine.js';
-import { C, formatSize, formatDate, timeAgo, formatDuration, safeCommand } from './cli-helpers.js';
+import { C, formatSize, formatDate, timeAgo, formatDuration } from './cli-helpers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -154,9 +159,13 @@ export function registerSessionToolCommands(program: Command): void {
       results.forEach(cp => { console.log(`${C.cyan}${cp.id}${C.reset} - ${cp.description}`); console.log(`  ${C.dim}${cp.timestamp.toISOString()} (${cp.files.length} files)${C.reset}`); });
     });
 
-  // File-history
-  safeCommand(program, 'file-history <path>')
-    .description('Show version history of a file')
+  // File-version-history (distinct from the bloom-filter-backed `file-history`
+  // command in git-enhanced-commands; this one shows the hash/size of every
+  // stored version using the timeline index).
+  program
+    .command('file-version-history <path>')
+    .alias('file-versions')
+    .description('Show stored version history (hash + size) of a file')
     .action(async (filePath) => {
       const { FileHistoryTracker } = await import('../core/file-history-tracker.js');
       const { TimelineIndex } = await import('../core/timeline-index.js');
@@ -248,9 +257,13 @@ export function registerSessionToolCommands(program: Command): void {
       }
     });
 
-  // Watch
-  safeCommand(program, 'watch <command>')
-    .description('Watch command and auto-checkpoint on failures')
+  // Watch-cmd (distinct from the file-change auto-checkpoint `watch` command in
+  // watch-commands; this one runs a shell command on an interval and
+  // auto-checkpoints when its output matches known error patterns).
+  program
+    .command('watch-cmd <command>')
+    .alias('watch-exec')
+    .description('Run a command on an interval and auto-checkpoint on failures')
     .option('-i, --interval <seconds>', 'Check interval (0 for single run)', '30')
     .option('--no-checkpoint', 'Disable auto-checkpointing')
     .option('--max-errors <n>', 'Suggest restore after N errors', '5')

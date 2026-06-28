@@ -69,7 +69,10 @@ export function registerWorktreeCommands(program: Command): void {
       let filesSkipped = 0;
 
       for (const file of tp.files) {
-        const content = engine.getFileAt(fullCheckpointId, file.path);
+        // Use the Buffer API so binary files (images, compiled assets, etc.)
+        // are materialized byte-for-byte instead of being corrupted by a
+        // UTF-8 decode/encode round-trip.
+        const content = engine.getFileBufferAt(fullCheckpointId, file.path);
         if (content === null) {
           filesSkipped++;
           continue;

@@ -128,17 +128,6 @@ const TABS: { key: SearchTab; label: string }[] = [
   { key: 'hashtags', label: 'Hashtags' },
 ]
 
-const TRENDING_FALLBACK: TrendingItem[] = [
-  { query: 'typescript', count: 12400 },
-  { query: 'react hooks', count: 9800 },
-  { query: 'rust lang', count: 8300 },
-  { query: 'next.js 14', count: 7100 },
-  { query: 'open source ai', count: 6500 },
-  { query: 'golang generics', count: 5200 },
-  { query: 'svelte 5', count: 4800 },
-  { query: 'bun runtime', count: 4100 },
-]
-
 const LANGUAGE_COLORS: Record<string, string> = {
   typescript: '#3178c6',
   javascript: '#f7df1e',
@@ -806,6 +795,7 @@ function SearchPageInner() {
 
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [trendingSearches, setTrendingSearches] = useState<TrendingItem[]>([])
+  const [trendingLoading, setTrendingLoading] = useState(true)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
 
@@ -867,30 +857,32 @@ function SearchPageInner() {
   }, [])
 
   const loadTrending = async () => {
+    setTrendingLoading(true)
     try {
       const { data } = await api.get('/search/trending')
       const list: unknown[] = data.trending ?? data.searches ?? data ?? []
-      if (list.length > 0) {
-        setTrendingSearches(
-          list.slice(0, 8).map((item: unknown) => {
-            const i = item as Record<string, unknown>
-            return {
-              query: String(i.query ?? i.name ?? i.term ?? item),
-              count:
-                typeof i.count === 'number'
-                  ? i.count
-                  : typeof i.searchCount === 'number'
-                    ? i.searchCount
-                    : 0,
-            }
-          }),
-        )
-        return
-      }
+      const items = list
+        .slice(0, 8)
+        .map((item: unknown) => {
+          const i = item as Record<string, unknown>
+          return {
+            query: String(i.query ?? i.name ?? i.term ?? item),
+            count:
+              typeof i.count === 'number'
+                ? i.count
+                : typeof i.searchCount === 'number'
+                  ? i.searchCount
+                  : 0,
+          }
+        })
+        .filter((t) => t.query.trim().length > 0)
+      // Only ever show real platform data — never fabricated terms.
+      setTrendingSearches(items)
     } catch {
-      // fall through to fallback
+      setTrendingSearches([])
+    } finally {
+      setTrendingLoading(false)
     }
-    setTrendingSearches(TRENDING_FALLBACK)
   }
 
   // ---------------------------------------------------------------------------
@@ -1367,7 +1359,33 @@ function SearchPageInner() {
         {/* Pre-search: trending + recent + quick links */}
         {!hasSearched && !loading && (
           <div className="space-y-10">
-            {trendingSearches.length > 0 && (
+            {trendingLoading ? (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="#7C3AED">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                  <h2 className="text-sm font-semibold text-foreground-secondary uppercase tracking-wider">
+                    Trending Searches
+                  </h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 p-3.5 rounded-xl animate-pulse"
+                      style={{ background: '#1A1A2E', border: '1px solid rgba(124,58,237,0.15)' }}
+                    >
+                      <div className="w-8 h-8 rounded-lg" style={{ background: '#2A2A3E' }} />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3 rounded w-32" style={{ background: '#2A2A3E' }} />
+                        <div className="h-2.5 rounded w-20" style={{ background: '#2A2A3E' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : trendingSearches.length > 0 ? (
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="#7C3AED">
@@ -1414,7 +1432,7 @@ function SearchPageInner() {
                   ))}
                 </div>
               </section>
-            )}
+            ) : null}
 
             {recentSearches.length > 0 && (
               <section>

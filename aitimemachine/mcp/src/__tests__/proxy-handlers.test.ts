@@ -28,12 +28,18 @@ function jsonOk(body: unknown): Response {
 
 describe('Workspace tools (HTTP proxy)', () => {
   let fetchMock: FetchMock;
+  const prevApiKey = process.env.AITM_API_KEY;
 
   beforeEach(() => {
+    delete process.env.AITM_API_KEY;
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (prevApiKey === undefined) delete process.env.AITM_API_KEY;
+    else process.env.AITM_API_KEY = prevApiKey;
+  });
 
   it('ws_files GETs /workspace/files and returns the parsed list', async () => {
     fetchMock.mockResolvedValueOnce(jsonOk(['src/a.ts', 'src/b.ts']));
@@ -42,6 +48,44 @@ describe('Workspace tools (HTTP proxy)', () => {
     expect(result).toEqual(['src/a.ts', 'src/b.ts']);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/workspace\/files$/);
+  });
+
+  it('ws_files sends the X-API-Key header when AITM_API_KEY is configured', async () => {
+    process.env.AITM_API_KEY = 'aitm_test_key';
+    fetchMock.mockResolvedValueOnce(jsonOk([]));
+    const { call } = captureTools(registerWorkspaceTools, stubRuntime);
+    await call('ws_files');
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBe('aitm_test_key');
+  });
+
+  it('ws_files omits X-API-Key when no AITM_API_KEY is configured', async () => {
+    fetchMock.mockResolvedValueOnce(jsonOk([]));
+    const { call } = captureTools(registerWorkspaceTools, stubRuntime);
+    await call('ws_files');
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBeUndefined();
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
+  it('ws_files surfaces an actionable 401 message naming AITM_API_KEY', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: new Headers(),
+      json: async () => ({ error: 'Missing API key' }),
+      text: async () => '{"error":"Missing API key"}',
+    } as unknown as Response);
+    const { call } = captureTools(registerWorkspaceTools, stubRuntime);
+    const message = await call('ws_files').then(
+      () => '',
+      (e: unknown) => (e instanceof Error ? e.message : String(e))
+    );
+    expect(message).toMatch(/401/);
+    expect(message).toMatch(/AITM_API_KEY/);
   });
 
   it('ws_search POSTs the query body to /workspace/search', async () => {
@@ -85,6 +129,22 @@ describe('Beads tools (HTTP proxy)', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toMatch(/\/beads\/tasks$/);
     expect((init as RequestInit).method).toBe('POST');
+  });
+
+  it('beads_create_task sends the X-API-Key header when configured', async () => {
+    const prev = process.env.AITM_API_KEY;
+    process.env.AITM_API_KEY = 'aitm_beads_key';
+    try {
+      fetchMock.mockResolvedValueOnce(jsonOk({ id: 'bd-2' }));
+      const { call } = captureTools(registerBeadsTools, stubRuntime);
+      await call('beads_create_task', { title: 'x' });
+      const [, init] = fetchMock.mock.calls[0];
+      const headers = (init as RequestInit).headers as Record<string, string>;
+      expect(headers['X-API-Key']).toBe('aitm_beads_key');
+    } finally {
+      if (prev === undefined) delete process.env.AITM_API_KEY;
+      else process.env.AITM_API_KEY = prev;
+    }
   });
 
   it('beads_mark_done PATCHes /beads/tasks/:id/done', async () => {

@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import api from '@/services/api'
+import { getErrorMessage } from '@/utils/error'
 import {
   HashtagSuggestions,
   MentionSuggestions,
@@ -84,6 +85,16 @@ function insertAtCursor(
   const newText = `${trimmedBefore}${insertion} ${after}`
   const newCursor = trimmedBefore.length + insertion.length + 1
   return { newText, newCursor }
+}
+
+/** Map a create/schedule failure to a user-friendly message. */
+function getCreatePostError(err: unknown): string {
+  const status = (err as { response?: { status?: number } })?.response?.status
+  const message = getErrorMessage(err)
+  if (status === 403 && /premium|subscription/i.test(message)) {
+    return 'Scheduling posts requires a premium subscription. Upgrade to schedule, or post now instead.'
+  }
+  return message || 'Failed to create post. Please try again.'
 }
 
 function formatScheduleLabel(date: Date): string {
@@ -248,6 +259,25 @@ export default function CreatePage() {
         uploadedImageUrls = data.urls
       }
 
+      // Scheduled posts MUST go to the dedicated scheduling endpoint. The
+      // immediate-post endpoint (/v1/posts) ignores `scheduledAt` and would
+      // publish straight away, making the "Post scheduled!" screen misleading.
+      if (payload.scheduledAt) {
+        const { data } = await api.post<{ scheduledPost: { id: string } }>(
+          '/v1/scheduled-posts',
+          {
+            content: payload.content,
+            mediaUrls: uploadedImageUrls,
+            scheduledFor: payload.scheduledAt,
+          },
+        )
+        return {
+          id: data.scheduledPost?.id ?? '',
+          content: payload.content,
+          createdAt: payload.scheduledAt,
+        }
+      }
+
       const { data } = await api.post<CreatePostResponse>('/v1/posts', {
         ...payload,
         mediaUrls: uploadedImageUrls,
@@ -255,7 +285,7 @@ export default function CreatePage() {
       return data
     },
     onError: (err) => {
-      setErrorMsg(err.message || 'Failed to create post. Please try again.')
+      setErrorMsg(getCreatePostError(err))
     },
   })
 
@@ -355,16 +385,29 @@ export default function CreatePage() {
       return
     }
 
+    // When scheduling is toggled on, a future date/time is required — otherwise
+    // the post would publish immediately despite the "Schedule post" label.
+    if (scheduleEnabled) {
+      if (!scheduledAt) {
+        setErrorMsg('Please pick a date and time to schedule this post.')
+        return
+      }
+      if (scheduledAt.getTime() <= Date.now()) {
+        setErrorMsg('Scheduled time must be in the future.')
+        return
+      }
+    }
+
     const payload: CreatePostPayload = {
       content: content.trim(),
       videoUrl: videoUrl.trim() || undefined,
       repoFullName: linkedRepo?.fullName,
       audience,
-      scheduledAt: scheduledAt?.toISOString(),
+      scheduledAt: scheduleEnabled ? scheduledAt?.toISOString() : undefined,
     }
 
     mutation.mutate(payload)
-  }, [content, imageFiles, videoUrl, linkedRepo, audience, scheduledAt, mutation])
+  }, [content, imageFiles, videoUrl, linkedRepo, audience, scheduleEnabled, scheduledAt, mutation])
 
   // ---------------------------------------------------------------------------
   // Derived

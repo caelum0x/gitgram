@@ -1,4 +1,5 @@
 import api from './api';
+import { logger } from '../utils/logger';
 
 function normalizeReel(reel: any) {
   if (!reel) return reel;
@@ -155,16 +156,18 @@ export const reelService = {
     };
   },
 
-  // Music-related methods - using real backend API
+  // Music-related methods - backed by the real /music endpoints
+  // (mounted at /api/v1/music). On failure we return a structured empty result
+  // carrying an `error` field so the music picker can render a real error/empty
+  // state with a retry, rather than silently showing nothing.
   searchMusic: async (query: string, page = 1, limit = 20) => {
     try {
       const response = await api.get('/music/search', {
         params: { q: query, limit, offset: Math.max(0, page - 1) * limit },
       });
       return response.data;
-    } catch (error: any) {
-      // Return empty result on API error instead of mock data
-      console.warn('Music search API unavailable:', error.message);
+    } catch (error: unknown) {
+      logger.error('Music search API error:', error);
       return { tracks: [], total: 0, error: 'Music service unavailable' };
     }
   },
@@ -175,9 +178,8 @@ export const reelService = {
         params: { limit },
       });
       return response.data;
-    } catch (error: any) {
-      // Return empty result on API error instead of mock data
-      console.warn('Trending music API unavailable:', error.message);
+    } catch (error: unknown) {
+      logger.error('Trending music API error:', error);
       return { tracks: [], total: 0, error: 'Music service unavailable' };
     }
   },
@@ -186,8 +188,8 @@ export const reelService = {
     try {
       const response = await api.get('/music/genres');
       return response.data;
-    } catch (error: any) {
-      console.warn('Music genres API unavailable:', error.message);
+    } catch (error: unknown) {
+      logger.error('Music genres API error:', error);
       return { genres: [], error: 'Music service unavailable' };
     }
   },

@@ -13,7 +13,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
 import { spawn } from 'child_process';
-import { C, timeAgo, safeCommand } from './cli-helpers.js';
+import { C, timeAgo } from './cli-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -327,7 +327,8 @@ export function registerWatchCommands(program: Command): void {
   // -------------------------------------------------------------------------
   // aitm watch
   // -------------------------------------------------------------------------
-  safeCommand(program, 'watch')
+  program
+    .command('watch')
     .description('Watch current project and auto-checkpoint on file changes')
     .option('-i, --interval <duration>', 'Auto-checkpoint interval (e.g. 5m, 30s)', '5m')
     .option('-e, --exclude <patterns>', 'Comma-separated directories to exclude', DEFAULT_EXCLUDES.join(','))
@@ -338,7 +339,8 @@ export function registerWatchCommands(program: Command): void {
   // -------------------------------------------------------------------------
   // aitm daemon (sub-command group)
   // -------------------------------------------------------------------------
-  const daemonCmd = safeCommand(program, 'daemon')
+  const daemonCmd = program
+    .command('daemon')
     .description('Manage the AITM background daemon');
 
   // aitm daemon start

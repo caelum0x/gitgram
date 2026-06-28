@@ -40,7 +40,7 @@ export default function ReelRemixScreen() {
 
   const handleCreateRemix = () => {
     router.push({
-      pathname: '/(modals)/create-reel',
+      pathname: '/create/reel',
       params: { remixId: id, remixType },
     });
   };

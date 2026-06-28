@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useCallback, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useMutation } from '@tanstack/react-query'
+import { reelDraftService } from '@/services/reelDraftService'
+import { useToast } from '@/components/ui/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -325,8 +327,10 @@ async function submitCodeReel(payload: CreateReelPayload): Promise<CreateReelRes
   return response.json() as Promise<CreateReelResponse>
 }
 
-export default function CreateCodeReelPage() {
+function CreateCodeReelInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { showToast } = useToast()
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -335,6 +339,51 @@ export default function CreateCodeReelPage() {
   const [hashtags, setHashtags] = useState('')
   const [repositoryUrl, setRepositoryUrl] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [draftId, setDraftId] = useState<string | null>(null)
+  const [savingDraft, setSavingDraft] = useState(false)
+
+  // Resume an existing draft when navigated to with ?draftId=...
+  useEffect(() => {
+    const id = searchParams.get('draftId')
+    if (!id) return
+    const draft = reelDraftService.get(id)
+    if (!draft) {
+      showToast('Draft not found — it may have been deleted', 'error')
+      return
+    }
+    setDraftId(draft.id)
+    setTitle(draft.title)
+    setDescription(draft.description)
+    setLanguage(draft.language)
+    setCode(draft.code)
+    setHashtags(draft.hashtags)
+    setRepositoryUrl(draft.repositoryUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const handleSaveDraft = useCallback(() => {
+    if (!title.trim() && !code.trim()) {
+      setSubmitError('Add a title or code before saving a draft')
+      return
+    }
+    setSavingDraft(true)
+    try {
+      const saved = reelDraftService.save(draftId, {
+        title,
+        description,
+        language,
+        code,
+        hashtags,
+        repositoryUrl,
+      })
+      setDraftId(saved.id)
+      showToast('Draft saved', 'success')
+    } catch {
+      showToast('Failed to save draft', 'error')
+    } finally {
+      setSavingDraft(false)
+    }
+  }, [draftId, title, description, language, code, hashtags, repositoryUrl, showToast])
 
   const handleLanguageChange = useCallback((lang: string) => {
     setLanguage(lang)
@@ -351,6 +400,8 @@ export default function CreateCodeReelPage() {
   const createMutation = useMutation<CreateReelResponse, Error, CreateReelPayload>({
     mutationFn: submitCodeReel,
     onSuccess: (data) => {
+      // Published successfully — discard the working draft if any.
+      if (draftId) reelDraftService.remove(draftId)
       const id = data.id ?? data.reel?.id
       if (id) {
         router.push(`/reel/${id}`)
@@ -406,27 +457,45 @@ export default function CreateCodeReelPage() {
           <h1 className="text-sm font-semibold text-white">Create Code Reel</h1>
         </div>
 
-        <button
-          form="create-reel-form"
-          type="submit"
-          disabled={isSubmitting}
-          className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 transition-all"
-          style={{ background: '#238636', border: '1px solid #2ea043' }}
-        >
-          {isSubmitting ? (
-            <>
-              <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Publishing...
-            </>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-              Publish
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/reel/drafts"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/60 hover:text-white transition-colors"
+            style={{ border: '1px solid #21262d' }}
+          >
+            Drafts
+          </Link>
+          <button
+            type="button"
+            onClick={handleSaveDraft}
+            disabled={savingDraft || isSubmitting}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white/80 disabled:opacity-50 transition-all"
+            style={{ background: '#21262d', border: '1px solid #30363d' }}
+          >
+            {savingDraft ? 'Saving...' : 'Save draft'}
+          </button>
+          <button
+            form="create-reel-form"
+            type="submit"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 transition-all"
+            style={{ background: '#238636', border: '1px solid #2ea043' }}
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Publish
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Error banner */}
@@ -703,5 +772,21 @@ export default function CreateCodeReelPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CreateCodeReelPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen" style={{ background: '#0a0c10' }}>
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+          </div>
+        </div>
+      }
+    >
+      <CreateCodeReelInner />
+    </Suspense>
   )
 }

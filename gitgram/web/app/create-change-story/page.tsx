@@ -10,8 +10,8 @@ import aitmService, {
   AitmCheckpoint,
   AitmDiffResult,
   AitmFileDiff,
-  loadAitmApiKey,
-  saveAitmApiKey,
+  isAitmConnected,
+  disconnectAitm,
 } from '@/services/aitmService';
 import { getErrorMessage } from '@/utils/error';
 import { buildRepoPath } from '@/utils/repositoryRouting';
@@ -146,10 +146,29 @@ export default function CreateChangeStoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load saved API key
+  // Detect an existing server-side AITM connection (httpOnly cookie). If one
+  // exists we can skip re-entering the key and load projects directly.
   useEffect(() => {
-    const saved = loadAitmApiKey();
-    if (saved) setApiKey(saved);
+    let cancelled = false;
+    async function checkConnection() {
+      const connected = await isAitmConnected();
+      if (cancelled || !connected) return;
+      setApiKeyValid(true);
+      setLoadingProjects(true);
+      try {
+        const projs = await aitmService.getProjects();
+        if (!cancelled) setProjects(projs);
+      } catch {
+        // Connection may have expired — user can re-enter the key.
+        if (!cancelled) setApiKeyValid(null);
+      } finally {
+        if (!cancelled) setLoadingProjects(false);
+      }
+    }
+    checkConnection();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredRepos = useMemo(() => {
@@ -166,14 +185,17 @@ export default function CreateChangeStoryPage() {
     setValidatingKey(true);
     setApiKeyValid(null);
     try {
+      // validateApiKey now validates AND stores the key server-side
+      // (httpOnly cookie). The raw key is never persisted client-side.
       const valid = await aitmService.validateApiKey(apiKey.trim());
       setApiKeyValid(valid);
       if (valid) {
-        saveAitmApiKey(apiKey.trim());
+        // Drop the raw key from React state once it is safely stored server-side.
+        setApiKey('');
         showToast('AITM API key validated', 'success');
-        // load projects
+        // load projects via the server-side proxy
         setLoadingProjects(true);
-        const projs = await aitmService.getProjects(apiKey.trim());
+        const projs = await aitmService.getProjects();
         setProjects(projs);
       } else {
         showToast('Invalid AITM API key', 'error');
@@ -191,12 +213,12 @@ export default function CreateChangeStoryPage() {
   // Step 3: load checkpoints
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (step !== 3 || !selectedProject || !apiKey) return;
+    if (step !== 3 || !selectedProject || apiKeyValid !== true) return;
     let cancelled = false;
     async function load() {
       setLoadingCheckpoints(true);
       try {
-        const cps = await aitmService.getCheckpoints(apiKey, selectedProject!.id);
+        const cps = await aitmService.getCheckpoints(selectedProject!.id);
         if (!cancelled) setCheckpoints(cps);
       } catch {
         showToast('Failed to load checkpoints', 'error');
@@ -207,18 +229,18 @@ export default function CreateChangeStoryPage() {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, selectedProject, apiKey]);
+  }, [step, selectedProject, apiKeyValid]);
 
   // -----------------------------------------------------------------------
   // Step 4: load diff
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (step !== 4 || !fromCheckpoint || !toCheckpoint || !selectedProject || !apiKey) return;
+    if (step !== 4 || !fromCheckpoint || !toCheckpoint || !selectedProject || apiKeyValid !== true) return;
     let cancelled = false;
     async function load() {
       setLoadingDiff(true);
       try {
-        const diff = await aitmService.getDiff(apiKey, selectedProject!.id, fromCheckpoint!.id, toCheckpoint!.id);
+        const diff = await aitmService.getDiff(selectedProject!.id, fromCheckpoint!.id, toCheckpoint!.id);
         if (!cancelled) setDiffResult(diff);
       } catch {
         showToast('Failed to load diff', 'error');
@@ -229,7 +251,7 @@ export default function CreateChangeStoryPage() {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, fromCheckpoint, toCheckpoint, selectedProject, apiKey]);
+  }, [step, fromCheckpoint, toCheckpoint, selectedProject, apiKeyValid]);
 
   // -----------------------------------------------------------------------
   // Step 7: publish
@@ -383,34 +405,56 @@ export default function CreateChangeStoryPage() {
         {step === 2 && (
           <div>
             <h2 className="mb-4 text-lg font-semibold text-foreground">Connect AITM Project</h2>
-            <div className="mb-4">
-              <label className="mb-1 block text-xs font-medium text-foreground-secondary">AITM API Key</label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder="Enter your AITM API key..."
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    setApiKeyValid(null);
-                  }}
-                  className="flex-1 rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-foreground-secondary focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+            {apiKeyValid === true ? (
+              <div className="mb-4 flex items-center justify-between rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-green-500">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  AITM connected securely
+                </div>
                 <button
-                  onClick={handleValidateKey}
-                  disabled={!apiKey.trim() || validatingKey}
-                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary-hover disabled:opacity-50"
+                  onClick={async () => {
+                    await disconnectAitm();
+                    setApiKeyValid(null);
+                    setProjects([]);
+                    setSelectedProject(null);
+                  }}
+                  className="text-xs font-medium text-foreground-secondary hover:text-foreground"
                 >
-                  {validatingKey ? 'Checking...' : 'Validate'}
+                  Disconnect
                 </button>
               </div>
-              {apiKeyValid === true && (
-                <p className="mt-1 text-xs text-green-500">API key is valid</p>
-              )}
-              {apiKeyValid === false && (
-                <p className="mt-1 text-xs text-red-500">Invalid API key. Please check and try again.</p>
-              )}
-            </div>
+            ) : (
+              <div className="mb-4">
+                <label className="mb-1 block text-xs font-medium text-foreground-secondary">AITM API Key</label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="Enter your AITM API key..."
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setApiKeyValid(null);
+                    }}
+                    className="flex-1 rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-foreground-secondary focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    onClick={handleValidateKey}
+                    disabled={!apiKey.trim() || validatingKey}
+                    className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary-hover disabled:opacity-50"
+                  >
+                    {validatingKey ? 'Checking...' : 'Validate'}
+                  </button>
+                </div>
+                {apiKeyValid === false && (
+                  <p className="mt-1 text-xs text-red-500">Invalid API key. Please check and try again.</p>
+                )}
+                <p className="mt-1.5 text-xs text-foreground-secondary">
+                  Your key is stored securely on the server and never exposed to the browser.
+                </p>
+              </div>
+            )}
 
             {projects.length > 0 && (
               <div>

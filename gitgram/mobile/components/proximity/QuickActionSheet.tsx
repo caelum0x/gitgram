@@ -49,7 +49,8 @@ export interface QuickAction {
 /**
  * Default create actions for the mobile Create tab. Every route resolves to a
  * real screen: the post composer is the shared modal at /(modals)/create-post,
- * snippets/stories/reels use their dedicated create screens.
+ * snippets/stories use their dedicated create screens, and reels use the full
+ * editor at /create/reel (trim/effects/music).
  */
 export const DEFAULT_QUICK_ACTIONS: ReadonlyArray<QuickAction> = [
   {
@@ -82,10 +83,10 @@ export const DEFAULT_QUICK_ACTIONS: ReadonlyArray<QuickAction> = [
   },
   {
     id: 'reel',
-    icon: '🔴',
-    label: 'Go Live (Reel)',
-    subtitle: 'Record a short video reel',
-    route: '/reels/create',
+    icon: '🎬',
+    label: 'Create a Reel',
+    subtitle: 'Record or upload a short video with effects & music',
+    route: '/create/reel',
   },
 ];
 

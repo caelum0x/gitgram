@@ -38,7 +38,8 @@ interface Session {
   projectPath: string;
   projectName: string;
   filesChanged: number;
-  sizeBytes: number;
+  /** Real byte size, or null when the backend does not track it. */
+  sizeBytes: number | null;
 }
 
 interface RestoreProgress {
@@ -50,7 +51,8 @@ interface RestoreProgress {
 
 // ---- Helpers -------------------------------------------------------------
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return 'Size unavailable';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

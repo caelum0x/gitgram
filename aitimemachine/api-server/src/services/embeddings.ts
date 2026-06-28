@@ -19,6 +19,50 @@ const EMBEDDING_DIMENSIONS = {
 
 type EmbeddingProvider = keyof typeof EMBEDDING_DIMENSIONS;
 
+// Common English stop words excluded from the local embedding so similarity is
+// driven by content words, not filler. Kept small and stable on purpose.
+const STOP_WORDS = new Set<string>([
+  "the", "and", "for", "are", "was", "with", "this", "that", "from", "have",
+  "has", "had", "not", "but", "you", "your", "all", "any", "can", "will",
+  "would", "should", "could", "there", "their", "they", "them", "then",
+  "than", "into", "out", "over", "under", "between", "about", "what", "when",
+  "where", "which", "who", "how", "why", "its", "it's", "our", "his", "her",
+]);
+
+/**
+ * Light Porter-ish stemmer: strips a few common English suffixes so that
+ * "running"/"runs"/"run" collide. Deliberately conservative — over-stemming
+ * hurts precision more than it helps recall for short technical text.
+ */
+function simpleStem(word: string): string {
+  if (word.length <= 4) return word;
+  for (const suffix of ["ingly", "edly", "ing", "ed", "ly", "es", "s"]) {
+    if (word.endsWith(suffix) && word.length - suffix.length >= 3) {
+      return word.slice(0, word.length - suffix.length);
+    }
+  }
+  return word;
+}
+
+/**
+ * Deterministically distribute a feature's weight across a few embedding
+ * dimensions using a signed hashing trick (the standard "hashing vectorizer"
+ * approach). Spreading over multiple buckets reduces collision noise.
+ */
+function hashIntoBuckets(
+  feature: string,
+  weight: number,
+  embedding: number[],
+  dimensions: number
+): void {
+  const hash = crypto.createHash("sha256").update(feature).digest();
+  for (let i = 0; i < 3; i++) {
+    const position = hash.readUInt16BE(i * 2) % dimensions;
+    const sign = hash[8 + i] % 2 === 0 ? 1 : -1;
+    embedding[position] += weight * sign;
+  }
+}
+
 export interface EmbeddingResult {
   embedding: number[];
   model: string;
@@ -352,54 +396,63 @@ export class EmbeddingService {
   }
 
   /**
-   * Local TF-IDF based embedding (fallback when no API key)
-   * Uses a deterministic hash-based approach for consistent embeddings
+   * Local embedding (offline fallback when no embedding-provider API key is set).
+   *
+   * IMPORTANT: this is a lexical, hashing-vectorizer-style embedding, not a
+   * neural semantic model. It captures real lexical overlap signal — shared
+   * words, word stems, word bigrams, and character trigrams all map to stable
+   * feature buckets weighted by sublinear term frequency — so two texts that
+   * use the same vocabulary score as similar. It does NOT capture synonymy or
+   * paraphrase ("car" vs "automobile" are unrelated here). For production-grade
+   * semantic ranking, configure OPENAI_API_KEY or VOYAGE_API_KEY (see
+   * isUsingRealProvider()). The local model exists so that semantic-search code
+   * paths return deterministic, lexically-meaningful results out of the box
+   * rather than failing or returning random relevance.
    */
   private generateLocalEmbedding(text: string): number[] {
     const dimensions = EMBEDDING_DIMENSIONS.local;
     const embedding = new Array(dimensions).fill(0);
 
-    // Tokenize text
     const tokens = text
       .toLowerCase()
       .replace(/[^\w\s]/g, " ")
       .split(/\s+/)
-      .filter((t) => t.length > 1);
+      .filter((t) => t.length > 1 && !STOP_WORDS.has(t));
 
     if (tokens.length === 0) {
       return embedding;
     }
 
-    // Build term frequency
+    // Term frequency over (lightly stemmed) words.
     const termFreq: Record<string, number> = {};
     for (const token of tokens) {
-      termFreq[token] = (termFreq[token] || 0) + 1;
+      const stem = simpleStem(token);
+      termFreq[stem] = (termFreq[stem] || 0) + 1;
     }
 
-    // Generate embedding using hash-based feature mapping
+    // Unigram features: every shared word contributes to the same buckets in
+    // any document that contains it, so cosine similarity reflects real overlap.
+    const totalTerms = tokens.length;
     for (const [term, freq] of Object.entries(termFreq)) {
-      // Use SHA-256 hash to deterministically map term to dimensions
-      const hash = crypto.createHash("sha256").update(term).digest();
-
-      // Use multiple positions from hash for feature distribution
-      for (let i = 0; i < 4; i++) {
-        const position = hash.readUInt16BE(i * 2) % dimensions;
-        const sign = hash[8 + i] % 2 === 0 ? 1 : -1;
-        const weight = Math.log(1 + freq) * sign;
-        embedding[position] += weight;
-      }
+      const tf = Math.log(1 + freq) / Math.log(1 + totalTerms);
+      hashIntoBuckets(`w:${term}`, tf, embedding, dimensions);
     }
 
-    // Add character n-gram features
-    const text2 = text.toLowerCase();
-    for (let i = 0; i < text2.length - 2; i++) {
-      const ngram = text2.slice(i, i + 3);
-      const hash = crypto.createHash("md5").update(ngram).digest();
-      const position = hash.readUInt16BE(0) % dimensions;
-      embedding[position] += 0.1;
+    // Word-bigram features capture local ordering / phrasing.
+    const stems = tokens.map(simpleStem);
+    for (let i = 0; i < stems.length - 1; i++) {
+      hashIntoBuckets(`b:${stems[i]}_${stems[i + 1]}`, 0.5, embedding, dimensions);
     }
 
-    // Normalize to unit vector
+    // Character-trigram features add subword robustness (typos, morphology).
+    const joined = stems.join(" ");
+    for (let i = 0; i < joined.length - 2; i++) {
+      const ngram = joined.slice(i, i + 3);
+      if (ngram.includes(" ")) continue;
+      hashIntoBuckets(`c:${ngram}`, 0.15, embedding, dimensions);
+    }
+
+    // Normalize to unit vector so cosine similarity is well-behaved.
     const norm = Math.sqrt(embedding.reduce((sum, x) => sum + x * x, 0));
     if (norm > 0) {
       for (let i = 0; i < dimensions; i++) {
@@ -408,6 +461,15 @@ export class EmbeddingService {
     }
 
     return embedding;
+  }
+
+  /**
+   * Whether semantic ranking is backed by a real embedding API (OpenAI/Voyage)
+   * rather than the lexical local fallback. Surfaced in /health/providers so a
+   * deployment can tell at a glance whether semantic search is production-grade.
+   */
+  isUsingRealProvider(): boolean {
+    return this.provider !== "local";
   }
 
   // ============================================

@@ -109,6 +109,9 @@ const checkpointSchema = z.object({
   manifestHash: z.string(),
   rootTreeHash: z.string().optional(), // Pre-computed tree hash from client
   triggerType: z.string().optional(),
+  // Structured test/build status for reliable "last-green" detection.
+  testsPassed: z.boolean().optional(),
+  testStatus: z.enum(["passed", "failed", "unknown", "skipped"]).optional(),
   linkedCheckpointId: z.string().optional(),
   createdAt: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -124,6 +127,33 @@ const checkpointSchema = z.object({
     )
     .optional(),
 });
+
+type CheckpointInput = z.infer<typeof checkpointSchema>;
+
+/**
+ * Derive the structured test-status columns from the checkpoint payload.
+ * Keeps `testsPassed` (boolean signal used by last-green detection) and
+ * `testStatus` (richer label) mutually consistent. Returns undefined fields
+ * when nothing was reported so the columns stay null (= unknown).
+ */
+function resolveTestStatus(data: CheckpointInput): {
+  testsPassed: boolean | null;
+  testStatus: string | null;
+} {
+  if (typeof data.testsPassed === "boolean") {
+    return {
+      testsPassed: data.testsPassed,
+      testStatus: data.testStatus ?? (data.testsPassed ? "passed" : "failed"),
+    };
+  }
+  if (data.testStatus === "passed") {
+    return { testsPassed: true, testStatus: "passed" };
+  }
+  if (data.testStatus === "failed") {
+    return { testsPassed: false, testStatus: "failed" };
+  }
+  return { testsPassed: null, testStatus: data.testStatus ?? null };
+}
 
 router.post("/checkpoints", async (req: AuthenticatedRequest, res) => {
   try {
@@ -197,6 +227,7 @@ router.post("/checkpoints", async (req: AuthenticatedRequest, res) => {
         manifestHash: data.manifestHash,
         rootTreeHash,
         triggerType: data.triggerType,
+        ...resolveTestStatus(data),
         linkedCheckpointId: data.linkedCheckpointId,
         createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
         metadata: data.metadata,
@@ -316,6 +347,7 @@ router.post("/checkpoints/batch", async (req: AuthenticatedRequest, res) => {
             manifestHash: data.manifestHash,
             rootTreeHash,
             triggerType: data.triggerType,
+            ...resolveTestStatus(data),
             linkedCheckpointId: data.linkedCheckpointId,
             createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
             metadata: data.metadata,

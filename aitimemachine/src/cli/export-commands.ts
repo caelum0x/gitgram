@@ -138,16 +138,14 @@ function resolveOutputDir(outputPath: string | undefined, defaultDir: string): s
 
 export function registerExportCommands(program: Command): void {
 
-  // A top-level `export` command may already be registered elsewhere (e.g. the
-  // portable `export <file>` backup command in config-commands). Commander does
-  // not allow two commands with the same name, so reuse the existing one and
-  // attach the format subcommands to it instead of creating a duplicate.
-  const existing = program.commands.find((c) => c.name() === 'export');
-  const exportCmd =
-    existing ??
-    program
-      .command('export')
-      .description('Export session data in various formats');
+  // `export` is owned exclusively by this module: it is a command group whose
+  // subcommands are the output formats (json|markdown|csv|report|git-history).
+  // The portable whole-store dump lives under the distinct `export-all` verb in
+  // config-commands, so there is no name collision and no order-dependent
+  // shadowing here.
+  const exportCmd = program
+    .command('export')
+    .description('Export session data in various formats (json|markdown|csv|report|git-history)');
 
   // ── json ──────────────────────────────────────────────────────────────────
 

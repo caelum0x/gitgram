@@ -279,9 +279,13 @@ export default function FeedPage() {
   const loadFeed = async () => {
     setLoading(true)
     try {
-      const data = (await postService.getFeed()) as FeedApiResponse | unknown[]
+      // Use the cursor-based endpoint for the first page too, so infinite
+      // scroll continues consistently past page one regardless of whether the
+      // page-based response happens to include a cursor.
+      const data = (await postService.getFeedCursor()) as FeedApiResponse | unknown[]
       const nextCursor = Array.isArray(data) ? null : data.nextCursor ?? null
-      setPosts(extractPosts(data).map(normalizePost))
+      const loaded = extractPosts(data).map(normalizePost)
+      setPosts(loaded)
       setCursor(nextCursor)
       setHasMore(!!nextCursor)
     } catch (error: unknown) {

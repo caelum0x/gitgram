@@ -36,6 +36,10 @@ interface TimelineResponse {
  * A "session" entry. The restore wizard reads name/description/sizeBytes; the
  * time-travel page reads projectName/projectPath. We populate both field sets
  * so a single response satisfies every consumer.
+ *
+ * `sizeBytes` is `null` when no real per-checkpoint byte size is available from
+ * the backend. We deliberately do NOT fabricate or estimate a size here — the
+ * restore wizard renders "Size unavailable" instead of a misleading figure.
  */
 interface SessionDto {
   id: string;
@@ -45,13 +49,7 @@ interface SessionDto {
   projectPath: string;
   createdAt: string;
   filesChanged: number;
-  sizeBytes: number;
-}
-
-function estimateBytes(fileCount: number): number {
-  // No byte-size column exists per checkpoint; provide a stable, honest
-  // estimate (4 KB per changed file) rather than fabricating exact figures.
-  return fileCount * 4096;
+  sizeBytes: number | null;
 }
 
 async function listProjectsAsSessions(
@@ -76,7 +74,9 @@ async function listProjectsAsSessions(
     projectPath: p.rootPath ?? '',
     createdAt: p.createdAt ?? new Date().toISOString(),
     filesChanged: p.checkpointCount,
-    sizeBytes: 0,
+    // Project-level total byte size is not tracked; report it as unknown
+    // rather than zero (which reads as an empty project).
+    sizeBytes: null,
   }));
   return NextResponse.json({ sessions, total: sessions.length, success: true });
 }
@@ -118,6 +118,10 @@ async function listCheckpointsAsSessions(
     .filter((e) => e.checkpointId)
     .map((e) => {
       const fileCount = e.fileCount ?? 0;
+      // The backend persists real per-file byte sizes (checkpoint_files.size)
+      // but does not yet expose an aggregate per checkpoint through the
+      // internal timeline. Until it does, report size as unknown (null) instead
+      // of a fabricated estimate.
       return {
         id: e.checkpointId as string,
         name: e.description || 'Checkpoint',
@@ -126,7 +130,7 @@ async function listCheckpointsAsSessions(
         projectPath: project.rootPath ?? '',
         createdAt: e.timestamp,
         filesChanged: fileCount,
-        sizeBytes: estimateBytes(fileCount),
+        sizeBytes: null,
       };
     });
 

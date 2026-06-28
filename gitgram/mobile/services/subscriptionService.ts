@@ -1,6 +1,25 @@
 import api from './api';
 
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: string;
+  interval: string;
+  available: boolean;
+  features: string[];
+}
+
+export interface PlansResponse {
+  plans: SubscriptionPlan[];
+  currentPlan: string;
+}
+
 export const subscriptionService = {
+  getPlans: async (): Promise<PlansResponse> => {
+    const { data } = await api.get<PlansResponse>('/subscriptions/plans');
+    return data;
+  },
+
   getSubscription: async (_subscriptionId?: string) => {
     const { data } = await api.get('/subscriptions');
     return data;

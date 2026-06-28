@@ -7,14 +7,105 @@ import { userService } from '@/services/userService'
 import api from '@/services/api'
 import { useToast } from '@/components/ui/toast'
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface ProfileUser {
+  id: string
+  username: string
+  fullName?: string
+  bio?: string
+  avatar?: string
+  followersCount?: number
+  followingCount?: number
+  isFollowing?: boolean
+}
+
+interface ProfilePost {
+  id: string
+  mediaUrl?: string
+  likesCount?: number
+  commentsCount?: number
+}
+
+function normalizeProfile(raw: unknown): ProfileUser {
+  const r = (raw ?? {}) as Record<string, unknown>
+  return {
+    id: String(r.id ?? ''),
+    username: String(r.username ?? ''),
+    fullName: r.fullName ? String(r.fullName) : undefined,
+    bio: r.bio ? String(r.bio) : undefined,
+    avatar: (r.avatar as string) ?? (r.avatarUrl as string) ?? undefined,
+    followersCount: typeof r.followersCount === 'number' ? r.followersCount : 0,
+    followingCount: typeof r.followingCount === 'number' ? r.followingCount : 0,
+    isFollowing: Boolean(r.isFollowing),
+  }
+}
+
+function normalizeProfilePost(raw: unknown): ProfilePost {
+  const r = (raw ?? {}) as Record<string, unknown>
+  const count = (r._count ?? {}) as Record<string, unknown>
+  return {
+    id: String(r.id ?? ''),
+    mediaUrl: (r.mediaUrl as string) ?? undefined,
+    likesCount:
+      typeof r.likesCount === 'number'
+        ? r.likesCount
+        : typeof count.likes === 'number'
+          ? count.likes
+          : 0,
+    commentsCount:
+      typeof r.commentsCount === 'number'
+        ? r.commentsCount
+        : typeof count.comments === 'number'
+          ? count.comments
+          : 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Loading skeleton
+// ---------------------------------------------------------------------------
+
+function ProfileSkeleton() {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-4xl mx-auto py-8 px-4 animate-pulse">
+        <div className="flex items-start gap-8 mb-8">
+          <div className="w-32 h-32 rounded-full bg-muted" />
+          <div className="flex-1 space-y-4 pt-2">
+            <div className="h-7 w-48 rounded bg-muted" />
+            <div className="flex gap-8">
+              <div className="h-4 w-16 rounded bg-muted" />
+              <div className="h-4 w-20 rounded bg-muted" />
+              <div className="h-4 w-20 rounded bg-muted" />
+            </div>
+            <div className="h-4 w-40 rounded bg-muted" />
+            <div className="h-3 w-64 rounded bg-muted" />
+          </div>
+        </div>
+        <div className="border-t border-border pt-8">
+          <div className="grid grid-cols-3 gap-1">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="aspect-square bg-muted rounded" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const params = useParams()
   const { isAuthenticated, user: currentUser } = useAuthStore()
   const { showToast } = useToast()
-  const [user, setUser] = useState<any>(null)
-  const [posts, setPosts] = useState<any[]>([])
+  const [user, setUser] = useState<ProfileUser | null>(null)
+  const [posts, setPosts] = useState<ProfilePost[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [uploading, setUploading] = useState(false)
 
   const username = params.username as string
@@ -26,19 +117,24 @@ export default function ProfilePage() {
       return
     }
     loadProfile()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, username])
 
   const loadProfile = async () => {
+    setLoading(true)
+    setError(false)
     try {
       const userData = await userService.getProfile(username)
-      setUser(userData)
+      setUser(normalizeProfile(userData))
       try {
         const { data } = await api.get(`/accounts/${username}/posts`)
-        setPosts(data.posts || data || [])
+        const rawPosts: unknown[] = Array.isArray(data) ? data : data.posts ?? []
+        setPosts(rawPosts.map(normalizeProfilePost))
       } catch {
         setPosts([])
       }
-    } catch (error: unknown) {
+    } catch {
+      setError(true)
       showToast('Failed to load profile', 'error')
     } finally {
       setLoading(false)
@@ -46,38 +142,63 @@ export default function ProfilePage() {
   }
 
   const handleFollow = async () => {
+    if (!user) return
     try {
       if (user.isFollowing) {
         await userService.unfollow(user.id)
-        setUser({ ...user, isFollowing: false, followersCount: user.followersCount - 1 })
+        setUser({ ...user, isFollowing: false, followersCount: (user.followersCount ?? 0) - 1 })
       } else {
         await userService.follow(user.id)
-        setUser({ ...user, isFollowing: true, followersCount: user.followersCount + 1 })
+        setUser({ ...user, isFollowing: true, followersCount: (user.followersCount ?? 0) + 1 })
       }
-    } catch (error) {
+    } catch {
       showToast('Failed to update follow status', 'error')
     }
   }
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || !user) return
 
     setUploading(true)
     try {
       const formData = new FormData()
       formData.append('avatar', file)
-      const updated = await userService.uploadAvatar(formData)
-      setUser({ ...user, avatar: updated.avatar })
+      const updated = (await userService.uploadAvatar(formData)) as { avatar?: string; avatarUrl?: string }
+      setUser({ ...user, avatar: updated.avatar ?? updated.avatarUrl ?? user.avatar })
       showToast('Avatar updated!', 'success')
-    } catch (error) {
+    } catch {
       showToast('Failed to upload avatar', 'error')
     } finally {
       setUploading(false)
     }
   }
 
-  if (!isAuthenticated || loading) return null
+  if (!isAuthenticated) return null
+
+  if (loading) return <ProfileSkeleton />
+
+  if (error || !user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold">Profile unavailable</h2>
+          <p className="text-sm text-muted">We couldn&apos;t load @{username}. Please try again.</p>
+          <button
+            onClick={loadProfile}
+            className="px-6 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">

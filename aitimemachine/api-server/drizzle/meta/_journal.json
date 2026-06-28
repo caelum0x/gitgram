@@ -43,6 +43,20 @@
       "when": 1771180180000,
       "tag": "0006_add_user_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771180240000,
+      "tag": "0007_add_a2a_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1771180300000,
+      "tag": "0008_add_checkpoint_test_status",
+      "breakpoints": true
     }
   ]
 }

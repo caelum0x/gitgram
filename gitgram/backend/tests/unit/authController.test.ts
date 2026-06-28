@@ -239,8 +239,11 @@ describe('POST /api/v1/auth/logout — logout', () => {
     const refreshToken = makeRefreshToken(user.id);
     seedSession(user.id, refreshToken);
 
+    // The logout route is protected by the authenticate middleware, so an
+    // access token must be supplied alongside the refresh token in the body.
     const res = await request(app)
       .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${makeToken(user.id)}`)
       .send({ refreshToken });
 
     expect(res.status).toBe(200);
@@ -250,8 +253,11 @@ describe('POST /api/v1/auth/logout — logout', () => {
   });
 
   it('succeeds even without a refresh token body', async () => {
+    const user = await seedUserWithPassword({ email: 'logout2@example.com', username: 'logoutuser2' });
+
     const res = await request(app)
       .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${makeToken(user.id)}`)
       .send({});
 
     expect(res.status).toBe(200);

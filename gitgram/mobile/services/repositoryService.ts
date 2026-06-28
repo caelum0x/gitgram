@@ -44,8 +44,10 @@ export const repositoryService = {
     return response.data;
   },
 
-  getComments: async (owner: string, name: string) => {
-    const response = await api.get(`/repositories/${owner}/${name}/comments`);
+  getComments: async (owner: string, name: string, page = 1, limit = 20) => {
+    const response = await api.get(`/repositories/${owner}/${name}/comments`, {
+      params: { page, limit },
+    });
     return response.data;
   },
 

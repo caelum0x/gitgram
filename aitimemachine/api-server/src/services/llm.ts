@@ -202,16 +202,19 @@ export class LLMService {
   }
 
   /**
-   * Fallback when no LLM provider is available
+   * Fallback when no LLM provider is available.
+   *
+   * Returns a clean, user-safe message — it intentionally does NOT echo the raw
+   * prompt back (that would leak internal prompt scaffolding to end users).
+   * Callers that surface completions directly to users MUST guard on
+   * isAvailable() first and use deterministic heuristics when it returns false;
+   * this string is the last-resort safeguard for callers that don't.
    */
-  private completeFallback(messages: LLMMessage[]): Promise<LLMCompletionResult> {
-    const userMessage = messages.filter((m) => m.role === "user").pop();
-    const content = userMessage
-      ? `No LLM provider available. Raw input: ${userMessage.content.slice(0, 500)}`
-      : "No LLM provider configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
-
+  private completeFallback(_messages: LLMMessage[]): Promise<LLMCompletionResult> {
     return Promise.resolve({
-      content,
+      content:
+        "AI features are unavailable: no LLM provider is configured. " +
+        "Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable them.",
       model: "none",
       provider: "none",
     });

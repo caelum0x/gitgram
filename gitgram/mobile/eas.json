@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:3001/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "http://localhost:3001"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging-api.gitgram.app/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "https://staging-api.gitgram.app",
+        "EXPO_PUBLIC_GITHUB_CLIENT_ID": "$EXPO_PUBLIC_GITHUB_CLIENT_ID"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.gitgram.app/api/v1",
+        "EXPO_PUBLIC_SOCKET_URL": "https://api.gitgram.app",
+        "EXPO_PUBLIC_GITHUB_CLIENT_ID": "$EXPO_PUBLIC_GITHUB_CLIENT_ID"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

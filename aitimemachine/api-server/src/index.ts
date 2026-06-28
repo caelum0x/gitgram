@@ -51,6 +51,7 @@ import teamsRoutes from "./routes/teams.js";
 import { errorHandler, notFoundHandler, wrapErrorMessage } from "./middleware/errors.js";
 import { combinedRateLimit, rateLimits } from "./middleware/rate-limit.js";
 import { requestLogger, logger, logError } from "./lib/monitoring.js";
+import { logGitgramBridgeStartupStatus } from "./services/gitgramBridgeService.js";
 import { requestLogger as httpRequestLogger } from "./middleware/requestLogger.js";
 import { auditMiddleware } from "./middleware/auditMiddleware.js";
 import { versioningMiddleware } from "./middleware/versioning.js";
@@ -226,6 +227,10 @@ app.use("/v1/gitnexus", gitNexusRoutes);
 app.use("/v1/context7", context7Routes);
 app.use("/v1", sharingRoutes);
 app.use("/v1/teams", teamsRoutes);
+// Versioned internal namespace. The internal endpoints (website-internal admin/
+// pipeline/knowledge ops) are guarded by internalAuth. Exposed under /v1 as well
+// as the legacy /api/internal so clients fully migrated to /v1 can reach them.
+app.use("/v1/internal", internalRoutes);
 
 // ============================================================================
 // Legacy API Routes (backwards compatibility)
@@ -300,6 +305,9 @@ if (shouldListen) {
     });
     logger.info(`API v1 available at http://${publicHost}:${PORT}/v1`);
     logger.info(`API documentation available at http://${publicHost}:${PORT}/docs`);
+    // Surface optional-integration status so a default deploy doesn't silently
+    // run with an inert gitgram<->aitm social-sync flow.
+    logGitgramBridgeStartupStatus();
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

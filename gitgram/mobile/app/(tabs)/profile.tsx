@@ -95,11 +95,9 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
+      {/* Header — this is a root bottom-tab screen, so there is no back target. */}
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Icon name="arrow-back" size={24} color={Colors.text} />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.headerTitle}>{user.username}</Text>
         <TouchableOpacity style={styles.moreButton} onPress={() => router.push('/menu')}>
           <Icon name="menu" size={24} color={Colors.text} />
@@ -336,15 +334,9 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
     backgroundColor: Colors.background,
   },
-  backButton: {
+  headerSpacer: {
     width: 48,
     height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backIcon: {
-    fontSize: 24,
-    color: Colors.text,
   },
   headerTitle: {
     flex: 1,

@@ -35,7 +35,6 @@ import { registerExportCommands } from './cli/export-commands.js';
 import { registerMemoryCommands } from './cli/memory-commands.js';
 import { registerConflictCommands } from './cli/conflict-commands.js';
 import { registerWatchCommands } from './cli/watch-commands.js';
-import { registerGitLikeExtraCommands } from './cli/git-like-extra-commands.js';
 import { registerSessionToolCommands } from './cli/session-tool-commands.js';
 import { registerDoctorCommands } from './cli/doctor-commands.js';
 import { registerNaturalLanguageCommands } from './cli/natural-language-commands.js';
@@ -66,7 +65,7 @@ registerMcpCommands(program);            // mcp, mcp-tools, setup-mcp, daemon, d
 registerConfigCommands(program);         // init, setup-project, setup-all, status, install-hooks, sync, sync-config, sync-status, s3-*, export, import, sync-ai, config set|get|list
 registerGitEnhancedCommands(program);    // diff-advanced, merge, resolve, history (git-quality algorithms, gc removed - lives in inspect-commands)
 registerGitLikeCommands(program);        // stash, blame, reflog, history, tag, cherry-pick, show-ref, reset, clean, revert, shortlog, worktree, annotate, tags, report
-registerSessionCommands(program);        // sessions, session, restore-session, session-diff, projects, log, watch, auto-checkpoint, bisect, ai-history, cursor-*, conversation, export-session, exec, replay, compare, restore-pattern, file-diff, timeline-query, file-history
+registerSessionCommands(program);        // sessions, session, restore-session, session-diff, projects, log, ai-history, cursor-*, conversation, export-session
 registerAuthCommands(program);           // login, logout, whoami, register, api-key, audit, team-create, teams, user-create, users
 registerInspectCommands(program);        // db-state, container-state, gemini-sessions, gc, pack-info, pack-verify, repack, ai-concepts, ai-focus, timeline-interactive
 registerTimeMachineCommands(program);    // Time Machine experience (macOS-style)
@@ -79,10 +78,33 @@ registerExportCommands(program);         // export json|markdown|csv|report|git-
 registerMemoryCommands(program);         // memory list|search|show|tasks|remember|stats (unified memory layer)
 registerConflictCommands(program);       // conflicts list|show|resolve|auto (sync conflict resolution)
 registerWatchCommands(program);          // watch + daemon start|stop|status (auto-checkpoint)
-registerGitLikeExtraCommands(program);   // extra git-like porcelain commands
-registerSessionToolCommands(program);    // session tool commands
+registerSessionToolCommands(program);    // exec, replay, compare, restore-pattern, file-diff, timeline-query, file-version-history, bisect, auto-checkpoint, watch-cmd
 registerDoctorCommands(program);         // doctor (environment diagnostics with --json / --fix)
 registerNaturalLanguageCommands(program);// ask, nl, find-cp, when, what-changed, back-to, back, fix, diagnose (natural-language checkpoint search + restore)
+
+// ─── Duplicate command guard ──────────────────────────────────────────────────
+// The vendored-engine merge previously relied on a `safeCommand()` helper that
+// silently turned the second registration of a shared name into a detached
+// no-op, so whichever module registered later became dead code. That mechanism
+// has been removed: every top-level command name now has exactly one owner.
+// This guard fails loudly (instead of silently shadowing) if a future change
+// reintroduces a duplicate top-level name, keeping the command surface explicit.
+function assertNoDuplicateCommands(cmd: Command): void {
+  const seen = new Map<string, number>();
+  for (const c of cmd.commands) {
+    for (const n of [c.name(), ...c.aliases()]) {
+      seen.set(n, (seen.get(n) ?? 0) + 1);
+    }
+  }
+  const dupes = [...seen.entries()].filter(([, count]) => count > 1).map(([n]) => n);
+  if (dupes.length > 0) {
+    throw new Error(
+      `Duplicate top-level command name(s): ${dupes.join(', ')}. ` +
+        `Each command/alias must have exactly one owner — pick a canonical ` +
+        `implementation and rename or remove the others.`,
+    );
+  }
+}
 
 // ─── Inline top-level commands ───────────────────────────────────────────────
 // Small commands that don't justify their own module live here.
@@ -387,5 +409,9 @@ process.on('uncaughtException', handleError);
 process.on('unhandledRejection', handleError);
 
 // ─── Parse and run ──────────────────────────────────────────────────────────
+
+// Fail loudly on any duplicate top-level command/alias name (including the
+// inline commands above) instead of silently shadowing a later registration.
+assertNoDuplicateCommands(program);
 
 program.parse();

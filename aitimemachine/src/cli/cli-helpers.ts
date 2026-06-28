@@ -3,25 +3,6 @@
  */
 
 import * as readline from 'readline';
-import { Command } from 'commander';
-
-/**
- * Register a top-level command, guarding against duplicate names. Commander
- * throws if two commands share a name (or share an option flag), which crashes
- * the CLI on startup when modules overlap — a side effect of merging the
- * vendored engines. This makes registration order-independent: the first module
- * to register a given name wins. Later callers receive a detached, unattached
- * Command, so their chained `.description()/.option()/.action()` calls are
- * harmless no-ops and never clobber or conflict with the winning command.
- */
-export function safeCommand(program: Command, name: string): Command {
-  const baseName = name.split(/\s+/)[0];
-  const existing = program.commands.find((c) => c.name() === baseName);
-  if (existing) {
-    return new Command(baseName);
-  }
-  return program.command(name);
-}
 
 // ANSI color codes
 export const C = {
@@ -92,7 +73,28 @@ export function parseTime(str: string): Date {
   throw new Error(`Cannot parse time: ${str}`);
 }
 
+/** Raised when a y/N confirmation cannot be prompted in a non-interactive shell. */
+export class NonInteractiveError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NonInteractiveError';
+  }
+}
+
+/**
+ * Prompt for a y/N confirmation.
+ *
+ * In a non-interactive context (no TTY on stdin — e.g. a pipe or CI), an
+ * interactive prompt would hang forever waiting on input that never arrives.
+ * Instead we throw NonInteractiveError so the caller can print a clear message
+ * telling the user to pass --yes, rather than silently hanging or aborting.
+ */
 export async function confirm(message: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    throw new NonInteractiveError(
+      'Confirmation required but stdin is not a TTY. Re-run with --yes (-y) to proceed non-interactively.',
+    );
+  }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {
     rl.question(`${message} (y/N): `, answer => {

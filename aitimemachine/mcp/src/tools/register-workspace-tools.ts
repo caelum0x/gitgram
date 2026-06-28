@@ -4,6 +4,11 @@
  * Registers workspace context tools into the AITM MCP server.
  * These tools proxy to the AITM API server's /workspace endpoints.
  * Useful for agents that need to understand the current project structure.
+ *
+ * The AITM API server protects /workspace/* with `apiKeyAuth`, so every
+ * request must carry the AITM_API_KEY credential (X-API-Key header). The
+ * shared aitm-api-client centralises base-URL resolution, auth headers, and
+ * actionable error messages.
  */
 
 import { z } from 'zod';
@@ -13,57 +18,25 @@ import {
 } from '../lib/tool-runtime.js';
 import { readOnlyAnnotations } from '../lib/tool-annotations.js';
 import { jsonResponse } from '../lib/tool-responses.js';
+import { aitmApiRequest } from '../lib/aitm-api-client.js';
 
-const AITM_API_URL =
-  (typeof process !== 'undefined' && process.env.AITM_API_URL) ||
-  'http://localhost:3001';
+const LABEL = 'Workspace API';
 
-/**
- * Turn a low-level fetch failure (connection refused / DNS / network) into an
- * actionable message. Workspace tools are pure HTTP proxies to the AITM API
- * server, so when it isn't running the raw `TypeError: fetch failed` is opaque
- * to the MCP client. We surface the configured URL and how to start the server.
- */
-function apiUnreachableError(endpoint: string, cause: unknown): Error {
-  const reason = cause instanceof Error ? cause.message : String(cause);
-  return new Error(
-    `Could not reach the AITM API server at ${AITM_API_URL} (workspace${endpoint}): ${reason}. ` +
-      'Workspace tools proxy to a separately-running AITM API server. ' +
-      'Start it (e.g. `npm run start` in aitimemachine/api-server) and/or set AITM_API_URL to its base URL.'
-  );
-}
-
-async function workspaceGet(endpoint: string): Promise<ReturnType<typeof jsonResponse>> {
-  let res: Response;
-  try {
-    res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (err: unknown) {
-    throw apiUnreachableError(endpoint, err);
-  }
-  if (!res.ok) {
-    throw new Error(`Workspace API error: ${res.status} ${res.statusText}`);
-  }
-  const data = await res.json();
+async function workspaceGet(
+  endpoint: string
+): Promise<ReturnType<typeof jsonResponse>> {
+  const data = await aitmApiRequest(LABEL, `/workspace${endpoint}`);
   return jsonResponse(data);
 }
 
-async function workspacePost(endpoint: string, body: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  let res: Response;
-  try {
-    res = await fetch(`${AITM_API_URL}/workspace${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (err: unknown) {
-    throw apiUnreachableError(endpoint, err);
-  }
-  if (!res.ok) {
-    throw new Error(`Workspace API error: ${res.status} ${res.statusText}`);
-  }
-  const data = await res.json();
+async function workspacePost(
+  endpoint: string,
+  body: unknown
+): Promise<ReturnType<typeof jsonResponse>> {
+  const data = await aitmApiRequest(LABEL, `/workspace${endpoint}`, {
+    method: 'POST',
+    body,
+  });
   return jsonResponse(data);
 }
 

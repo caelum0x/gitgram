@@ -191,10 +191,16 @@ export function registerMcpCommands(program: Command): void {
   // API Server
   program
     .command('serve')
-    .description('Start API server')
-    .option('-p, --port <port>', 'Port number', '3001')
+    .description('Start API server (honors --port/PORT and --host/HOST)')
+    .option('-p, --port <port>', 'Port to listen on (also reads PORT env)')
+    .option('-h, --host <host>', 'Host/interface to bind (also reads HOST env)')
     .action(async (options) => {
-      process.env.PORT = options.port;
+      // Precedence: explicit CLI flag > existing env var > api-server default.
+      // Setting the env vars keeps a single source of truth that api-server
+      // reads, so `aitm serve -p 4000`, `PORT=4000 aitm serve`, and
+      // `PORT=4000 npm start` all behave identically.
+      if (options.port) process.env.PORT = String(options.port);
+      if (options.host) process.env.HOST = String(options.host);
       await import('../api-server.js');
     });
 

@@ -141,6 +141,71 @@ class PalEngine {
     this.cwd = join(this.venvDir, '..');
   }
 
+  /** The resolved venv directory (for diagnostics). */
+  get venvDirectory(): string {
+    return this.venvDir;
+  }
+
+  /** The resolved python interpreter path (for diagnostics). */
+  get pythonInterpreter(): string {
+    return this.pythonPath;
+  }
+
+  /**
+   * Lightweight readiness probe. Verifies the bundled venv interpreter exists
+   * and that the `server` module is importable WITHOUT spawning the long-lived
+   * stdio server. Surfaces install problems at startup instead of as an opaque
+   * 30s timeout on the first tool call.
+   */
+  async probeReadiness(): Promise<{ ready: boolean; detail: string }> {
+    if (!existsSync(this.pythonPath)) {
+      return {
+        ready: false,
+        detail:
+          `PAL Python interpreter not found at ${this.pythonPath}. ` +
+          `Provision the bundled venv at ${this.venvDir} (create it and ` +
+          'install the pal-mcp-server package), or set PAL_VENV_DIR / PAL_PYTHON.',
+      };
+    }
+
+    const { spawn } = await import('node:child_process');
+    return new Promise((resolve) => {
+      const child = spawn(
+        this.pythonPath,
+        ['-c', 'import importlib.util,sys; sys.exit(0 if importlib.util.find_spec("server") else 3)'],
+        { cwd: this.cwd, stdio: 'ignore' }
+      );
+      const probeTimer = setTimeout(() => {
+        child.kill();
+        resolve({
+          ready: false,
+          detail: `PAL readiness probe timed out (cwd: ${this.cwd}).`,
+        });
+      }, 5_000);
+      child.on('error', (err) => {
+        clearTimeout(probeTimer);
+        resolve({
+          ready: false,
+          detail: `PAL readiness probe failed to run: ${getErrorMessage(err)}`,
+        });
+      });
+      child.on('exit', (code) => {
+        clearTimeout(probeTimer);
+        if (code === 0) {
+          resolve({ ready: true, detail: 'PAL engine is importable.' });
+        } else {
+          resolve({
+            ready: false,
+            detail:
+              `The "server" module is not importable in ${this.venvDir} ` +
+              '(pal-mcp-server is not installed in the venv). ' +
+              'Install it before using pal_* tools.',
+          });
+        }
+      });
+    });
+  }
+
   private get command(): string {
     return this.pythonPath;
   }
@@ -232,6 +297,18 @@ class PalEngine {
 }
 
 const palEngine = new PalEngine();
+
+/**
+ * Run a non-blocking readiness probe of the bundled PAL venv. Intended to be
+ * called once at startup when PAL tools are enabled so misconfiguration shows
+ * up immediately as actionable guidance rather than a first-call timeout.
+ */
+export async function probePalReadiness(): Promise<{
+  ready: boolean;
+  detail: string;
+}> {
+  return palEngine.probeReadiness();
+}
 
 // ---------------------------------------------------------------------------
 // callPal — proxy a tool call through the PAL subprocess engine

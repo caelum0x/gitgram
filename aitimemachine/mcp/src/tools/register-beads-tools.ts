@@ -5,6 +5,11 @@
  * These tools proxy to the AITM API server's /beads endpoints.
  * Beads is a directed acyclic graph (DAG) task tracker that models
  * task dependencies and execution order.
+ *
+ * The AITM API server protects /beads/* with `apiKeyAuth`, so every request
+ * must carry the AITM_API_KEY credential (X-API-Key header). The shared
+ * aitm-api-client centralises base-URL resolution, auth headers, and
+ * actionable error messages.
  */
 
 import { z } from 'zod';
@@ -14,75 +19,36 @@ import {
 } from '../lib/tool-runtime.js';
 import { readOnlyAnnotations, mutatingAnnotations, idempotentMutationAnnotations } from '../lib/tool-annotations.js';
 import { jsonResponse } from '../lib/tool-responses.js';
+import { aitmApiRequest } from '../lib/aitm-api-client.js';
 
-const AITM_API_URL =
-  (typeof process !== 'undefined' && process.env.AITM_API_URL) ||
-  'http://localhost:3001';
+const LABEL = 'Beads API';
 
-/**
- * Turn a low-level fetch failure into an actionable message. Beads tools are
- * pure HTTP proxies to the AITM API server; when it isn't running the raw
- * `TypeError: fetch failed` is opaque to the MCP client, so we surface the
- * configured URL and how to start the server.
- */
-function apiUnreachableError(endpoint: string, cause: unknown): Error {
-  const reason = cause instanceof Error ? cause.message : String(cause);
-  return new Error(
-    `Could not reach the AITM API server at ${AITM_API_URL} (beads${endpoint}): ${reason}. ` +
-      'Beads tools proxy to a separately-running AITM API server. ' +
-      'Start it (e.g. `npm run start` in aitimemachine/api-server) and/or set AITM_API_URL to its base URL.'
-  );
-}
-
-async function beadsGet(endpoint: string): Promise<ReturnType<typeof jsonResponse>> {
-  let res: Response;
-  try {
-    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (err: unknown) {
-    throw apiUnreachableError(endpoint, err);
-  }
-  if (!res.ok) {
-    throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
-  }
-  const data = await res.json();
+async function beadsGet(
+  endpoint: string
+): Promise<ReturnType<typeof jsonResponse>> {
+  const data = await aitmApiRequest(LABEL, `/beads${endpoint}`);
   return jsonResponse(data);
 }
 
-async function beadsPost(endpoint: string, body: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  let res: Response;
-  try {
-    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (err: unknown) {
-    throw apiUnreachableError(endpoint, err);
-  }
-  if (!res.ok) {
-    throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
-  }
-  const data = await res.json();
+async function beadsPost(
+  endpoint: string,
+  body: unknown
+): Promise<ReturnType<typeof jsonResponse>> {
+  const data = await aitmApiRequest(LABEL, `/beads${endpoint}`, {
+    method: 'POST',
+    body,
+  });
   return jsonResponse(data);
 }
 
-async function beadsPatch(endpoint: string, body?: unknown): Promise<ReturnType<typeof jsonResponse>> {
-  let res: Response;
-  try {
-    res = await fetch(`${AITM_API_URL}/beads${endpoint}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch (err: unknown) {
-    throw apiUnreachableError(endpoint, err);
-  }
-  if (!res.ok) {
-    throw new Error(`Beads API error: ${res.status} ${res.statusText}`);
-  }
-  const data = await res.json();
+async function beadsPatch(
+  endpoint: string,
+  body?: unknown
+): Promise<ReturnType<typeof jsonResponse>> {
+  const data = await aitmApiRequest(LABEL, `/beads${endpoint}`, {
+    method: 'PATCH',
+    body,
+  });
   return jsonResponse(data);
 }
 

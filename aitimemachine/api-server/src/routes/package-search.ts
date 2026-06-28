@@ -6,10 +6,86 @@ import {
   readPypiFile,
   readPypiSourceFiles,
 } from "../services/pypiArchive.js";
+import { getEmbeddingService } from "../services/embeddings.js";
+import { readCratesSourceFiles } from "../services/cratesArchive.js";
 
 const router = Router();
 
 router.use(apiKeyAuth);
+
+// ============================================================================
+// Semantic ranking
+// ============================================================================
+
+interface SemanticCandidate {
+  file: string;
+  symbol?: string;
+  symbol_type?: string;
+  line: number;
+  content: string;
+  score: number;
+}
+
+/**
+ * Re-rank keyword candidates with real semantic similarity from the embeddings
+ * service. Each candidate's "symbol + code context" is embedded and compared to
+ * the query embedding via cosine similarity; the final score blends the lexical
+ * keyword score with the semantic similarity so results reflect meaning, not
+ * just substring overlap. Falls back to the keyword score if embeddings fail.
+ *
+ * Ranking quality depends on the configured embedding provider — with
+ * OPENAI_API_KEY / VOYAGE_API_KEY this is true neural semantic ranking; with
+ * the local fallback it is lexical-semantic (see embeddings.ts). Either way the
+ * endpoint returns meaning-aware ordering rather than substring filtering.
+ */
+async function semanticRerank(
+  query: string,
+  candidates: SemanticCandidate[],
+  maxResults: number
+): Promise<{ results: SemanticCandidate[]; semanticProvider: string }> {
+  const embeddings = getEmbeddingService();
+  const provider = embeddings.getProviderInfo().provider;
+
+  if (candidates.length === 0) {
+    return { results: [], semanticProvider: provider };
+  }
+
+  try {
+    const queryEmbedding = (await embeddings.generateEmbedding(query)).embedding;
+
+    // Embed candidate texts in one batch for efficiency.
+    const candidateTexts = candidates.map((c) =>
+      `${c.symbol ?? ""} ${c.symbol_type ?? ""}\n${c.content}`.trim()
+    );
+    const { embeddings: candidateEmbeddings } =
+      await embeddings.generateBatchEmbeddings(candidateTexts);
+
+    // Normalize keyword scores to [0,1] so the blend is balanced.
+    const maxKeyword = Math.max(...candidates.map((c) => c.score), 1);
+
+    const ranked = candidates
+      .map((c, i) => {
+        const similarity = embeddings.cosineSimilarity(
+          queryEmbedding,
+          candidateEmbeddings[i]
+        );
+        const keywordNorm = c.score / maxKeyword;
+        // 60% semantic, 40% keyword — semantic leads, keyword breaks ties.
+        const blended = 0.6 * similarity + 0.4 * keywordNorm;
+        return { ...c, score: Number(blended.toFixed(4)) };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+
+    return { results: ranked, semanticProvider: provider };
+  } catch {
+    // Embeddings unavailable — fall back to keyword ordering.
+    const fallback = [...candidates]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+    return { results: fallback, semanticProvider: "keyword-fallback" };
+  }
+}
 
 // ============================================================================
 // Registry API helpers
@@ -609,6 +685,57 @@ router.post(
         total: results.length,
         files_searched: files.length,
       });
+    } else if (reg === "crates") {
+      if (pattern.length > 200) {
+        throw Errors.invalidParameter("pattern", "Pattern too long (max 200 chars)");
+      }
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern, "gm");
+      } catch {
+        throw Errors.invalidParameter("pattern", "Invalid regex pattern");
+      }
+
+      const { version: resolvedVersion, files } = await readCratesSourceFiles(
+        package_name,
+        version,
+        20
+      );
+
+      const results: Array<{
+        file: string;
+        line: number;
+        content: string;
+        match: string;
+      }> = [];
+
+      for (const file of files) {
+        if (results.length >= max_results) break;
+        const lines = file.content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (results.length >= max_results) break;
+          regex.lastIndex = 0;
+          const match = regex.exec(lines[i]);
+          if (match) {
+            results.push({
+              file: file.path,
+              line: i + 1,
+              content: lines[i].trim().slice(0, 200),
+              match: match[0],
+            });
+          }
+        }
+      }
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        pattern,
+        results,
+        total: results.length,
+        files_searched: files.length,
+      });
     } else {
       res.json({
         registry: reg,
@@ -617,7 +744,7 @@ router.post(
         pattern,
         results: [],
         total: 0,
-        message: `Grep for "${reg}" is not yet supported. Supported: npm, pypi`,
+        message: `Grep for "${reg}" is not yet supported. Supported: npm, pypi, crates`,
       });
     }
   })
@@ -750,9 +877,12 @@ router.post(
         }
       }
 
-      // Sort by score and limit
-      results.sort((a, b) => b.score - a.score);
-      const limited = results.slice(0, max_results);
+      // Semantic re-ranking over the keyword candidates.
+      const { results: limited, semanticProvider } = await semanticRerank(
+        query,
+        results,
+        max_results
+      );
 
       res.json({
         registry: reg,
@@ -762,6 +892,7 @@ router.post(
         results: limited,
         total: limited.length,
         files_searched: filesToSearch.length,
+        semantic_provider: semanticProvider,
       });
     } else if (reg === "pypi") {
       const { version: resolvedVersion, files } = await readPypiSourceFiles(
@@ -829,8 +960,11 @@ router.post(
         }
       }
 
-      results.sort((a, b) => b.score - a.score);
-      const limited = results.slice(0, max_results);
+      const { results: limited, semanticProvider } = await semanticRerank(
+        query,
+        results,
+        max_results
+      );
 
       res.json({
         registry: reg,
@@ -840,6 +974,87 @@ router.post(
         results: limited,
         total: limited.length,
         files_searched: files.length,
+        semantic_provider: semanticProvider,
+      });
+    } else if (reg === "crates") {
+      const { version: resolvedVersion, files } = await readCratesSourceFiles(
+        package_name,
+        version,
+        15
+      );
+
+      const queryTerms = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t: string) => t.length > 2);
+
+      const results: SemanticCandidate[] = [];
+
+      // Rust symbol patterns.
+      const symbolPatterns: Array<{ re: RegExp; type: string }> = [
+        { re: /^\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/gm, type: "function" },
+        { re: /^\s*(?:pub\s+)?struct\s+(\w+)/gm, type: "struct" },
+        { re: /^\s*(?:pub\s+)?enum\s+(\w+)/gm, type: "enum" },
+        { re: /^\s*(?:pub\s+)?trait\s+(\w+)/gm, type: "trait" },
+        { re: /^\s*(?:pub\s+)?mod\s+(\w+)/gm, type: "module" },
+        { re: /^\s*(?:pub\s+)?(?:const|static)\s+(\w+)/gm, type: "const" },
+        { re: /^\s*(?:pub\s+)?type\s+(\w+)/gm, type: "type" },
+      ];
+
+      for (const file of files) {
+        const lines = file.content.split("\n");
+        for (const { re, type } of symbolPatterns) {
+          re.lastIndex = 0;
+          let match;
+          while ((match = re.exec(file.content)) !== null) {
+            const name = match[1];
+            if (!name) continue;
+            const nameLower = name.toLowerCase();
+            let score = 0;
+            for (const term of queryTerms) {
+              if (nameLower === term) score += 10;
+              else if (nameLower.includes(term)) score += 5;
+              else if (term.includes(nameLower)) score += 3;
+            }
+
+            const beforeMatch = file.content.slice(0, match.index);
+            const lineNum = beforeMatch.split("\n").length;
+            const contextStart = Math.max(0, lineNum - 2);
+            const contextEnd = Math.min(lines.length, lineNum + 3);
+            const context = lines.slice(contextStart, contextEnd).join("\n");
+            for (const term of queryTerms) {
+              if (context.toLowerCase().includes(term)) score += 1;
+            }
+
+            if (score > 0) {
+              results.push({
+                file: file.path,
+                symbol: name,
+                symbol_type: type,
+                line: lineNum,
+                content: context.slice(0, 300),
+                score,
+              });
+            }
+          }
+        }
+      }
+
+      const { results: limited, semanticProvider } = await semanticRerank(
+        query,
+        results,
+        max_results
+      );
+
+      res.json({
+        registry: reg,
+        package_name,
+        version: resolvedVersion,
+        query,
+        results: limited,
+        total: limited.length,
+        files_searched: files.length,
+        semantic_provider: semanticProvider,
       });
     } else {
       res.json({
@@ -849,7 +1064,7 @@ router.post(
         query,
         results: [],
         total: 0,
-        message: `Semantic search for "${reg}" is not yet supported. Supported: npm, pypi`,
+        message: `Semantic search for "${reg}" is not yet supported. Supported: npm, pypi, crates`,
       });
     }
   })

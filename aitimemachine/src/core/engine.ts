@@ -197,11 +197,29 @@ export class TimeMachineEngine {
   getFileAt(timePointId: string, filePath: string): string | null {
     const tp = this.timePointManager.load(timePointId);
     if (!tp) return null;
-    
+
     const fileEntry = tp.files.find((f: FileEntry) => f.path === filePath);
     if (!fileEntry) return null;
-    
+
     return this.contentStore.getString(fileEntry.hash);
+  }
+
+  /**
+   * Get raw file content at a timepoint as a Buffer (binary-safe).
+   *
+   * Prefer this over getFileAt() whenever the content will be written back to
+   * disk, so binary files (images, compiled assets, etc.) are not corrupted by
+   * a lossy UTF-8 decode/encode round-trip. getFileAt() remains for callers
+   * that genuinely need a string (display, diffing).
+   */
+  getFileBufferAt(timePointId: string, filePath: string): Buffer | null {
+    const tp = this.timePointManager.load(timePointId);
+    if (!tp) return null;
+
+    const fileEntry = tp.files.find((f: FileEntry) => f.path === filePath);
+    if (!fileEntry) return null;
+
+    return this.contentStore.get(fileEntry.hash);
   }
 
   /**

@@ -108,8 +108,10 @@ const getRelation = (row: any, relation: string) => {
     case 'post':
       return getMockRows('post').find((entry) => entry.id === row.postId) ?? null;
     case 'follower':
+    case 'followerUser':
       return getMockRows('user').find((entry) => entry.id === row.followerId || entry.id === row.followerUserId) ?? null;
     case 'following':
+    case 'followingUser':
       return getMockRows('user').find((entry) => entry.id === row.followingId || entry.id === row.followingUserId) ?? null;
     case 'blocked':
       return getMockRows('user').find((entry) => entry.id === row.blockedId) ?? null;
@@ -301,8 +303,22 @@ const createMockPrismaModel = () => {
     count: jest.fn().mockImplementation(({ where } = {}) => Promise.resolve(rows.filter((row) => matchesWhere(row, where)).length)),
     aggregate: jest.fn().mockResolvedValue({ _count: { id: 0 }, _sum: {}, _avg: {}, _min: {}, _max: {} }),
     groupBy: jest.fn().mockResolvedValue([]),
-    __rows: rows,
   };
+
+  // Expose __rows as a getter/setter that always reflects the SAME underlying
+  // `rows` array the query implementations close over. Tests that reassign
+  // `model.__rows = [...]` would otherwise swap in a fresh array the mock never
+  // reads, silently making every query return nothing. The setter mutates the
+  // original array in place so both direct mutation and reassignment work.
+  Object.defineProperty(model, '__rows', {
+    get: () => rows,
+    set: (next: any[]) => {
+      rows.length = 0;
+      if (Array.isArray(next)) rows.push(...next);
+    },
+    enumerable: true,
+    configurable: true,
+  });
 
   return model;
 };

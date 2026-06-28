@@ -20,21 +20,44 @@ interface InternalProjectsResponse {
 }
 
 /**
- * Infer a coarse project language from its root path. The backend does not
- * persist a language field, so we derive a sensible label from the path. This
- * is descriptive metadata only and never affects restore behaviour.
+ * Infer a coarse project language label from the project's directory *name*.
+ *
+ * The backend does not persist a real detected language, so this is best-effort
+ * descriptive metadata only — it never affects restore behaviour and is
+ * surfaced to the user explicitly as "(inferred)". To avoid the previous false
+ * positives (e.g. any path containing the substring "go" -> Go), we only match
+ * the final path segment against whole-word, anchored framework/tool markers
+ * rather than scanning the entire path string. When no confident signal exists
+ * we return `null`, and the route omits the field rather than guessing.
  */
-function inferLanguage(rootPath: string | null): string {
-  if (!rootPath) return 'Unknown';
-  const lower = rootPath.toLowerCase();
-  if (/(node|next|react|vue|\.ts|\.js|typescript|javascript)/.test(lower)) {
+function inferLanguage(rootPath: string | null): string | null {
+  if (!rootPath) return null;
+  // Use only the final directory segment; the full path often contains
+  // unrelated words (usernames, "go" inside "google", etc.).
+  const segment = rootPath
+    .replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .pop()
+    ?.toLowerCase();
+  if (!segment) return null;
+
+  // Each rule is an array of whole-word/anchored regexes. The path segment is
+  // tokenised on common separators so "my-go-service" matches the `go` token
+  // but "google-clone" does not.
+  const tokens = segment.split(/[^a-z0-9]+/).filter(Boolean);
+  const has = (word: string): boolean => tokens.includes(word);
+
+  if (has('node') || has('next') || has('nextjs') || has('react') || has('vue') || has('ts') || has('js')) {
     return 'JavaScript / TypeScript';
   }
-  if (/(py|python|django|fastapi|flask)/.test(lower)) return 'Python';
-  if (/(\bgo\b|golang)/.test(lower)) return 'Go';
-  if (/(rust|cargo)/.test(lower)) return 'Rust';
-  if (/(java|kotlin|gradle)/.test(lower)) return 'JVM';
-  return 'Mixed';
+  if (has('py') || has('python') || has('django') || has('fastapi') || has('flask')) {
+    return 'Python';
+  }
+  if (has('go') || has('golang')) return 'Go';
+  if (has('rust') || has('cargo')) return 'Rust';
+  if (has('java') || has('kotlin') || has('gradle') || has('spring')) return 'JVM';
+
+  return null;
 }
 
 /**
@@ -83,9 +106,13 @@ export async function POST(req: Request) {
     );
   }
 
+  const language = inferLanguage(project.rootPath);
+
   return NextResponse.json({
     projectName: project.name,
-    language: inferLanguage(project.rootPath),
+    // Only include `language` when we have a confident inference, and mark it as
+    // inferred so the UI never presents a guess as authoritative metadata.
+    ...(language ? { language, languageInferred: true } : {}),
     sessionCount: project.checkpointCount,
     lastCheckpoint: project.lastCheckpointAt,
   });

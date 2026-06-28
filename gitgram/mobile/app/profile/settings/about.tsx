@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   Linking,
 } from 'react-native';
-import { Colors } from '../../constants/Colors';
-import Header from '../../components/navigation/Header';
+import { Colors } from '../../../constants/Colors';
+import Header from '../../../components/navigation/Header';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Constants from 'expo-constants';
-import { logger } from '../../utils/logger';
+import { logger } from '../../../utils/logger';
 
 export default function AboutScreen() {
   const appVersion = Constants.expoConfig?.version || '1.0.0';

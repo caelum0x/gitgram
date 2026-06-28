@@ -1,153 +1,459 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking, TextInput } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Linking,
+  TextInput,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import repositoryService from '../../../services/repositoryService';
+import { Colors } from '../../../constants/Colors';
+import Header from '../../../components/navigation/Header';
+import LoadingSpinner from '../../../components/common/LoadingSpinner';
+import EmptyState from '../../../components/common/EmptyState';
 import { logger } from '../../../utils/logger';
 
-const REACTIONS = ['👍', '❤️', '🎉', '🚀', '👀', '🔥', '💯'];
+const REACTIONS = ['👍', '❤️', '🎉', '🚀', '👀', '🔥', '💯'] as const;
+const COMMENTS_PAGE_SIZE = 20;
+
+interface RepoUser {
+  username?: string;
+  avatar?: string | null;
+}
+
+interface RepoComment {
+  id: string;
+  content: string;
+  user?: RepoUser;
+}
+
+interface RepoOrganization {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface Repository {
+  id: string;
+  owner: string;
+  name: string;
+  fullName: string;
+  description?: string | null;
+  stars?: number;
+  forks?: number;
+  language?: string | null;
+  htmlUrl?: string | null;
+  isFollowing?: boolean;
+  organization?: RepoOrganization | null;
+}
+
+function formatCount(value?: number): string {
+  if (!value) return '0';
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return value.toLocaleString();
+}
 
 export default function RepoDetail() {
-  const { owner, name } = useLocalSearchParams();
-  const [repo, setRepo] = useState<any>(null);
-  const [comments, setComments] = useState<any[]>([]);
+  const { owner, name } = useLocalSearchParams<{ owner: string; name: string }>();
+  const router = useRouter();
+
+  const [repo, setRepo] = useState<Repository | null>(null);
+  const [comments, setComments] = useState<RepoComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [postingComment, setPostingComment] = useState(false);
+  const [activeReaction, setActiveReaction] = useState<string | null>(null);
+  const [commentsPage, setCommentsPage] = useState(1);
+  const [hasMoreComments, setHasMoreComments] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const loadRepo = useCallback(async () => {
+    if (!owner || !name) return;
+    setError(null);
+    try {
+      const [repoResponse, commentsData] = await Promise.all([
+        repositoryService.get(owner, name),
+        repositoryService.getComments(owner, name),
+      ]);
+
+      // Backend returns { repository, isFollowing }; tolerate either shape.
+      const repository: Repository = repoResponse?.repository ?? repoResponse;
+      setRepo(repository);
+      setIsFollowing(Boolean(repoResponse?.isFollowing ?? repository?.isFollowing));
+
+      const loadedComments: RepoComment[] = commentsData?.comments ?? [];
+      setComments(loadedComments);
+      setCommentsPage(1);
+      setHasMoreComments(loadedComments.length >= COMMENTS_PAGE_SIZE);
+    } catch (err) {
+      logger.error('Failed to load repo', err);
+      setError('Repository not found');
+      setRepo(null);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [owner, name]);
 
   useEffect(() => {
     loadRepo();
-  }, [owner, name]);
+  }, [loadRepo]);
 
-  const loadRepo = async () => {
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadRepo();
+  }, [loadRepo]);
+
+  const handleLoadMoreComments = useCallback(async () => {
+    if (!owner || !name || loadingMore || !hasMoreComments) return;
+    setLoadingMore(true);
     try {
-      const [repoData, commentsData] = await Promise.all([
-        repositoryService.get(owner as string, name as string),
-        repositoryService.getComments(owner as string, name as string),
-      ]);
-      
-      setRepo(repoData);
-      setIsFollowing(repoData.isFollowing);
-      setComments(commentsData.comments || []);
-    } catch (error) {
-      logger.error('Failed to load repo', error);
+      const nextPage = commentsPage + 1;
+      const data = await repositoryService.getComments(owner, name, nextPage, COMMENTS_PAGE_SIZE);
+      const more: RepoComment[] = data?.comments ?? [];
+      setComments((prev) => [...prev, ...more]);
+      setCommentsPage(nextPage);
+      setHasMoreComments(more.length >= COMMENTS_PAGE_SIZE);
+    } catch (err) {
+      logger.error('Failed to load more comments', err);
     } finally {
-      setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [owner, name, loadingMore, hasMoreComments, commentsPage]);
 
-  const handleFollow = async () => {
+  const handleFollow = useCallback(async () => {
+    if (!owner || !name || followLoading) return;
+    setFollowLoading(true);
+    const previous = isFollowing;
+    setIsFollowing(!previous); // optimistic
     try {
-      if (isFollowing) {
-        await repositoryService.unfollow(owner as string, name as string);
+      if (previous) {
+        await repositoryService.unfollow(owner, name);
       } else {
-        await repositoryService.follow(owner as string, name as string);
+        await repositoryService.follow(owner, name);
       }
-      setIsFollowing(!isFollowing);
-    } catch (error) {
-      logger.error('Failed to follow/unfollow', error);
+    } catch (err) {
+      logger.error('Failed to follow/unfollow', err);
+      setIsFollowing(previous); // revert on failure
+    } finally {
+      setFollowLoading(false);
     }
-  };
+  }, [owner, name, isFollowing, followLoading]);
 
-  const handleReaction = async (type: string) => {
-    try {
-      await repositoryService.addReaction(owner as string, name as string, type);
-    } catch (error) {
-      logger.error('Failed to add reaction', error);
-    }
-  };
+  const handleReaction = useCallback(
+    async (type: string) => {
+      if (!owner || !name) return;
+      setActiveReaction(type);
+      try {
+        await repositoryService.addReaction(owner, name, type);
+      } catch (err) {
+        logger.error('Failed to add reaction', err);
+        setActiveReaction(null);
+      }
+    },
+    [owner, name],
+  );
 
-  const handleAddComment = async () => {
-    if (!newComment.trim()) return;
+  const handleAddComment = useCallback(async () => {
+    if (!owner || !name || !newComment.trim() || postingComment) return;
+    setPostingComment(true);
     try {
-      await repositoryService.addComment(owner as string, name as string, newComment);
+      const response = await repositoryService.addComment(owner, name, newComment.trim());
+      const created: RepoComment | undefined = response?.comment ?? response;
+      if (created?.id) {
+        setComments((prev) => [created, ...prev]);
+      }
       setNewComment('');
-      loadRepo();
-    } catch (error) {
-      logger.error('Failed to add comment', error);
+    } catch (err) {
+      logger.error('Failed to add comment', err);
+    } finally {
+      setPostingComment(false);
     }
-  };
+  }, [owner, name, newComment, postingComment]);
 
-  if (loading) return <View style={styles.container}><Text>Loading...</Text></View>;
-  if (!repo) return <View style={styles.container}><Text>Repository not found</Text></View>;
+  // The owner segment doubles as an organization slug on Gitgram. Opening it
+  // routes to the org profile, which resolves by slug and shows a graceful
+  // "not found" state for owners that are individual users rather than orgs.
+  const handleOpenOwner = useCallback(() => {
+    const slug = repo?.organization?.slug ?? repo?.owner ?? repo?.fullName?.split('/')[0];
+    if (slug) {
+      router.push(`/org/${slug}`);
+    }
+  }, [repo, router]);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Header title="Repository" />
+        <LoadingSpinner fullScreen />
+      </View>
+    );
+  }
+
+  if (error || !repo) {
+    return (
+      <View style={styles.container}>
+        <Header title="Repository" />
+        <EmptyState
+          title={error ?? 'Repository not found'}
+          message="This repository may not exist or could not be loaded."
+          icon="📦"
+          actionLabel="Retry"
+          onAction={loadRepo}
+        />
+      </View>
+    );
+  }
+
+  const repoOwner = repo.owner ?? repo.fullName?.split('/')[0];
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{repo.fullName}</Text>
-        <Text style={styles.description}>{repo.description}</Text>
-        
-        <View style={styles.stats}>
-          <Text style={styles.stat}>⭐ {repo.stars?.toLocaleString()}</Text>
-          <Text style={styles.stat}>🍴 {repo.forks?.toLocaleString()}</Text>
-          {repo.language && <Text style={styles.stat}>💻 {repo.language}</Text>}
-        </View>
-
-        <View style={styles.actions}>
-          <TouchableOpacity style={[styles.btn, isFollowing && styles.btnFollowing]} onPress={handleFollow}>
-            <Text style={styles.btnText}>{isFollowing ? 'Following' : 'Follow'}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.btnSecondary} onPress={() => Linking.openURL(repo.htmlUrl)}>
-            <Text style={styles.btnSecondaryText}>View on GitHub</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.reactions}>
-          {REACTIONS.map(emoji => (
-            <TouchableOpacity key={emoji} onPress={() => handleReaction(emoji)}>
-              <Text style={styles.emoji}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.comments}>
-        <Text style={styles.sectionTitle}>Comments</Text>
-        
-        <View style={styles.commentInput}>
-          <TextInput
-            style={styles.input}
-            value={newComment}
-            onChangeText={setNewComment}
-            multiline
+    <View style={styles.container}>
+      <Header title={repo.name ?? 'Repository'} />
+      <ScrollView
+        style={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.accent}
+            colors={[Colors.accent]}
           />
-          <TouchableOpacity style={styles.submitBtn} onPress={handleAddComment}>
-            <Text style={styles.submitText}>Post</Text>
-          </TouchableOpacity>
+        }
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>{repo.fullName}</Text>
+
+          {repoOwner ? (
+            <TouchableOpacity
+              style={styles.ownerRow}
+              onPress={handleOpenOwner}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${repo.organization?.name ?? repoOwner} organization`}
+            >
+              <Icon name="business" size={16} color={Colors.accent} />
+              <Text style={[styles.ownerText, styles.ownerLink]}>
+                {repo.organization?.name ?? repoOwner}
+              </Text>
+              <Icon name="chevron-right" size={16} color={Colors.accent} />
+            </TouchableOpacity>
+          ) : null}
+
+          {repo.description ? (
+            <Text style={styles.description}>{repo.description}</Text>
+          ) : null}
+
+          <View style={styles.stats}>
+            <Text style={styles.stat}>⭐ {formatCount(repo.stars)}</Text>
+            <Text style={styles.stat}>🍴 {formatCount(repo.forks)}</Text>
+            {repo.language ? <Text style={styles.stat}>💻 {repo.language}</Text> : null}
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.btn, isFollowing && styles.btnFollowing]}
+              onPress={handleFollow}
+              disabled={followLoading}
+            >
+              {followLoading ? (
+                <ActivityIndicator size="small" color={Colors.text} />
+              ) : (
+                <Text style={[styles.btnText, isFollowing && styles.btnFollowingText]}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {repo.htmlUrl ? (
+              <TouchableOpacity
+                style={styles.btnSecondary}
+                onPress={() => Linking.openURL(repo.htmlUrl as string)}
+              >
+                <Text style={styles.btnSecondaryText}>View on GitHub</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.reactions}>
+            {REACTIONS.map((emoji) => {
+              const selected = activeReaction === emoji;
+              return (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[styles.reactionPill, selected && styles.reactionPillActive]}
+                  onPress={() => handleReaction(emoji)}
+                >
+                  <Text style={styles.emoji}>{emoji}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
-        {comments.map((comment: any) => (
-          <View key={comment.id} style={styles.comment}>
-            <Text style={styles.commentUser}>@{comment.user?.username}</Text>
-            <Text>{comment.content}</Text>
+        <View style={styles.comments}>
+          <Text style={styles.sectionTitle}>Comments</Text>
+
+          <View style={styles.commentInput}>
+            <TextInput
+              style={styles.input}
+              value={newComment}
+              onChangeText={setNewComment}
+              placeholder="Add a comment..."
+              placeholderTextColor={Colors.textSecondary}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.submitBtn, (postingComment || !newComment.trim()) && styles.submitBtnDisabled]}
+              onPress={handleAddComment}
+              disabled={postingComment || !newComment.trim()}
+            >
+              {postingComment ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <Text style={styles.submitText}>Post</Text>
+              )}
+            </TouchableOpacity>
           </View>
-        ))}
-      </View>
-    </ScrollView>
+
+          {comments.length === 0 ? (
+            <View style={styles.emptyComments}>
+              <Text style={styles.emptyCommentsText}>No comments yet. Be the first!</Text>
+            </View>
+          ) : (
+            comments.map((comment) => (
+              <View key={comment.id} style={styles.comment}>
+                <Text style={styles.commentUser}>@{comment.user?.username ?? 'unknown'}</Text>
+                <Text style={styles.commentBody}>{comment.content}</Text>
+              </View>
+            ))
+          )}
+
+          {hasMoreComments ? (
+            <TouchableOpacity
+              style={styles.loadMore}
+              onPress={handleLoadMoreComments}
+              disabled={loadingMore}
+            >
+              {loadingMore ? (
+                <ActivityIndicator size="small" color={Colors.accent} />
+              ) : (
+                <Text style={styles.loadMoreText}>Load more comments</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 8 },
-  description: { fontSize: 14, color: '#666', marginBottom: 12 },
+  container: { flex: 1, backgroundColor: Colors.background },
+  scroll: { flex: 1 },
+  header: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  title: { fontSize: 24, fontWeight: 'bold', color: Colors.text, marginBottom: 6 },
+  ownerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  ownerText: { fontSize: 14, color: Colors.textSecondary },
+  ownerLink: { color: Colors.accent, fontWeight: '600' },
+  description: { fontSize: 14, color: Colors.textSecondary, marginBottom: 12, lineHeight: 20 },
   stats: { flexDirection: 'row', gap: 16, marginBottom: 16 },
-  stat: { fontSize: 14, color: '#666' },
+  stat: { fontSize: 14, color: Colors.textSecondary },
   actions: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  btn: { flex: 1, backgroundColor: '#007AFF', borderRadius: 8, padding: 12, alignItems: 'center' },
-  btnFollowing: { backgroundColor: '#ddd' },
-  btnText: { color: '#fff', fontWeight: '600' },
-  btnSecondary: { flex: 1, borderWidth: 1, borderColor: '#007AFF', borderRadius: 8, padding: 12, alignItems: 'center' },
-  btnSecondaryText: { color: '#007AFF', fontWeight: '600' },
-  reactions: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  emoji: { fontSize: 24 },
+  btn: {
+    flex: 1,
+    backgroundColor: Colors.buttonPrimary,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  btnFollowing: { backgroundColor: Colors.muted },
+  btnText: { color: Colors.white, fontWeight: '600' },
+  btnFollowingText: { color: Colors.text },
+  btnSecondary: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  btnSecondaryText: { color: Colors.accent, fontWeight: '600' },
+  reactions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  reactionPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  reactionPillActive: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.muted,
+  },
+  emoji: { fontSize: 20 },
   comments: { padding: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.text, marginBottom: 16 },
   commentInput: { marginBottom: 16 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, minHeight: 60 },
-  submitBtn: { backgroundColor: '#007AFF', borderRadius: 8, padding: 12, marginTop: 8, alignItems: 'center' },
-  submitText: { color: '#fff', fontWeight: '600' },
-  comment: { backgroundColor: '#f9f9f9', borderRadius: 8, padding: 12, marginBottom: 8 },
-  commentUser: { fontWeight: '600', marginBottom: 4 },
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 60,
+    color: Colors.text,
+    backgroundColor: Colors.surface,
+    textAlignVertical: 'top',
+  },
+  submitBtn: {
+    backgroundColor: Colors.buttonPrimary,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  submitBtnDisabled: { opacity: 0.5 },
+  submitText: { color: Colors.white, fontWeight: '600' },
+  emptyComments: { paddingVertical: 24, alignItems: 'center' },
+  emptyCommentsText: { color: Colors.textSecondary, fontSize: 14 },
+  comment: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  commentUser: { fontWeight: '600', color: Colors.text, marginBottom: 4 },
+  commentBody: { color: Colors.textSecondary, lineHeight: 20 },
+  loadMore: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  loadMoreText: { color: Colors.accent, fontWeight: '600' },
 });

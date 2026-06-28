@@ -172,7 +172,7 @@ describe('Two-Factor Authentication API', () => {
     });
   });
 
-  describe('POST /api/v1/auth/verify-2fa', () => {
+  describe('POST /api/v1/auth/2fa/verify', () => {
     let twoFactorSecret: string;
 
     beforeAll(async () => {
@@ -201,7 +201,7 @@ describe('Two-Factor Authentication API', () => {
       });
 
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({ code });
 
@@ -211,7 +211,7 @@ describe('Two-Factor Authentication API', () => {
 
     it('should reject invalid 2FA code', async () => {
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({ code: '000000' });
 
@@ -220,7 +220,7 @@ describe('Two-Factor Authentication API', () => {
 
     it('should require code', async () => {
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({});
 
@@ -262,7 +262,7 @@ describe('Two-Factor Authentication API', () => {
     it('should accept valid backup code', async () => {
       // Use first backup code
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({ code: backupCodes[0] });
 
@@ -277,7 +277,7 @@ describe('Two-Factor Authentication API', () => {
     it('should not accept used backup code twice', async () => {
       // Try to use the same code again (should fail)
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({ code: backupCodes[0] });
 
@@ -286,7 +286,7 @@ describe('Two-Factor Authentication API', () => {
 
     it('should reject invalid backup code', async () => {
       const response = await request(app)
-        .post('/api/v1/auth/verify-2fa')
+        .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
         .send({ code: 'INVALIDCODE' });
 

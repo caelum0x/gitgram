@@ -29,6 +29,12 @@ export type AuditAction =
   | "project.created"
   | "project.updated"
   | "project.deleted"
+  // Team / workspace actions
+  | "team.created"
+  | "team.updated"
+  | "team.member_added"
+  | "team.member_removed"
+  | "team.session_shared"
   // Repository actions
   | "repository.created"
   | "repository.indexed"
@@ -58,7 +64,8 @@ export type ResourceType =
   | "user"
   | "session"
   | "consent"
-  | "export_job";
+  | "export_job"
+  | "team";
 
 export interface AuditLogMetadata {
   [key: string]: unknown;
@@ -392,4 +399,25 @@ export async function logLogin(
  */
 export async function logLogout(userId: string, req?: Request): Promise<void> {
   await logAction(userId, "logout", "user", userId, null, req);
+}
+
+/**
+ * Log a team / workspace event. The team id is the resourceId so the activity
+ * feed can scope to it; metadata.teamId is also set for convenient filtering.
+ */
+export async function logTeamEvent(
+  actorUserId: string,
+  action: Extract<AuditAction, `team.${string}`>,
+  teamId: string,
+  metadata: AuditLogMetadata | null = null,
+  req?: Request
+): Promise<void> {
+  await logAction(
+    actorUserId,
+    action,
+    "team",
+    teamId,
+    { ...(metadata ?? {}), teamId },
+    req
+  );
 }

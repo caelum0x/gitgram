@@ -33,7 +33,9 @@ import {
 
 interface ProjectVerification {
   projectName: string;
-  language: string;
+  /** Best-effort inferred language; absent when no confident signal exists. */
+  language?: string;
+  languageInferred?: boolean;
   sessionCount: number;
   lastCheckpoint: string | null;
 }
@@ -50,7 +52,8 @@ interface Session {
   description: string;
   createdAt: string;
   filesChanged: number;
-  sizeBytes: number;
+  /** Real byte size, or null when the backend does not track it. */
+  sizeBytes: number | null;
 }
 
 interface RestoreProgress {
@@ -81,7 +84,8 @@ function saveRecentProject(path: string): void {
   localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
 }
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return 'Size unavailable';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -342,8 +346,12 @@ function Step1SelectProject({ onVerified }: Step1Props) {
                 <p className="text-white font-medium">{verified.projectName}</p>
               </div>
               <div>
-                <p className="text-gray-500">Language</p>
-                <p className="text-white font-medium">{verified.language}</p>
+                <p className="text-gray-500">
+                  Language{verified.languageInferred ? ' (inferred)' : ''}
+                </p>
+                <p className="text-white font-medium">
+                  {verified.language ?? '—'}
+                </p>
               </div>
               <div>
                 <p className="text-gray-500">Checkpoints</p>

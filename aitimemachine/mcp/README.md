@@ -139,8 +139,16 @@ curl -X POST http://127.0.0.1:3002/a2a \
 Notes:
 - canonical request method: `message/send`
 - compatibility alias still supported: `tasks/send`
-- current A2A scope: agent card discovery plus blocking task-style replies
-- unsupported streaming requests return A2A error code `-32004`
+- the A2A surface exposes the **full enabled MCP tool catalogue** as skills, not
+  just the 7 curated time-machine skills. Each enabled tool is addressable by
+  its canonical tool name (e.g. `metadata.skillId: "pal_execute"`), and the
+  curated short ids (`checkpoint`, `restore`, `diff`, `bisect`, `timeline`,
+  `search`, `sync`) remain available for backwards compatibility. The
+  agent card's `skills` list reflects exactly the tools enabled by the
+  experimental/disabled policy.
+- `message/stream` **is supported**: it returns Server-Sent Events — an initial
+  `working` status event followed by the terminal `task` (completed/failed).
+  Tool arguments are passed via `metadata` exactly as with `message/send`.
 
 ### Claude Agent SDK
 
@@ -265,18 +273,86 @@ via environment variables, and require that service to be running:
 
 | Tool group | Enable with | External dependency |
 |------------|-------------|---------------------|
-| Workspace (`ws_*`) | `AITM_API_URL` or `AITM_WORKSPACE_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `ws_*` tools are HTTP proxies to its `/workspace/*` endpoints. |
-| Beads (`beads_*`) | `BEADS_BINARY` or `AITM_BEADS_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `beads_*` tools are HTTP proxies to its `/beads/*` endpoints. |
+| Workspace (`ws_*`) | `AITM_API_URL` or `AITM_WORKSPACE_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `ws_*` tools are HTTP proxies to its `/workspace/*` endpoints. Requires `AITM_API_KEY` (see below). |
+| Beads (`beads_*`) | `BEADS_BINARY` or `AITM_BEADS_ENABLED=1` | A running **AITM API server** (default `http://localhost:3001`). The `beads_*` tools are HTTP proxies to its `/beads/*` endpoints. Requires `AITM_API_KEY` (see below). |
 | GitNexus (`gn_*`) | `GITNEXUS_URL` or `AITM_GITNEXUS_ENABLED=1` | The bundled GitNexus engine. |
 | Context7 docs (`tm_docs_*`) | `CONTEXT7_API_KEY` or `AITM_CONTEXT7_ENABLED=1` | A Context7 API key. |
-| PAL (`pal_*`) | `AITM_PAL_ENABLED=1` or `PAL_VENV_DIR` | A Python subprocess / venv. |
-| GitHub (`gh_*`) | `GITHUB_TOKEN` | GitHub API. |
+| PAL (`pal_*`) | `AITM_PAL_ENABLED=1` or `PAL_VENV_DIR` | A Python venv with `pal-mcp-server` installed (see PAL note below). |
+| GitHub (`github_*`) | `GITHUB_TOKEN` | GitHub API. |
 | Claude (`claude_*`) | `ANTHROPIC_API_KEY` | Anthropic API. |
 
 > **Note:** Workspace and Beads tools do nothing without a separately-running
 > AITM API server. If the server is unreachable, these tools return an
 > actionable error naming the configured `AITM_API_URL` and how to start the
 > server — rather than a raw `fetch failed`.
+
+### Authenticating to the AITM API server (`AITM_API_KEY`)
+
+The AITM API server protects its `/workspace/*` and `/beads/*` routers with an
+API-key middleware. The `ws_*` and `beads_*` tools therefore send the
+credential in the `X-API-Key` header on every request. Set it via:
+
+```bash
+export AITM_API_KEY=aitm_your_issued_key   # issued by the AITM API server
+export AITM_API_URL=http://localhost:3001  # optional; this is the default
+```
+
+Without `AITM_API_KEY`, every workspace/beads call returns an actionable
+`401 ... Set the AITM_API_KEY environment variable` error rather than a raw
+`401 Unauthorized`.
+
+### Experimental-tool visibility (`AITM_EXPERIMENTAL_TOOLS`)
+
+Most integration tool families (`gn_*`, `pal_*`, `beads_*`, `github_*`,
+`claude_*`, `ws_*`, `tm_docs_*`) are classified **experimental**. They are only
+*visible* when `AITM_EXPERIMENTAL_TOOLS=1` is set — even if you've supplied
+their enabling env var. If you, for example, set `GITHUB_TOKEN` but not
+`AITM_EXPERIMENTAL_TOOLS`, the server prints a startup warning:
+
+```
+Some integration tools are CONFIGURED but HIDDEN.
+  - GitHub (github_*): configured via GITHUB_TOKEN but 7 tool(s) are hidden by experimental policy.
+Set AITM_EXPERIMENTAL_TOOLS=1 to expose them (or ignore if intentional).
+```
+
+### PAL Python venv
+
+PAL tools spawn `python -m server` from a Python virtual environment. Because a
+venv is platform-specific (absolute paths, native binaries), it is **not**
+bundled in the published npm package — provision it on the host and point the
+server at it:
+
+```bash
+python3 -m venv /path/to/pal-venv
+/path/to/pal-venv/bin/pip install pal-mcp-server
+export PAL_VENV_DIR=/path/to/pal-venv
+export AITM_PAL_ENABLED=1
+```
+
+When PAL tools are enabled the server runs a fast readiness probe at startup and
+prints `PAL tools enabled but NOT ready: ...` with guidance if the venv is
+missing or `pal-mcp-server` is not importable — instead of a 30s timeout on the
+first `pal_*` call.
+
+## HTTP transport security (production)
+
+By default the HTTP transport (`--transport http`) is unauthenticated and uses
+`Access-Control-Allow-Origin: *`, which is fine for localhost. Because `/mcp`
+and `/a2a` execute tools (including the PAL Python sandbox, GitHub mutations,
+and file restore), **secure the port before exposing it beyond localhost**:
+
+| Variable | Effect |
+|----------|--------|
+| `AITM_MCP_AUTH_TOKEN` | When set, `/mcp` and `/a2a` require `Authorization: Bearer <token>` (or `X-API-Key: <token>`). Comparison is timing-safe. `/health` and the agent card stay open for discovery. |
+| `AITM_MCP_ALLOWED_ORIGINS` | Comma-separated CORS allow-list (e.g. `https://app.example.com,https://studio.example.com`). When set, only matching origins are echoed and credentialed requests are permitted. Unset = `*` (dev default). |
+
+```bash
+export AITM_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
+export AITM_MCP_ALLOWED_ORIGINS=https://app.example.com
+node mcp/dist/index.js --transport http --port 3002
+```
+
+The server logs its auth/CORS posture at startup so you can confirm it.
 
 ## Resources (4)
 

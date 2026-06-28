@@ -236,8 +236,9 @@ export function registerGitLikeCommands(program: Command): void {
       const prevId = list[idx - 1].id;
       const diff = engine.getDiff(prevId, match.id);
       let applied = 0;
+      // Use the Buffer API so binary files are applied byte-for-byte.
       for (const file of [...diff.added, ...diff.modified]) {
-        const content = engine.getFileAt(match.id, file);
+        const content = engine.getFileBufferAt(match.id, file);
         if (content) { const fullPath = path.join(process.cwd(), file); fs.mkdirSync(path.dirname(fullPath), { recursive: true }); fs.writeFileSync(fullPath, content); applied++; }
       }
       console.log(`${C.green}[OK]${C.reset} Cherry-picked ${match.id.slice(0, 12)}`);
@@ -328,12 +329,13 @@ export function registerGitLikeCommands(program: Command): void {
       const prevId = list[idx - 1].id;
       const diff = engine.getDiff(prevId, match.id);
       let reverted = 0;
+      // Use the Buffer API so binary files are restored byte-for-byte.
       for (const file of diff.deleted) {
-        const content = engine.getFileAt(prevId, file);
+        const content = engine.getFileBufferAt(prevId, file);
         if (content) { const fullPath = path.join(process.cwd(), file); fs.mkdirSync(path.dirname(fullPath), { recursive: true }); fs.writeFileSync(fullPath, content); reverted++; }
       }
       for (const file of diff.added) { const fullPath = path.join(process.cwd(), file); if (fs.existsSync(fullPath)) { fs.unlinkSync(fullPath); reverted++; } }
-      for (const file of diff.modified) { const content = engine.getFileAt(prevId, file); if (content) { fs.writeFileSync(path.join(process.cwd(), file), content); reverted++; } }
+      for (const file of diff.modified) { const content = engine.getFileBufferAt(prevId, file); if (content) { fs.writeFileSync(path.join(process.cwd(), file), content); reverted++; } }
       const tp = engine.capture(`Revert "${match.description}"`, { type: 'manual' });
       console.log(`${C.green}[OK]${C.reset} Reverted ${match.id.slice(0, 12)}`);
       console.log(`   ${reverted} files changed`);
@@ -383,7 +385,8 @@ export function registerGitLikeCommands(program: Command): void {
         const tp = engine.getTimePoint(latest.id);
         if (tp) {
           for (const f of tp.files.slice(0, 100)) {
-            const content = engine.getFileAt(latest.id, f.path);
+            // Buffer API keeps binary files intact in the worktree snapshot.
+            const content = engine.getFileBufferAt(latest.id, f.path);
             if (content) { const dest = path.join(wtPath, f.path); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.writeFileSync(dest, content); }
           }
         }

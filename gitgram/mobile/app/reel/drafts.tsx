@@ -18,7 +18,7 @@ export default function ReelDraftsScreen() {
         />
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/(modals)/create-reel')}
+          onPress={() => router.push('/create/reel')}
         >
           <Text style={styles.buttonText}>Create a Reel</Text>
         </TouchableOpacity>

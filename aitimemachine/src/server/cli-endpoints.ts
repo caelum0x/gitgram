@@ -247,27 +247,45 @@ export function createCliEndpointsRouter(
     }
   });
 
-  // Semantic search falls back to text search (no embedding provider configured).
-  router.get('/v1/contexts/search/semantic', (req: Request, res: Response) => {
+  // Real semantic search via vector cosine similarity when an embedding
+  // provider (OpenAI) is configured. Degrades to text search and labels the
+  // response accurately (search_type: 'text') when no provider is available,
+  // so it never advertises semantic results it did not compute.
+  router.get('/v1/contexts/search/semantic', async (req: Request, res: Response) => {
     try {
       const q = String(req.query.q ?? '');
       const limit = Number.parseInt(String(req.query.limit ?? '10'), 10) || 10;
-      const results = store.searchContexts(q, limit).map((c) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        tool: c.tool,
-        tags: c.tags,
-        matches: c.messages.slice(0, 1).map((m) => ({ content: m.content, timestamp: m.timestamp })),
-        created_at: c.createdAt,
+      const outcome = await store.semanticSearchContexts(q, limit);
+      const results = outcome.hits.map((h) => ({
+        id: h.context.id,
+        name: h.context.name,
+        description: h.context.description,
+        tool: h.context.tool,
+        tags: h.context.tags,
+        similarity_score: outcome.searchType === 'semantic' ? Number(h.similarity.toFixed(4)) : undefined,
+        matches: h.context.messages
+          .slice(0, 1)
+          .map((m) => ({ content: m.content, timestamp: m.timestamp })),
+        created_at: h.context.createdAt,
       }));
       res.json({
         query: q,
         results,
         total: results.length,
-        search_type: 'semantic-fallback-text',
-        embedding_provider: 'none',
+        search_type: outcome.searchType,
+        embedding_provider: outcome.provider,
+        model: outcome.model,
       });
+    } catch (err: unknown) {
+      res.status(500).json({ error: { message: errMsg(err) } });
+    }
+  });
+
+  // Backfill embeddings for all stored contexts (no-op without a provider).
+  router.post('/v1/contexts/embed', async (_req: Request, res: Response) => {
+    try {
+      const indexed = await store.backfillEmbeddings();
+      res.json({ indexed, embeddings_available: store.hasEmbeddings() });
     } catch (err: unknown) {
       res.status(500).json({ error: { message: errMsg(err) } });
     }

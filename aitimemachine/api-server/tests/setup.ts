@@ -762,6 +762,7 @@ vi.mock("../src/services/auditLog.js", () => ({
   logKeyRevoked: vi.fn().mockResolvedValue(undefined),
   logCheckpointCreated: vi.fn().mockResolvedValue(undefined),
   logProjectCreated: vi.fn().mockResolvedValue(undefined),
+  logTeamEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock the session manager

@@ -214,6 +214,124 @@ describe('HTTP transport (E2E over the wire)', () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Not found');
   });
+
+  it('POST /a2a message/stream streams a working status then the completed task as SSE', async () => {
+    const res = await request(baseUrl)
+      .post('/a2a')
+      .set('accept', 'text/event-stream')
+      .send({
+        jsonrpc: '2.0',
+        id: 99,
+        method: 'message/stream',
+        params: {
+          message: {
+            kind: 'message',
+            messageId: 'msg-stream',
+            role: 'user',
+            parts: [{ kind: 'text', text: 'diff stream' }],
+          },
+          metadata: { skillId: 'diff', fromCheckpointId: 'a', toCheckpointId: 'b' },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+    const frames = res.text
+      .split(/\n\n+/)
+      .map((block) =>
+        block
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trim())
+          .join('\n')
+      )
+      .filter(Boolean)
+      .map((json) => JSON.parse(json));
+
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    expect(frames[0].result.status.state).toBe('working');
+    const terminal = frames[frames.length - 1];
+    expect(terminal.result.kind).toBe('task');
+    expect(terminal.result.status.state).toBe('completed');
+    const artifactText = terminal.result.artifacts?.[0]?.parts?.[0]?.text ?? '';
+    expect(artifactText).toContain('"diffed":true');
+  });
+});
+
+describe('HTTP transport authentication gate', () => {
+  let httpServer: HttpServer;
+  let shutdown: () => Promise<void>;
+  let baseUrl: string;
+  const TOKEN = 'secret-token-123';
+
+  beforeAll(async () => {
+    const port = await getFreePort();
+    const result = await startHttpTransport({
+      port,
+      mcpServer: buildTestMcpServer(),
+      authConfig: { authToken: TOKEN, allowedOrigins: ['https://app.example.com'] },
+    });
+    httpServer = result.httpServer;
+    shutdown = result.shutdown;
+    baseUrl = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    await shutdown();
+  });
+
+  it('GET /health stays open without credentials', async () => {
+    const res = await request(baseUrl).get('/health');
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /mcp without credentials returns 401', async () => {
+    const res = await request(baseUrl)
+      .post('/mcp')
+      .set('accept', 'application/json, text/event-stream')
+      .set('content-type', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Unauthorized');
+  });
+
+  it('POST /mcp with a Bearer token succeeds', async () => {
+    const res = await request(baseUrl)
+      .post('/mcp')
+      .set('authorization', `Bearer ${TOKEN}`)
+      .set('accept', 'application/json, text/event-stream')
+      .set('content-type', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /a2a without credentials returns 401', async () => {
+    const res = await request(baseUrl)
+      .post('/a2a')
+      .send({ jsonrpc: '2.0', id: 1, method: 'agent/card' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /a2a with X-API-Key succeeds', async () => {
+    const res = await request(baseUrl)
+      .post('/a2a')
+      .set('x-api-key', TOKEN)
+      .send({ jsonrpc: '2.0', id: 1, method: 'agent/card' });
+    expect(res.status).toBe(200);
+    expect(res.body.result.name).toBe('AITimeMachine');
+  });
+
+  it('echoes only an allow-listed CORS origin', async () => {
+    const allowed = await request(baseUrl)
+      .get('/health')
+      .set('origin', 'https://app.example.com');
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://app.example.com');
+
+    const denied = await request(baseUrl)
+      .get('/health')
+      .set('origin', 'https://evil.example.com');
+    expect(denied.headers['access-control-allow-origin']).toBeUndefined();
+  });
 });
 
 /**

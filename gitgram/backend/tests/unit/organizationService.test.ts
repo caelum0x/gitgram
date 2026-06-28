@@ -80,11 +80,14 @@ describe('organizationService.createOrganization', () => {
       slug: 'tx-org',
     });
 
-    // After the transaction, an organizationMember row with role OWNER should exist
-    const member = mockPrisma.organizationMember.__rows.find(
-      (m: any) => m.userId === TEST_USER_ID && m.role === 'OWNER'
-    );
-    expect(member).toBeDefined();
+    // The org is created with a nested member write in the same transaction, so
+    // organization.create must be called with a members.create payload that
+    // registers the caller as OWNER (the nested write is atomic with the org).
+    const createCall = (mockPrisma.organization.create as jest.Mock).mock.calls[0][0];
+    expect(createCall.data.members.create).toMatchObject({
+      userId: TEST_USER_ID,
+      role: 'OWNER',
+    });
   });
 
   it('throws invalidField when name is empty', async () => {
@@ -93,9 +96,11 @@ describe('organizationService.createOrganization', () => {
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it('throws invalidField when slug contains uppercase letters', async () => {
+  it('throws invalidField when slug contains invalid characters', async () => {
+    // The service normalizes case (UPPER -> upper), so uppercase alone is valid.
+    // A slug with spaces / illegal characters must still be rejected.
     await expect(
-      organizationService.createOrganization(TEST_USER_ID, { name: 'Valid', slug: 'UPPER' })
+      organizationService.createOrganization(TEST_USER_ID, { name: 'Valid', slug: 'bad slug!' })
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 

@@ -40,6 +40,7 @@ import {
   generateInvitationId,
   normalizeSlug,
 } from "./teamHelpers.js";
+import { logTeamEvent } from "../services/auditLog.js";
 
 const router = Router();
 
@@ -114,6 +115,8 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
       .from(schema.organizations)
       .where(eq(schema.organizations.id, teamId))
       .limit(1);
+
+    await logTeamEvent(userId, "team.created", teamId, { teamName: team?.name }, req);
 
     return res.status(201).json({ team, inviteCode });
   } catch (error) {
@@ -260,6 +263,14 @@ router.patch(
         .from(schema.organizations)
         .where(eq(schema.organizations.id, team.id))
         .limit(1);
+
+      await logTeamEvent(
+        req.user!.userId,
+        "team.updated",
+        team.id,
+        { changedFields: Object.keys(updates) },
+        req
+      );
 
       return res.json({ team: updated });
     } catch (error) {
@@ -484,6 +495,14 @@ router.post("/invitations/:token/accept", async (req: AuthenticatedRequest, res)
       .where(eq(schema.organizations.id, invitation.orgId))
       .limit(1);
 
+    await logTeamEvent(
+      userId,
+      "team.member_added",
+      invitation.orgId,
+      { memberUserId: userId, role: invitation.role, invitedBy: invitation.invitedBy },
+      req
+    );
+
     return res.status(201).json({
       success: true,
       teamId: invitation.orgId,
@@ -554,6 +573,14 @@ router.delete(
             eq(schema.orgMembers.userId, targetUserId)
           )
         );
+
+      await logTeamEvent(
+        actorId,
+        "team.member_removed",
+        team.id,
+        { memberUserId: targetUserId, previousRole: membership.role },
+        req
+      );
 
       return res.json({ success: true, message: "Member removed from team" });
     } catch (error) {
@@ -666,6 +693,14 @@ router.post(
         .set({ metadata: updatedMeta })
         .where(eq(schema.chatSessions.id, sessionId));
 
+      await logTeamEvent(
+        userId,
+        "team.session_shared",
+        team.id,
+        { sessionId, projectId: session.projectId },
+        req
+      );
+
       return res.json({
         success: true,
         sessionId,
@@ -707,12 +742,50 @@ router.get(
         return res.json({ activity: [], meta: { total: 0, page, limit } });
       }
 
-      // Pull audit log entries for all team members' actions within this team context.
-      // Falls back to recent chatSession starts across team members as a proxy feed.
+      // The feed merges two real sources:
+      //  1. Audit-log entries scoped to this team — actual team events the audit
+      //     log records: team.created/updated, member added/removed, session
+      //     shared (resource_type = 'team', resource_id = team id).
+      //  2. Recent chatSession starts across team members (activity signal that
+      //     is not separately audited).
+      // Both are normalized into one shape, merged, sorted by time, paginated.
+
+      // --- Source 1: team-scoped audit events ---
+      const teamAuditWhere = and(
+        eq(schema.auditLogs.resourceType, "team"),
+        eq(schema.auditLogs.resourceId, team.id)
+      );
+
+      const auditRows = await db
+        .select({
+          id: schema.auditLogs.id,
+          action: schema.auditLogs.action,
+          actorUserId: schema.auditLogs.userId,
+          actorEmail: schema.users.email,
+          resourceId: schema.auditLogs.resourceId,
+          occurredAt: schema.auditLogs.createdAt,
+          metadata: schema.auditLogs.metadata,
+        })
+        .from(schema.auditLogs)
+        .innerJoin(schema.users, eq(schema.auditLogs.userId, schema.users.id))
+        .where(teamAuditWhere)
+        .orderBy(desc(schema.auditLogs.createdAt))
+        .limit(offset + limit);
+
+      const [auditTotalRow] = await db
+        .select({ count: count() })
+        .from(schema.auditLogs)
+        .where(teamAuditWhere);
+
+      // --- Source 2: session starts by team members ---
+      const memberSessionWhere = or(
+        ...memberIds.map((uid) => eq(schema.chatSessions.userId, uid))
+      );
+
       const recentSessions = await db
         .select({
           id: schema.chatSessions.id,
-          type: schema.chatSessions.tool,
+          tool: schema.chatSessions.tool,
           userId: schema.chatSessions.userId,
           userEmail: schema.users.email,
           projectId: schema.chatSessions.projectId,
@@ -721,38 +794,62 @@ router.get(
         })
         .from(schema.chatSessions)
         .innerJoin(schema.users, eq(schema.chatSessions.userId, schema.users.id))
-        .where(
-          or(
-            ...memberIds.map((uid) => eq(schema.chatSessions.userId, uid))
-          )
-        )
+        .where(memberSessionWhere)
         .orderBy(desc(schema.chatSessions.startedAt))
-        .limit(limit)
-        .offset(offset);
+        .limit(offset + limit);
 
-      const [totalRow] = await db
+      const [sessionTotalRow] = await db
         .select({ count: count() })
         .from(schema.chatSessions)
-        .where(
-          or(
-            ...memberIds.map((uid) => eq(schema.chatSessions.userId, uid))
-          )
-        );
+        .where(memberSessionWhere);
 
-      const activity = recentSessions.map((s) => ({
+      // --- Normalize + merge ---
+      interface ActivityEntry {
+        id: string;
+        type: string;
+        actor: { userId: string; email: string | null };
+        projectId: string | null;
+        tool?: string | null;
+        occurredAt: Date | null;
+        metadata: unknown;
+      }
+
+      const auditActivity: ActivityEntry[] = auditRows.map((a) => ({
+        id: a.id,
+        type: a.action, // e.g. team.member_added, team.session_shared
+        actor: { userId: a.actorUserId, email: a.actorEmail },
+        projectId:
+          (a.metadata as Record<string, unknown> | null)?.projectId as
+            | string
+            | null ?? null,
+        occurredAt: a.occurredAt,
+        metadata: a.metadata,
+      }));
+
+      const sessionActivity: ActivityEntry[] = recentSessions.map((s) => ({
         id: s.id,
         type: "session_started",
         actor: { userId: s.userId, email: s.userEmail },
         projectId: s.projectId,
-        tool: s.type,
+        tool: s.tool,
         occurredAt: s.occurredAt,
         metadata: s.metadata,
       }));
 
+      const merged = [...auditActivity, ...sessionActivity].sort((a, b) => {
+        const ta = a.occurredAt ? new Date(a.occurredAt).getTime() : 0;
+        const tb = b.occurredAt ? new Date(b.occurredAt).getTime() : 0;
+        return tb - ta;
+      });
+
+      const total =
+        (auditTotalRow?.count ?? 0) + (sessionTotalRow?.count ?? 0);
+      const activity = merged.slice(offset, offset + limit);
+
       return res.json({
         activity,
         meta: {
-          total: totalRow?.count ?? 0,
+          total,
           page,
           limit,
         },

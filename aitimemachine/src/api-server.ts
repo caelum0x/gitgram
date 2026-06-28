@@ -1857,11 +1857,16 @@ process.on('SIGTERM', async () => {
 });
 
 const PORT = process.env.PORT || 3001;
+// HOST controls the bind interface. Default to localhost for safety; set
+// HOST=0.0.0.0 to expose the server on all interfaces (e.g. in a container).
+const HOST = process.env.HOST || 'localhost';
+// Display host: a 0.0.0.0 bind is reached via localhost in URLs.
+const DISPLAY_HOST = HOST === '0.0.0.0' || HOST === '::' ? 'localhost' : HOST;
 
 if (process.env.AITM_DISABLE_AUTOLISTEN !== '1') {
-  httpServer.listen(PORT, () => {
-    console.log(`API Server running on http://localhost:${PORT}`);
-    console.log(`WebSocket available on ws://localhost:${PORT}`);
+  httpServer.listen(Number(PORT), HOST, () => {
+    console.log(`API Server running on http://${DISPLAY_HOST}:${PORT} (bound to ${HOST})`);
+    console.log(`WebSocket available on ws://${DISPLAY_HOST}:${PORT}`);
   });
 }
 

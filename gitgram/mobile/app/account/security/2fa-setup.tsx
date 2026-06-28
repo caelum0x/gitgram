@@ -7,6 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -19,7 +20,8 @@ import { logger } from '../../../utils/logger';
 
 export default function TwoFactorSetupScreen() {
   const [step, setStep] = useState<'info' | 'scan' | 'verify'>('info');
-  const [qrCode, setQrCode] = useState('');
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [otpauthUrl, setOtpauthUrl] = useState('');
   const [secret, setSecret] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,7 +30,8 @@ export default function TwoFactorSetupScreen() {
     setLoading(true);
     try {
       const response = await authService.setupTwoFactor();
-      setQrCode(response.qrCodeUrl || response.otpauthUrl || '');
+      setQrCodeUrl(response.qrCodeUrl || '');
+      setOtpauthUrl(response.otpauthUrl || '');
       setSecret(response.secret || '');
       setStep('scan');
     } catch (error) {
@@ -61,6 +64,14 @@ export default function TwoFactorSetupScreen() {
       setLoading(false);
     }
   };
+
+  // Prefer the backend-rendered QR (data URI or hosted image). Fall back to a
+  // generated QR image from the otpauth URL so the user can always scan.
+  const qrImageSource = qrCodeUrl
+    ? qrCodeUrl
+    : otpauthUrl
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`
+      : '';
 
   if (step === 'info') {
     return (
@@ -110,8 +121,13 @@ export default function TwoFactorSetupScreen() {
           </Text>
 
           <View style={styles.qrContainer}>
-            {qrCode ? (
-              <Text style={styles.qrPlaceholder}>[QR Code Image]</Text>
+            {qrImageSource ? (
+              <Image
+                source={{ uri: qrImageSource }}
+                style={styles.qrImage}
+                resizeMode="contain"
+                accessibilityLabel="Two-factor authentication QR code"
+              />
             ) : (
               <LoadingSpinner />
             )}
@@ -235,9 +251,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  qrPlaceholder: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+  qrImage: {
+    width: 180,
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: Colors.white,
   },
   secretLabel: {
     fontSize: 14,

@@ -9,7 +9,7 @@ import {
     ScrollView,
     Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
@@ -40,6 +40,10 @@ const EffectPreviewOverlay = ({ effectId }: { effectId: string }) => {
 
 export default function CreateReelScreen() {
     const router = useRouter();
+    const { remixId, remixType } = useLocalSearchParams<{
+        remixId?: string;
+        remixType?: string;
+    }>();
     const [caption, setCaption] = useState('');
     const [loading, setLoading] = useState(false);
     const [showTrimEditor, setShowTrimEditor] = useState(false);
@@ -155,6 +159,14 @@ export default function CreateReelScreen() {
                 formData.append('effect', selectedEffect);
             }
 
+            // Preserve remix attribution when this reel was started from another reel.
+            if (remixId) {
+                formData.append('remixOfId', remixId);
+                if (remixType) {
+                    formData.append('remixType', remixType);
+                }
+            }
+
             await reelService.createReel(formData);
 
             // Reset the store after successful creation
@@ -223,6 +235,14 @@ export default function CreateReelScreen() {
             </View>
 
             <ScrollView style={styles.content}>
+                {remixId ? (
+                    <View style={styles.remixBanner}>
+                        <Icon name="auto-awesome" size={16} color={Colors.accent} />
+                        <Text style={styles.remixBannerText}>
+                            Remixing an existing reel{remixType ? ` (${remixType})` : ''}
+                        </Text>
+                    </View>
+                ) : null}
                 {videoUri ? (
                     <View style={styles.previewContainer}>
                         <Video
@@ -528,6 +548,21 @@ const styles = StyleSheet.create({
         fontSize: 16,
         minHeight: 100,
         textAlignVertical: 'top',
+    },
+    remixBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: Colors.surface,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    remixBannerText: {
+        color: Colors.accent,
+        fontSize: 13,
+        fontWeight: '600',
     },
     trimBadge: {
         position: 'absolute',

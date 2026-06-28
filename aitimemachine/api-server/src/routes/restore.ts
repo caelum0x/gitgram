@@ -505,7 +505,29 @@ router.get(
       const userId = req.user!.userId;
       const { projectId } = req.params;
 
-      // Find checkpoints with "green" patterns in name
+      // Primary path: query the structured testsPassed flag. This is the
+      // authoritative signal for "green" — a checkpoint created with passing
+      // tests regardless of its name. Most recent passing checkpoint wins.
+      const [structuredGreen] = await db
+        .select()
+        .from(schema.checkpoints)
+        .where(
+          and(
+            eq(schema.checkpoints.projectId, projectId),
+            eq(schema.checkpoints.userId, userId),
+            eq(schema.checkpoints.testsPassed, true)
+          )
+        )
+        .orderBy(desc(schema.checkpoints.createdAt))
+        .limit(1);
+
+      if (structuredGreen) {
+        return res.json({ checkpoint: structuredGreen, matchedBy: "tests_passed" });
+      }
+
+      // Fallback for legacy checkpoints that predate the testsPassed field:
+      // fuzzy-match green/passed/success in the name. New checkpoints should
+      // set testsPassed so this branch is only hit for historical data.
       const checkpoints = await db
         .select()
         .from(schema.checkpoints)
@@ -518,18 +540,22 @@ router.get(
         .orderBy(desc(schema.checkpoints.createdAt))
         .limit(100);
 
-      const greenCheckpoint = checkpoints.find(
-        (cp: any) =>
-          cp.name.toLowerCase().includes("green") ||
-          cp.name.toLowerCase().includes("passed") ||
-          cp.name.toLowerCase().includes("success")
-      );
+      const greenCheckpoint = checkpoints.find((cp) => {
+        // Never fall back onto a checkpoint explicitly marked as failed.
+        if (cp.testsPassed === false) return false;
+        const name = cp.name.toLowerCase();
+        return (
+          name.includes("green") ||
+          name.includes("passed") ||
+          name.includes("success")
+        );
+      });
 
       if (!greenCheckpoint) {
         return res.status(404).json({ error: "No green checkpoint found" });
       }
 
-      res.json({ checkpoint: greenCheckpoint });
+      res.json({ checkpoint: greenCheckpoint, matchedBy: "name" });
     } catch (error) {
       logger.error("Find last green error", error instanceof Error ? error : undefined, { details: String(error) });
       res.status(500).json({ error: "Failed to find last green checkpoint" });

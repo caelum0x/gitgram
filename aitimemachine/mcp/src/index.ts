@@ -11,7 +11,11 @@ import {
   getToolAvailability,
   getUnknownDisabledTools,
 } from './lib/stable-tools.js';
-import type { ToolRuntimeContext } from './lib/tool-runtime.js';
+import {
+  formatHiddenFamiliesWarning,
+  getConfiguredButHiddenFamilies,
+} from './lib/tool-diagnostics.js';
+import type { ToolRuntimeContext, SessionServerLike } from './lib/tool-runtime.js';
 import { registerCoreTools } from './tools/register-core-tools.js';
 import { registerSessionTools } from './tools/register-session-tools.js';
 import { registerIntegrationTools } from './tools/register-integration-tools.js';
@@ -126,7 +130,7 @@ server.tool = ((name: string, ...args: unknown[]) => {
 }) as unknown as typeof server.tool;
 
 let lib: Awaited<ReturnType<typeof loadLib>> | undefined;
-let sessionServer: any;
+let sessionServer: SessionServerLike;
 let currentProjectPath = process.cwd();
 
 const unknownDisabledTools = getUnknownDisabledTools(TOOL_SELECTION_OPTIONS);
@@ -181,7 +185,9 @@ if (process.env.CONTEXT7_API_KEY || process.env.AITM_CONTEXT7_ENABLED === '1') {
   registerContext7Tools(server, runtime);
 }
 // PAL is now an AITM-managed Python subprocess — gate on enable flag / bundled venv.
-if (process.env.AITM_PAL_ENABLED === '1' || process.env.PAL_VENV_DIR) {
+const PAL_ENABLED =
+  process.env.AITM_PAL_ENABLED === '1' || Boolean(process.env.PAL_VENV_DIR);
+if (PAL_ENABLED) {
   registerPalTools(server, runtime);
 }
 if (process.env.AITM_API_URL || process.env.AITM_WORKSPACE_ENABLED === '1') {
@@ -259,8 +265,12 @@ Examples:
   aitm-mcp --transport http --port 8080 # HTTP on custom port
 
 Environment:
-  AITM_EXPERIMENTAL_TOOLS=1  Enable experimental tools
-  DISABLED_TOOLS=a,b,c       Disable specific tools by name
+  AITM_EXPERIMENTAL_TOOLS=1   Make experimental tool families visible
+  DISABLED_TOOLS=a,b,c        Disable specific tools by name
+  AITM_API_URL=<url>          AITM API server base URL (ws_*/beads_* proxy)
+  AITM_API_KEY=aitm_...       Credential for the AITM API server (X-API-Key)
+  AITM_MCP_AUTH_TOKEN=<tok>   Require Bearer/X-API-Key auth on /mcp and /a2a (http)
+  AITM_MCP_ALLOWED_ORIGINS=.. Comma-separated CORS allow-list (http)
 `.trim());
 }
 
@@ -280,6 +290,39 @@ async function main() {
         .map(([name, reason]) => `${name} (${reason})`)
         .join(', ')}`
     );
+  }
+
+  // Discoverability: if a user configured an integration (set its env var) but
+  // every tool in that family is hidden because it is experimental and
+  // AITM_EXPERIMENTAL_TOOLS is unset, they'd see zero tools with no signal.
+  // Surface a clear, actionable hint rather than failing silently.
+  const hiddenWarning = formatHiddenFamiliesWarning(
+    getConfiguredButHiddenFamilies(TOOL_SELECTION_OPTIONS)
+  );
+  if (hiddenWarning) {
+    console.warn(hiddenWarning);
+  }
+
+  // PAL readiness probe: when PAL tools are enabled, verify the bundled venv up
+  // front so a broken/missing install surfaces immediately as clear guidance
+  // instead of a 30s timeout on the first pal_* call. Non-fatal: the tools stay
+  // registered so the error is also actionable at call time.
+  if (PAL_ENABLED) {
+    try {
+      const { probePalReadiness } = await import('./tools/register-pal-tools.js');
+      const probe = await probePalReadiness();
+      if (!probe.ready) {
+        console.warn(`PAL tools enabled but NOT ready: ${probe.detail}`);
+      } else {
+        console.error('PAL engine readiness check passed.');
+      }
+    } catch (err: unknown) {
+      console.warn(
+        `PAL readiness probe could not run: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
   if (cli.transport === 'http') {

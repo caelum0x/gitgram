@@ -7,6 +7,16 @@
  */
 
 import { mockPrisma } from '../setup';
+
+// getLanguages first tries GitHub for byte-level language stats and only falls
+// back to the stored primary language when that fails. Mock githubService so the
+// fallback path is exercised deterministically and offline.
+jest.mock('../../src/services/githubService', () => ({
+  githubService: {
+    getRepositoryLanguages: jest.fn().mockRejectedValue(new Error('offline in tests')),
+  },
+}));
+
 import {
   resolveRepoId,
   getPulse,
@@ -354,18 +364,26 @@ describe('getCommitActivity', () => {
   });
 
   it('places commit count in correct day-of-week bucket', async () => {
-    // Find the most recent Monday (day 1) within the last week
+    // The service buckets by ISO week starting on Sunday (UTC) and indexes days
+    // by getUTCDay() (0 = Sunday, 1 = Monday). Build the Monday of the CURRENT
+    // week (the most recent Sunday + 1 day) at UTC noon so the push deterministically
+    // lands in the Monday slot of the last week regardless of when the test runs.
     const now = new Date();
-    const dayOfWeek = now.getUTCDay(); // 0 = Sun
-    // Go back to the most recent Monday
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const mondayOffset = daysToMonday + (dayOfWeek === 1 ? 0 : 0);
-    const monday = daysBack(daysToMonday);
+    const sundayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - now.getUTCDay()),
+    );
+    const monday = new Date(sundayStart.getTime() + MS_PER_DAY + 12 * 60 * 60 * 1000);
+
     seedActivity({ eventType: 'PUSH', occurredAt: monday, metadata: { commits: [{}, {}, {}] } });
     const result = await getCommitActivity(REPO_ID);
-    const lastWeek = result.weeks[result.weeks.length - 1];
+
+    // Locate the week bucket whose start is this Sunday rather than assuming it is
+    // necessarily the array's last element.
+    const weekKey = sundayStart.toISOString().slice(0, 10);
+    const week = result.weeks.find((w) => w.week === weekKey);
+    expect(week).toBeDefined();
     // day index 1 = Monday
-    expect(lastWeek.days[1]).toBe(3);
+    expect(week!.days[1]).toBe(3);
   });
 });
 
@@ -441,7 +459,9 @@ describe('getLanguages', () => {
   it('returns the primary language at 100% when set', async () => {
     seedRepo({ language: 'TypeScript' });
     const result = await getLanguages(REPO_ID);
-    expect(result.total).toBe(1);
+    // GitHub byte data is unavailable in the fallback, so total bytes is 0 by
+    // design (no fabricated byte counts) while the single language is 100%.
+    expect(result.total).toBe(0);
     expect(result.languages).toHaveLength(1);
     expect(result.languages[0].name).toBe('TypeScript');
     expect(result.languages[0].percentage).toBe(100);

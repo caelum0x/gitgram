@@ -22,6 +22,7 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { isAnnualBillingAvailable } from '@/lib/billingProducts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,7 +182,7 @@ const faqs: FaqItem[] = [
   {
     question: 'How does the annual discount work?',
     answer:
-      'Switching to annual billing gives you 20% off — that\'s over two months free per year. The discount is applied automatically when you choose annual billing at checkout. You can switch at any time from your dashboard.',
+      'Annual billing saves you 20% — over two months free per year. When the annual option is available, choosing it on this page sends you to a checkout for the discounted annual plan; the lower price is the price you are charged. You can switch between monthly and annual at any time from your billing dashboard.',
   },
   {
     question: 'What happens to my data if I cancel?',
@@ -293,6 +294,10 @@ export default function PricingPage() {
   const { isSignedIn } = useUser();
   const searchParams = useSearchParams();
 
+  // Only offer annual billing when at least one annual Polar product ID is
+  // configured. Showing the toggle without a backing product would let a user
+  // pick a discounted price we cannot actually charge.
+  const annualAvailable = isAnnualBillingAvailable();
   const [annual, setAnnual] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -378,7 +383,9 @@ export default function PricingPage() {
           No hidden fees, cancel anytime.
         </p>
 
-        <AnnualToggle annual={annual} onToggle={() => setAnnual((v) => !v)} />
+        {annualAvailable && (
+          <AnnualToggle annual={annual} onToggle={() => setAnnual((v) => !v)} />
+        )}
       </section>
 
       {/* Plan cards */}

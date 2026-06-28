@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useState } from 'react';
-import { useRouter, notFound } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -12,6 +12,9 @@ import {
   Folder,
   FileCode,
   ListChecks,
+  Copy,
+  Check,
+  Terminal,
 } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
@@ -73,9 +76,9 @@ function FileTree({ nodes, depth = 0 }: { nodes: TemplateFileNode[]; depth?: num
 // ---- Use-template action ----------------------------------------------------
 
 function useTemplateAction(template: Template) {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<FromTemplateResponse | null>(null);
 
   const run = async () => {
     setLoading(true);
@@ -91,14 +94,87 @@ function useTemplateAction(template: Template) {
         throw new Error(body.error ?? `Server error ${res.status}`);
       }
       const data = (await res.json()) as FromTemplateResponse;
-      router.push(data.nextPath ?? `/dashboard/timeline?project=${data.projectId}`);
+      // We do not redirect to an empty timeline. The web app has no filesystem
+      // access, so the actual scaffolding + first checkpoint happen via the CLI.
+      // Surface a guided handoff with the exact command instead.
+      setResult(data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
+    } finally {
       setLoading(false);
     }
   };
 
-  return { loading, error, setError, run };
+  return { loading, error, setError, result, run };
+}
+
+// ---- CLI handoff ------------------------------------------------------------
+
+function ScaffoldHandoff({
+  template,
+  result,
+}: {
+  template: Template;
+  result: FromTemplateResponse;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(result.scaffoldCommand);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <section className="mb-10 rounded-2xl border border-green-800/60 bg-green-950/20 p-6">
+      <div className="flex items-center gap-2 mb-3">
+        <CheckCircle2 className="w-5 h-5 text-green-400" />
+        <h2 className="text-lg font-semibold text-green-300">
+          Project created — finish in your terminal
+        </h2>
+      </div>
+      <p className="text-sm text-gray-300 mb-4 max-w-2xl">
+        We created an empty AITM project for{' '}
+        <span className="font-medium text-white">{template.name}</span>. Because
+        scaffolding writes files to your machine, run the command below in the
+        directory where you want the project. It generates the template files and
+        records your first checkpoint into this project.
+      </p>
+
+      <div className="flex items-stretch gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0 rounded-lg border border-gray-800 bg-gray-950/70 px-4 py-3 font-mono text-sm text-gray-200 overflow-x-auto">
+          <Terminal className="w-4 h-4 text-gray-500 shrink-0" />
+          <code className="whitespace-nowrap">{result.scaffoldCommand}</code>
+        </div>
+        <Button variant="outline" onClick={copy} className="shrink-0">
+          {copied ? (
+            <>
+              <Check className="w-4 h-4 mr-2 text-green-400" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-4 h-4 mr-2" />
+              Copy
+            </>
+          )}
+        </Button>
+      </div>
+
+      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+        <Button asChild variant="outline" size="sm">
+          <Link href={result.nextPath}>Open project timeline</Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/docs/cli-reference">CLI reference</Link>
+        </Button>
+      </div>
+    </section>
+  );
 }
 
 // ---- Page -------------------------------------------------------------------
@@ -115,7 +191,7 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
 }
 
 function TemplateDetail({ template }: { template: Template }) {
-  const { loading, error, setError, run } = useTemplateAction(template);
+  const { loading, error, setError, result, run } = useTemplateAction(template);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -173,11 +249,21 @@ function TemplateDetail({ template }: { template: Template }) {
           </div>
 
           <div className="shrink-0">
-            <Button size="lg" onClick={run} disabled={loading} className="w-full md:w-auto">
+            <Button
+              size="lg"
+              onClick={run}
+              disabled={loading || result !== null}
+              className="w-full md:w-auto"
+            >
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Creating session…
+                </>
+              ) : result ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2 text-green-400" />
+                  Project created
                 </>
               ) : (
                 <>
@@ -188,6 +274,8 @@ function TemplateDetail({ template }: { template: Template }) {
             </Button>
           </div>
         </div>
+
+        {result && <ScaffoldHandoff template={template} result={result} />}
 
         {error && (
           <div className="mb-8 flex items-center gap-3 rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-300">
@@ -262,11 +350,16 @@ function TemplateDetail({ template }: { template: Template }) {
             <p className="text-gray-400 mb-6 max-w-md mx-auto">
               Spin up a fully checkpointed session from this template in seconds.
             </p>
-            <Button size="lg" onClick={run} disabled={loading}>
+            <Button size="lg" onClick={run} disabled={loading || result !== null}>
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Creating session…
+                </>
+              ) : result ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2 text-green-400" />
+                  Project created — see command above
                 </>
               ) : (
                 <>

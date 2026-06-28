@@ -14,8 +14,8 @@ import { logger } from "../lib/monitoring.js";
 // Configuration
 // ============================================================================
 
-const GITGRAM_API_URL =
-  process.env.GITGRAM_API_URL || "http://localhost:4000";
+const GITGRAM_API_URL_EXPLICIT = process.env.GITGRAM_API_URL;
+const GITGRAM_API_URL = GITGRAM_API_URL_EXPLICIT || "http://localhost:4000";
 const GITGRAM_API_KEY = process.env.GITGRAM_API_KEY;
 
 // ============================================================================
@@ -62,6 +62,72 @@ interface GitgramPostPayload {
  */
 function isBridgeConfigured(): boolean {
   return Boolean(GITGRAM_API_URL);
+}
+
+export type GitgramBridgeStatus = "active" | "default-localhost" | "unconfigured";
+
+export interface GitgramBridgeConfig {
+  /**
+   * - "active": GITGRAM_API_URL is explicitly set — social push flow is live.
+   * - "default-localhost": no GITGRAM_API_URL; falling back to localhost:4000
+   *   (works in local dev but inert in a typical production deployment).
+   * - "unconfigured": GITGRAM_API_URL is set to an empty string.
+   */
+  status: GitgramBridgeStatus;
+  apiUrl: string;
+  hasApiKey: boolean;
+  /** Restore-event push additionally requires GITGRAM_API_KEY. */
+  restorePushEnabled: boolean;
+}
+
+/**
+ * Reports the GitGram bridge configuration so callers (e.g. /health/providers
+ * and startup logging) can see whether the gitgram<->aitm social sync flow is
+ * actually wired up in this deployment. Document GITGRAM_API_URL as required to
+ * activate the social push flow in production.
+ */
+export function getGitgramBridgeConfig(): GitgramBridgeConfig {
+  // Read env live so health/startup reporting reflects the current
+  // configuration, not a value latched at module import time.
+  const explicitUrl = process.env.GITGRAM_API_URL;
+  const apiKey = process.env.GITGRAM_API_KEY;
+  const apiUrl = explicitUrl || "http://localhost:4000";
+
+  let status: GitgramBridgeStatus;
+  if (explicitUrl === undefined) {
+    status = "default-localhost";
+  } else if (explicitUrl.trim() === "") {
+    status = "unconfigured";
+  } else {
+    status = "active";
+  }
+
+  return {
+    status,
+    apiUrl,
+    hasApiKey: Boolean(apiKey),
+    restorePushEnabled: status === "active" && Boolean(apiKey),
+  };
+}
+
+/**
+ * Emit a one-time startup log line describing the bridge state, so a default
+ * production deploy doesn't silently run with an inert social-sync flow.
+ */
+export function logGitgramBridgeStartupStatus(): void {
+  const config = getGitgramBridgeConfig();
+  if (config.status === "active") {
+    logger.info("gitgramBridge: social push flow active", {
+      apiUrl: config.apiUrl,
+      restorePushEnabled: config.restorePushEnabled,
+    });
+  } else {
+    logger.warn(
+      "gitgramBridge: social push flow inactive — set GITGRAM_API_URL " +
+        "(and GITGRAM_API_KEY for restore-event push) to activate gitgram<->aitm sync",
+      { status: config.status, apiUrl: config.apiUrl }
+    );
+  }
 }
 
 /**

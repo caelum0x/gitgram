@@ -8,6 +8,35 @@
 import { mockPrisma } from '../setup';
 
 // ---------------------------------------------------------------------------
+// External transport mocks — keep dispatch deterministic and offline.
+// dispatchExpo uses global fetch; dispatchWebPush uses the web-push library.
+// Both default to a successful 'ok' send so no token is deactivated.
+// ---------------------------------------------------------------------------
+
+jest.mock('web-push', () => ({
+  __esModule: true,
+  default: {
+    setVapidDetails: jest.fn(),
+    sendNotification: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
+const mockFetch = jest.fn();
+beforeAll(() => {
+  (global as any).fetch = mockFetch;
+});
+
+beforeEach(() => {
+  mockFetch.mockReset();
+  // Default: Expo API accepts the push (status 'ok'), so no deactivation occurs.
+  mockFetch.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { status: 'ok' } }),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Service under test — imported after setup mocks are registered
 // ---------------------------------------------------------------------------
 
@@ -56,6 +85,7 @@ function makePushDevice(overrides: Record<string, unknown> = {}) {
     platform: 'IOS',
     active: true,
     deviceName: null,
+    webPushSubscription: null,
     lastUsed: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -69,7 +99,8 @@ function makeWebPushDevice(overrides: Record<string, unknown> = {}) {
     id: 'device-web-1',
     pushToken: sub.endpoint,
     platform: 'WEB',
-    deviceName: JSON.stringify(sub),
+    // The service serializes the subscription into the webPushSubscription column.
+    webPushSubscription: JSON.stringify(sub),
     ...overrides,
   });
 }
@@ -103,13 +134,13 @@ describe('registerWebPushToken', () => {
     );
   });
 
-  it('stores serialized subscription JSON in deviceName', async () => {
+  it('stores serialized subscription JSON in webPushSubscription', async () => {
     const sub = makeWebSubscription();
 
     await registerWebPushToken('user-1', sub);
 
     const upsertCall = (mockPrisma.pushDevice.upsert as jest.Mock).mock.calls[0][0];
-    const stored = JSON.parse(upsertCall.create.deviceName);
+    const stored = JSON.parse(upsertCall.create.webPushSubscription);
     expect(stored.endpoint).toBe(sub.endpoint);
     expect(stored.keys.p256dh).toBe(sub.keys.p256dh);
   });

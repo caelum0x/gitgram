@@ -402,10 +402,17 @@ export function registerConfigCommands(program: Command): void {
       console.log();
     });
 
-  // Export/Import
+  // Export/Import — portable single-file dump of the whole local store.
+  //
+  // Named `export-all` (not `export`) so it does not collide with the
+  // `export json|markdown|csv|report|git-history` command group registered by
+  // export-commands. Keeping distinct verbs avoids the confusing dual meaning
+  // of a single `export` that is both a leaf command and a command group.
+  // `export` (no alias) is kept available for the format group.
   program
-    .command('export <file>')
-    .description('Export all data to portable file')
+    .command('export-all <file>')
+    .alias('dump')
+    .description('Export the entire local store to a portable file')
     .action(async (file) => {
       const { CloudSync } = await import('../cloud-sync.js');
       const sync = new CloudSync(process.cwd());
@@ -414,8 +421,9 @@ export function registerConfigCommands(program: Command): void {
     });
 
   program
-    .command('import <file>')
-    .description('Import data from portable file')
+    .command('import-all <file>')
+    .alias('import')
+    .description('Import a portable store file produced by export-all')
     .action(async (file) => {
       const { CloudSync } = await import('../cloud-sync.js');
       const sync = new CloudSync(process.cwd());

@@ -44,8 +44,39 @@ const afterActionSchema = z.object({
   result: z.record(z.unknown()).optional(),
   success: z.boolean().optional(),
   error: z.string().optional(),
+  // Structured test/build outcome for the resulting checkpoint, enabling
+  // reliable last-green detection independent of the checkpoint name.
+  testsPassed: z.boolean().optional(),
+  testStatus: z.enum(["passed", "failed", "unknown", "skipped"]).optional(),
   idempotencyKey: z.string().min(1).max(256).optional(),
 });
+
+type AfterActionInput = z.infer<typeof afterActionSchema>;
+
+/**
+ * Derive the structured test-status columns for the after-action checkpoint.
+ * Prefers an explicit testsPassed/testStatus; otherwise infers from the
+ * action's success flag so test-runner actions record a usable green signal.
+ */
+function resolveAfterActionTestStatus(payload: AfterActionInput): {
+  testsPassed: boolean | null;
+  testStatus: string | null;
+} {
+  if (typeof payload.testsPassed === "boolean") {
+    return {
+      testsPassed: payload.testsPassed,
+      testStatus:
+        payload.testStatus ?? (payload.testsPassed ? "passed" : "failed"),
+    };
+  }
+  if (payload.testStatus === "passed") {
+    return { testsPassed: true, testStatus: "passed" };
+  }
+  if (payload.testStatus === "failed") {
+    return { testsPassed: false, testStatus: "failed" };
+  }
+  return { testsPassed: null, testStatus: payload.testStatus ?? null };
+}
 
 function stableHash(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex").slice(0, 24);
@@ -390,6 +421,7 @@ router.post("/after", async (req: AuthenticatedRequest, res) => {
       scope: "files+chat",
       manifestHash,
       triggerType: "after_action",
+      ...resolveAfterActionTestStatus(payload),
       metadata: {
         action: payload.action,
         result: payload.result || null,

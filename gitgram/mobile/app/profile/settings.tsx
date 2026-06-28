@@ -9,19 +9,18 @@ import { authService } from '../../services/authService';
 import { logger } from '../../utils/logger';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// Every route below resolves to a real screen. Account/Privacy/Theme/Language/Help
-// live under app/profile/settings/*, Security is the hub at
-// app/profile/settings/security.tsx, and Notifications/About reuse the complete
-// screens under app/settings/*.
+// Every route below resolves to a real screen under app/profile/settings/*,
+// the single canonical settings hierarchy. Security is the hub at
+// app/profile/settings/security.tsx.
 const SETTINGS_ITEMS = [
   { icon: 'person', label: 'Account', route: '/profile/settings/account' },
-  { icon: 'notifications', label: 'Notifications', route: '/settings/notifications' },
+  { icon: 'notifications', label: 'Notifications', route: '/profile/settings/notifications' },
   { icon: 'lock', label: 'Privacy', route: '/profile/settings/privacy' },
   { icon: 'security', label: 'Security', route: '/profile/settings/security' },
   { icon: 'palette', label: 'Theme', route: '/profile/settings/theme' },
   { icon: 'language', label: 'Language', route: '/profile/settings/language' },
   { icon: 'help', label: 'Help & Support', route: '/profile/settings/help' },
-  { icon: 'info', label: 'About', route: '/settings/about' },
+  { icon: 'info', label: 'About', route: '/profile/settings/about' },
 ];
 
 export default function SettingsScreen() {

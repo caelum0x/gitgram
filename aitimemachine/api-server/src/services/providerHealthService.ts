@@ -229,6 +229,65 @@ async function checkAnthropic(): Promise<ProviderHealth> {
   }
 }
 
+async function checkEmbeddings(): Promise<ProviderHealth> {
+  // Reports whether semantic ranking is backed by a real embedding API or the
+  // lexical local fallback. "degraded" means search still works but relevance
+  // is lexical-only — configure OPENAI_API_KEY or VOYAGE_API_KEY for full
+  // semantic ranking. Reads env directly so it reflects current config (and
+  // mirrors checkOpenAI/checkAnthropic); offline (no network call).
+  if (process.env.OPENAI_API_KEY) {
+    return makeResult("Embeddings", "healthy", 0, { version: "openai-small" });
+  }
+  if (process.env.VOYAGE_API_KEY) {
+    return makeResult("Embeddings", "healthy", 0, { version: "voyage" });
+  }
+  return makeResult("Embeddings", "degraded", 0, {
+    version: "local",
+    error:
+      "Using lexical local fallback (no semantic provider). Set OPENAI_API_KEY or VOYAGE_API_KEY for production-grade semantic ranking.",
+  });
+}
+
+async function checkLLM(): Promise<ProviderHealth> {
+  // Reports whether an LLM provider (OpenAI/Anthropic) is available for
+  // user-facing AI features. "unconfigured" means callers fall back to
+  // deterministic heuristics and any direct llm.complete() output is a
+  // placeholder — set OPENAI_API_KEY or ANTHROPIC_API_KEY for AI features.
+  // Reads env directly to reflect current config (mirrors checkOpenAI).
+  if (process.env.OPENAI_API_KEY) {
+    return makeResult("LLM", "healthy", 0, { version: "openai" });
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return makeResult("LLM", "healthy", 0, { version: "anthropic" });
+  }
+  return makeResult("LLM", "unconfigured", 0, {
+    error:
+      "No LLM provider configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable AI features (oracle summaries, checkpoint naming, research).",
+  });
+}
+
+async function checkGitgramBridge(): Promise<ProviderHealth> {
+  // Optional social-sync integration. Surfaces whether the gitgram<->aitm push
+  // flow is actually wired up. Offline check (config introspection only).
+  try {
+    const { getGitgramBridgeConfig } = await import("./gitgramBridgeService.js");
+    const config = getGitgramBridgeConfig();
+    if (config.status === "active") {
+      return makeResult("GitgramBridge", "healthy", 0, { version: config.apiUrl });
+    }
+    return makeResult("GitgramBridge", "unconfigured", 0, {
+      error:
+        config.status === "default-localhost"
+          ? "GITGRAM_API_URL not set (defaulting to localhost:4000) — social push flow inert. Set GITGRAM_API_URL (and GITGRAM_API_KEY for restore-event push) to activate."
+          : "GITGRAM_API_URL set to empty — social push flow disabled.",
+    });
+  } catch (err) {
+    return makeResult("GitgramBridge", "unavailable", 0, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function checkPostgres(): Promise<ProviderHealth> {
   const start = Date.now();
   try {
@@ -285,6 +344,9 @@ const PROVIDER_CHECKS: Record<string, () => Promise<ProviderHealth>> = {
   PAL: checkPal,
   OpenAI: checkOpenAI,
   Anthropic: checkAnthropic,
+  Embeddings: checkEmbeddings,
+  LLM: checkLLM,
+  GitgramBridge: checkGitgramBridge,
   PostgreSQL: checkPostgres,
   Redis: checkRedis,
 };
@@ -307,20 +369,40 @@ export async function checkProvider(name: string): Promise<ProviderHealth> {
   return check();
 }
 
+// Optional providers: their absence (unconfigured) is an expected deployment
+// choice and must NOT drag the overall status to "degraded". They are still
+// reported individually so operators can see whether the integration is live.
+const OPTIONAL_PROVIDERS = new Set<string>([
+  "Embeddings",
+  "LLM",
+  "GitgramBridge",
+  "Context7",
+  "OpenAI",
+  "Anthropic",
+  "Redis",
+]);
+
 /**
  * Run all provider checks in parallel and return a full HealthReport.
- * - overall = 'healthy'    — all providers are healthy
- * - overall = 'degraded'   — at least one is degraded/unconfigured
- * - overall = 'unavailable'— no providers are healthy
+ * - overall = 'healthy'    — every required provider is healthy (optional
+ *   providers may be unconfigured/degraded without affecting overall)
+ * - overall = 'degraded'   — a required provider is degraded, or a required
+ *   provider is unavailable while at least one other required provider is healthy
+ * - overall = 'unavailable'— no required provider is healthy
  */
 export async function checkAllProviders(): Promise<HealthReport> {
   const results = await Promise.all(
     Object.values(PROVIDER_CHECKS).map((fn) => fn())
   );
 
-  const healthyCount = results.filter((r) => r.status === "healthy").length;
+  // Overall health is computed from required providers only; optional providers
+  // that are merely unconfigured shouldn't make a deployment look unhealthy.
+  const required = results.filter((r) => !OPTIONAL_PROVIDERS.has(r.name));
+  const healthyCount = required.filter((r) => r.status === "healthy").length;
   let overall: ProviderStatus;
-  if (healthyCount === results.length) {
+  if (required.length === 0) {
+    overall = "healthy";
+  } else if (healthyCount === required.length) {
     overall = "healthy";
   } else if (healthyCount === 0) {
     overall = "unavailable";

@@ -247,6 +247,11 @@ export const checkpoints = pgTable(
     manifestHash: text("manifest_hash").notNull(), // Hash of the manifest blob
     rootTreeHash: text("root_tree_hash"), // Hash of the root tree object (Git-like tree hierarchy)
     triggerType: text("trigger_type"), // manual, auto, before_action, after_action
+    // Structured test/build status for reliable "last-green" detection instead
+    // of fuzzy name matching. testsPassed is the authoritative boolean signal;
+    // testStatus carries a richer label (passed | failed | unknown | skipped).
+    testsPassed: boolean("tests_passed"), // null = unknown
+    testStatus: text("test_status"), // passed | failed | unknown | skipped
     linkedCheckpointId: text("linked_checkpoint_id"),
     embeddingJson: jsonb("embedding_json"), // Semantic embedding vector for similarity search
     embeddingModel: text("embedding_model"), // Provider that generated the embedding

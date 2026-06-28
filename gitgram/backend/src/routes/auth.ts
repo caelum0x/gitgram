@@ -285,62 +285,9 @@ router.post('/resend-verification',
   authController.resendVerificationEmail
 );
 
-// 2FA endpoints
-/**
- * @swagger
- * /api/v1/auth/2fa/setup:
- *   post:
- *     summary: Initialize 2FA setup
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: 2FA setup initialized with QR code
- */
-router.post('/2fa/setup', authenticate, authLimiter, authController.setupTwoFactor);
-router.post('/2fa/setup/verify',
-  authenticate,
-  authLimiter,
-  validate([
-    body('token').notEmpty().withMessage('2FA token is required'),
-    body('secret').notEmpty().withMessage('2FA secret is required'),
-  ]),
-  authController.verifyTwoFactorSetup
-);
-
-/**
- * @swagger
- * /api/v1/auth/verify-2fa:
- *   post:
- *     summary: Verify 2FA code
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - code
- *             properties:
- *               code:
- *                 type: string
- *     responses:
- *       200:
- *         description: 2FA verified
- *       401:
- *         description: Invalid 2FA code
- */
-router.post('/verify-2fa',
-  authenticate,
-  authLimiter,
-  validate([body('code').notEmpty().withMessage('2FA code is required')]),
-  authController.verifyTwoFactor
-);
-router.post('/resend-2fa', authenticate, emailLimiter, authController.resendTwoFactor);
+// 2FA endpoints are served by the dedicated 2FA router mounted at
+// /api/v1/auth/2fa (see routes/twoFactor.ts). They were removed from this file
+// to eliminate the duplicate setup/verify surface and the secret-store mismatch.
 
 // Account recovery
 router.post('/recover-account',

@@ -127,12 +127,15 @@ export class SelectiveRestore {
       }
 
       try {
-        const content = this.engine.getFileContent(options.checkpointId, file.path);
+        // Write-through restore (no merge): use the Buffer API so binary files
+        // are materialized byte-for-byte rather than corrupted by a UTF-8
+        // decode/encode round-trip.
+        const content = this.engine.getFileBufferAt(options.checkpointId, file.path);
         if (!content) {
           skipped.push(file.path);
           continue;
         }
-        
+
         const fullPath = path.join(this.engine.getProjectPath(), file.path);
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, content);

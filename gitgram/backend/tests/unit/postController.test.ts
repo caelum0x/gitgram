@@ -85,6 +85,17 @@ jest.mock('../../src/services/moderationService', () => ({
   runAutoModerationPipeline: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The /api/v1/trending endpoint is served by trendingController, which delegates
+// to trendingRankingService.getTrending (tiered ranking), not FeedService.
+jest.mock('../../src/services/trendingRankingService', () => ({
+  getTrending: jest.fn(),
+  getTrendingPosts: jest.fn(),
+  getTrendingRepos: jest.fn(),
+  getTrendingCreators: jest.fn(),
+  getSignalWeightConfig: jest.fn(),
+  updateSignalWeight: jest.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports — after mocks
 // ---------------------------------------------------------------------------
@@ -94,6 +105,7 @@ import { Express } from 'express';
 import { createApp } from '../../src/index';
 import { mockPrisma } from '../setup';
 import FeedService from '../../src/services/feedService';
+import * as trendingRankingService from '../../src/services/trendingRankingService';
 import { tuneFeed } from '../../src/services/feedTuner';
 import { blockService } from '../../src/services/blockService';
 import { getCachedComments } from '../../src/utils/commentCache';
@@ -487,13 +499,14 @@ describe('POST /api/v1/posts/:id/like — likePost', () => {
     const user = seedUser({ id: 'u1', username: 'liker' });
     seedAccount(user.id, { id: 'acc1' });
     const post = seedPost({ id: 'post-liked', userId: 'other', likesCount: 1 });
-    // Pre-seed the existing like with composite key
+    // Pre-seed the existing like. Real Prisma rows store the postId/userId
+    // columns only — the postId_userId compound key is a query-time construct,
+    // so the mock matches it from those columns (do not store it on the row).
     mockPrisma.like.__rows.push({
       id: 'like-existing',
       postId: post.id,
       userId: user.id,
       accountId: 'acc1',
-      postId_userId: { postId: post.id, userId: user.id },
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -544,14 +557,14 @@ describe('POST /api/v1/posts/:id/unlike — unlikePost', () => {
       postId: post.id,
       userId: user.id,
       accountId: 'acc1',
-      postId_userId: { postId: post.id, userId: user.id },
       createdAt: new Date(),
       updatedAt: new Date(),
     });
     const token = makeToken(user.id);
 
+    // Unlike is exposed as DELETE /:id/like (not POST /:id/unlike).
     const res = await request(app)
-      .post(`/api/v1/posts/${post.id}/unlike`)
+      .delete(`/api/v1/posts/${post.id}/like`)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
@@ -565,7 +578,7 @@ describe('POST /api/v1/posts/:id/unlike — unlikePost', () => {
     const token = makeToken(user.id);
 
     const res = await request(app)
-      .post(`/api/v1/posts/${post.id}/unlike`)
+      .delete(`/api/v1/posts/${post.id}/like`)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(400);
@@ -587,7 +600,7 @@ describe('POST /api/v1/posts/:id/comment — addComment', () => {
     const token = makeToken(user.id);
 
     const res = await request(app)
-      .post(`/api/v1/posts/${post.id}/comment`)
+      .post(`/api/v1/posts/${post.id}/comments`)
       .set('Authorization', `Bearer ${token}`)
       .send({ content: 'Nice post!' });
 
@@ -608,7 +621,7 @@ describe('POST /api/v1/posts/:id/comment — addComment', () => {
     clearModel('account');
 
     const res = await request(app)
-      .post('/api/v1/posts/ghost-post/comment')
+      .post('/api/v1/posts/ghost-post/comments')
       .set('Authorization', `Bearer ${token}`)
       .send({ content: 'Comment on ghost' });
 
@@ -619,7 +632,7 @@ describe('POST /api/v1/posts/:id/comment — addComment', () => {
     const post = seedPost({ id: 'post-auth-c', userId: 'someone' });
 
     const res = await request(app)
-      .post(`/api/v1/posts/${post.id}/comment`)
+      .post(`/api/v1/posts/${post.id}/comments`)
       .send({ content: 'No auth comment' });
 
     expect(res.status).toBe(401);
@@ -739,25 +752,38 @@ describe('GET /api/v1/trending — getTrending (guest feed)', () => {
   });
 
   it('returns trending posts for unauthenticated users', async () => {
-    const trendingPosts = [
-      { id: 'tp1', content: 'trending post 1', likesCount: 100 },
-      { id: 'tp2', content: 'trending post 2', likesCount: 80 },
-    ];
-    (FeedService.getTrendingPosts as jest.Mock).mockResolvedValueOnce(trendingPosts);
+    const trendingResult = {
+      items: [
+        { id: 'tp1', content: 'trending post 1', likesCount: 100 },
+        { id: 'tp2', content: 'trending post 2', likesCount: 80 },
+      ],
+      total: 2,
+      tier: 'TRENDING_TODAY',
+      hasMore: false,
+    };
+    (trendingRankingService.getTrending as jest.Mock).mockResolvedValueOnce(trendingResult);
 
     const res = await request(app).get('/api/v1/trending');
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveProperty('success', true);
+    expect(res.body).toHaveProperty('data');
   });
 
   it('respects the limit query parameter', async () => {
-    (FeedService.getTrendingPosts as jest.Mock).mockResolvedValueOnce([]);
+    (trendingRankingService.getTrending as jest.Mock).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      tier: 'TRENDING_TODAY',
+      hasMore: false,
+    });
 
     const res = await request(app).get('/api/v1/trending?limit=5');
 
     expect(res.status).toBe(200);
-    expect(FeedService.getTrendingPosts).toHaveBeenCalledWith(5);
+    expect(trendingRankingService.getTrending).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 5 })
+    );
   });
 });
 

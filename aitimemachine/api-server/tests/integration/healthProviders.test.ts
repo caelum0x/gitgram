@@ -179,8 +179,11 @@ beforeEach(() => {
     CONTEXT7_API_KEY: undefined,
     OPENAI_API_KEY: undefined,
     ANTHROPIC_API_KEY: undefined,
+    VOYAGE_API_KEY: undefined,
     REDIS_URL: undefined,
     BEADS_BINARY: undefined,
+    GITGRAM_API_URL: undefined,
+    GITGRAM_API_KEY: undefined,
   });
 
   // Default: Beads binary not found (ENOENT → unconfigured).
@@ -243,6 +246,9 @@ describe("GET /health/providers — HealthReport shape", () => {
     expect(names).toContain("PAL");
     expect(names).toContain("OpenAI");
     expect(names).toContain("Anthropic");
+    expect(names).toContain("Embeddings");
+    expect(names).toContain("LLM");
+    expect(names).toContain("GitgramBridge");
     expect(names).toContain("PostgreSQL");
     expect(names).toContain("Redis");
   });
@@ -283,6 +289,9 @@ describe("checkAllProviders — overall status logic", () => {
       OPENAI_API_KEY: "sk-ok",
       ANTHROPIC_API_KEY: "sk-ant-ok",
       REDIS_URL: "redis://localhost:6379",
+      // Embeddings (OpenAI key) + LLM (OpenAI/Anthropic) resolve healthy; the
+      // GitGram bridge needs an explicit URL to be "active"/healthy.
+      GITGRAM_API_URL: "https://gitgram.test",
     });
 
     // Beads binary responds successfully.

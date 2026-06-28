@@ -1,5 +1,6 @@
 import logger from '../utils/logger';
 import { uploadMedia } from './storageService';
+import { errorTracker } from '../utils/errorTracker';
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
@@ -9,6 +10,42 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+// Number of ffmpeg extraction attempts before degrading to a placeholder.
+// Transient failures (busy disk, slow I/O) frequently succeed on retry, so
+// retrying keeps real-frame thumbnails the norm rather than the placeholder.
+const FFMPEG_THUMBNAIL_ATTEMPTS = 2;
+
+/**
+ * Extracts a real frame thumbnail with ffmpeg, retrying transient failures.
+ * Resolves once a thumbnail file exists at tempPath; throws if all attempts fail.
+ */
+async function extractFrameWithRetry(videoPath: string, tempPath: string): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= FFMPEG_THUMBNAIL_ATTEMPTS; attempt += 1) {
+    try {
+      await execAsync(
+        `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=640:-1" -y "${tempPath}" 2>/dev/null || ` +
+        `ffmpeg -i "${videoPath}" -ss 00:00:00 -vframes 1 -vf "scale=640:-1" -y "${tempPath}" 2>/dev/null`
+      );
+      await fs.access(tempPath);
+      if (attempt > 1) {
+        logger.info(`Thumbnail generated using ffmpeg on attempt ${attempt}`);
+      } else {
+        logger.debug('Thumbnail generated using ffmpeg');
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(`FFmpeg thumbnail attempt ${attempt}/${FFMPEG_THUMBNAIL_ATTEMPTS} failed`);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('FFmpeg thumbnail extraction failed');
+}
 
 function uuidv4(): string {
   return crypto.randomUUID();
@@ -81,22 +118,28 @@ async function generateVideoThumbnail(
     const hasFfmpeg = await checkFfmpeg();
 
     if (hasFfmpeg && videoFile.path) {
-      // Use ffmpeg to extract frame at 1 second (or 0 if video is shorter)
+      // Use ffmpeg to extract a real frame, retrying transient failures.
       try {
-        await execAsync(
-          `ffmpeg -i "${videoFile.path}" -ss 00:00:01 -vframes 1 -vf "scale=640:-1" -y "${tempPath}" 2>/dev/null || ` +
-          `ffmpeg -i "${videoFile.path}" -ss 00:00:00 -vframes 1 -vf "scale=640:-1" -y "${tempPath}" 2>/dev/null`
-        );
-
-        // Check if thumbnail was created
-        await fs.access(tempPath);
-        logger.debug('Thumbnail generated using ffmpeg');
+        await extractFrameWithRetry(videoFile.path, tempPath);
       } catch (ffmpegError) {
-        logger.warn('FFmpeg thumbnail generation failed, using fallback');
+        logger.warn('FFmpeg thumbnail generation failed after retries, using placeholder');
+        // Surface placeholder usage to monitoring so it can be tracked and
+        // alerted on — a real frame should be the norm in production.
+        errorTracker.captureMessage(
+          'Video thumbnail fell back to placeholder after ffmpeg failure',
+          'warning',
+          { endpoint: 'videoService.generateVideoThumbnail' }
+        );
         await generatePlaceholderThumbnail(tempPath);
       }
     } else {
-      // Fallback: create a placeholder thumbnail
+      // ffmpeg is unavailable in this environment — record it so the deploy can
+      // be fixed, then degrade gracefully to a placeholder thumbnail.
+      errorTracker.captureMessage(
+        'Video thumbnail used placeholder because ffmpeg is unavailable',
+        'warning',
+        { endpoint: 'videoService.generateVideoThumbnail' }
+      );
       await generatePlaceholderThumbnail(tempPath);
     }
 

@@ -7,6 +7,7 @@ import { createCheckoutValidator } from '../validators/subscriptionValidator';
 const router = express.Router();
 
 router.post('/checkout', authenticate, validate(createCheckoutValidator), subscriptionController.createCheckout);
+router.get('/plans', authenticate, subscriptionController.getPlans);
 router.get('/', authenticate, subscriptionController.getSubscription);
 router.delete('/', authenticate, subscriptionController.cancelSubscription);
 

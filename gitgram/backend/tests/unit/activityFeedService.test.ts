@@ -69,7 +69,7 @@ describe('getActivityFeed — filter: all', () => {
   });
 
   it('includes star events from followed users', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.repository, {
       id: 'repo-1',
@@ -91,7 +91,7 @@ describe('getActivityFeed — filter: all', () => {
   });
 
   it('includes post creation events', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.post, {
       id: 'post-1',
@@ -109,7 +109,7 @@ describe('getActivityFeed — filter: all', () => {
   });
 
   it('includes snippet creation events', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.codeSnippet, {
       id: 'snip-1',
@@ -136,7 +136,7 @@ describe('getActivityFeed — filter: all', () => {
       followingUser: { id: USER_3, username: 'user3', avatar: null },
     });
     // viewer follows user2 so they're in actor scope
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.user, { id: USER_3, username: 'user3', avatar: null });
 
@@ -146,7 +146,7 @@ describe('getActivityFeed — filter: all', () => {
   });
 
   it('events are ordered newest first', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     const older = makeDate(5000);
     const newer = makeDate(1000);
@@ -201,7 +201,7 @@ describe('getActivityFeed — filter: following', () => {
       createdAt: makeDate(100),
       user: { id: TEST_USER_ID, username: 'viewer', avatar: null },
     });
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.post, {
       id: 'post-followed',
@@ -234,7 +234,7 @@ describe('getActivityFeed — filter: self', () => {
     seedRow(mockPrisma.user, { id: TEST_USER_ID, username: 'viewer', avatar: null });
   });
 
-  it('only returns the requester's own activity', async () => {
+  it("only returns the requester's own activity", async () => {
     seedRow(mockPrisma.post, {
       id: 'post-me',
       userId: TEST_USER_ID,
@@ -276,7 +276,7 @@ describe('getActivityFeed — filter: mentions', () => {
     seedRow(mockPrisma.user, { id: TEST_USER_ID, username: 'viewer', avatar: null });
   });
 
-  it('returns posts that mention the viewer's username', async () => {
+  it("returns posts that mention the viewer's username", async () => {
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
     seedRow(mockPrisma.post, {
       id: 'post-mention',
@@ -318,7 +318,7 @@ describe('getActivityFeed — cursor pagination', () => {
     clearAll();
     seedRow(mockPrisma.user, { id: TEST_USER_ID, username: 'viewer', avatar: null });
     seedRow(mockPrisma.user, { id: TEST_USER_ID_2, username: 'user2', avatar: null });
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
 
     // Seed 5 posts spaced 1 second apart
     for (let i = 0; i < 5; i++) {
@@ -472,7 +472,7 @@ describe('getNetworkTrending', () => {
   });
 
   it('surfaces repositories starred by followed users', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.repository, {
       id: 'repo-trending',
       fullName: 'owner/trending',
@@ -486,7 +486,7 @@ describe('getNetworkTrending', () => {
   });
 
   it('surfaces posts from followed users', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.post, {
       id: 'post-trending',
       userId: TEST_USER_ID_2,
@@ -503,7 +503,7 @@ describe('getNetworkTrending', () => {
   });
 
   it('items have kind, id, label, url, score, and actorsInNetwork', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
     seedRow(mockPrisma.repository, {
       id: 'repo-fields',
       fullName: 'owner/fields',
@@ -524,8 +524,8 @@ describe('getNetworkTrending', () => {
   });
 
   it('repos with more network stars rank higher', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
-    seedRow(mockPrisma.follow, { id: 'f2', followerUserId: TEST_USER_ID, followingUserId: USER_3 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
+    seedRow(mockPrisma.follow, { id: 'f2', followerUserId: TEST_USER_ID, followingUserId: USER_3, createdAt: makeDate(200) });
 
     seedRow(mockPrisma.repository, {
       id: 'repo-popular',
@@ -555,7 +555,7 @@ describe('getNetworkTrending', () => {
   });
 
   it('respects the limit parameter', async () => {
-    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2 });
+    seedRow(mockPrisma.follow, { id: 'f1', followerUserId: TEST_USER_ID, followingUserId: TEST_USER_ID_2, createdAt: makeDate(100) });
 
     for (let i = 0; i < 10; i++) {
       seedRow(mockPrisma.repository, {

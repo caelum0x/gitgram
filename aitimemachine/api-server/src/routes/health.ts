@@ -278,7 +278,8 @@ router.get("/providers", async (req: Request, res: Response) => {
 /**
  * GET /health/providers/:name - Single provider health
  * Checks a specific provider by name (case-sensitive).
- * Valid names: GitNexus, Context7, Beads, PAL, OpenAI, Anthropic, PostgreSQL, Redis
+ * Valid names: GitNexus, Context7, Beads, PAL, OpenAI, Anthropic, Embeddings,
+ * LLM, GitgramBridge, PostgreSQL, Redis
  * No authentication required.
  */
 router.get("/providers/:name", async (req: Request, res: Response) => {

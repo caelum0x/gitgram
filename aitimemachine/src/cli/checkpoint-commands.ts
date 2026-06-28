@@ -8,7 +8,7 @@
 
 import { Command } from 'commander';
 import { TimeMachineEngine } from '../core/engine.js';
-import { C, formatSize, formatDate, timeAgo, parseTime, confirm } from './cli-helpers.js';
+import { C, formatSize, formatDate, timeAgo, parseTime, confirm, NonInteractiveError } from './cli-helpers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -150,8 +150,17 @@ export function registerCheckpointCommands(program: Command): void {
       console.log(`  \u2022 Delete ${preview.filesToDelete.length} files created after this point`);
       console.log(`  \u2022 Remove ${engine.getConversations().length - preview.conversationMessagesToKeep} conversation messages`);
       if (!options.yes) {
-        const confirmed = await confirm('\nProceed with restore?');
-        if (!confirmed) { console.log('Cancelled'); return; }
+        try {
+          const confirmed = await confirm('\nProceed with restore?');
+          if (!confirmed) { console.log('Cancelled'); return; }
+        } catch (err) {
+          if (err instanceof NonInteractiveError) {
+            console.error(`${C.red}[!]${C.reset} ${err.message}`);
+            process.exitCode = 1;
+            return;
+          }
+          throw err;
+        }
       }
       try {
         const result = engine.restore(tp.id);
@@ -195,13 +204,16 @@ export function registerCheckpointCommands(program: Command): void {
         if (match) tp = engine.getTimePoint(match.id);
       }
       if (!tp) { console.log(`${C.red}[!]${C.reset} Checkpoint not found: ${checkpoint}`); return; }
-      const theirsContent = engine.getFileAt(tp.id, file);
-      if (!theirsContent) { console.log(`${C.red}[!]${C.reset} File not found in checkpoint: ${file}`); return; }
+      // Buffer for the default (write-through) path so binary files stay intact.
+      const theirsBuffer = engine.getFileBufferAt(tp.id, file);
+      if (!theirsBuffer) { console.log(`${C.red}[!]${C.reset} File not found in checkpoint: ${file}`); return; }
       const fullPath = path.join(process.cwd(), file);
+      const theirsContent = theirsBuffer.toString('utf-8');
       let oursContent = '';
       let hasLocal = false;
       try { oursContent = fs.readFileSync(fullPath, 'utf8'); hasLocal = oursContent !== theirsContent; } catch {}
-      let finalContent = theirsContent;
+      // finalContent is a Buffer (binary-safe) unless a text merge is performed.
+      let finalContent: Buffer | string = theirsBuffer;
       let mergeInfo = '';
       if (hasLocal && opts.strategy === 'merge') {
         const { ThreeWayMerge } = await import('../core/three-way-merge.js');
@@ -238,7 +250,9 @@ export function registerCheckpointCommands(program: Command): void {
         if (match) tp = engine.getTimePoint(match.id);
       }
       if (!tp) { console.error(`Checkpoint not found: ${checkpoint}`); process.exit(1); }
-      const content = engine.getFileAt(tp.id, file);
+      // Write the raw bytes so binary files are emitted intact (no UTF-8
+      // decode/encode round-trip that would corrupt non-text content).
+      const content = engine.getFileBufferAt(tp.id, file);
       if (!content) { console.error(`File not found in checkpoint: ${file}`); process.exit(1); }
       process.stdout.write(content);
     });

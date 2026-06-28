@@ -15,6 +15,11 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import crypto from 'crypto';
+import {
+  createEmbeddingProvider,
+  cosineSimilarity,
+  type EmbeddingProvider,
+} from './embedding-provider.js';
 
 export interface Task {
   id: string;
@@ -60,19 +65,63 @@ interface DbContextRow {
   updated_at: string;
 }
 
+interface DbEmbeddingRow {
+  context_id: string;
+  model: string;
+  vector: string;
+}
+
+/** A semantic search hit: the context plus its cosine similarity score. */
+export interface SemanticSearchHit {
+  context: ContextEntry;
+  similarity: number;
+}
+
+/** Outcome of a semantic search request. */
+export interface SemanticSearchResult {
+  /** 'semantic' when vector similarity was used, 'text' when it degraded. */
+  searchType: 'semantic' | 'text';
+  /** Provider that produced the embeddings ('openai', 'none'). */
+  provider: string;
+  /** Embedding model used, or null when text fallback was used. */
+  model: string | null;
+  hits: SemanticSearchHit[];
+}
+
 function genId(prefix: string): string {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 }
 
+/** Build the text that represents a context for embedding/search. */
+function contextSearchText(input: {
+  name: string;
+  description?: string | null;
+  messages?: Array<{ content: string }>;
+}): string {
+  const parts = [input.name];
+  if (input.description) parts.push(input.description);
+  if (input.messages) {
+    for (const m of input.messages) parts.push(m.content);
+  }
+  return parts.join('\n');
+}
+
 export class AgentsMemoryStore {
   private db: Database.Database;
+  private embeddings: EmbeddingProvider;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, embeddings?: EmbeddingProvider) {
     const resolved = dbPath ?? path.join(os.homedir(), '.aitimemachine', 'server.sqlite');
     fs.mkdirSync(path.dirname(resolved), { recursive: true });
     this.db = new Database(resolved);
     this.db.pragma('journal_mode = WAL');
+    this.embeddings = embeddings ?? createEmbeddingProvider();
     this.init();
+  }
+
+  /** Whether real vector embeddings are available for semantic search. */
+  hasEmbeddings(): boolean {
+    return this.embeddings.isAvailable();
   }
 
   private init(): void {
@@ -98,6 +147,11 @@ export class AgentsMemoryStore {
         updated_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_contexts_source ON contexts(source, created_at DESC);
+      CREATE TABLE IF NOT EXISTS context_embeddings (
+        context_id TEXT PRIMARY KEY REFERENCES contexts(id) ON DELETE CASCADE,
+        model TEXT NOT NULL,
+        vector TEXT NOT NULL
+      );
     `);
   }
 
@@ -225,6 +279,103 @@ export class AgentsMemoryStore {
       )
       .all(like, like, like, limit) as DbContextRow[];
     return rows.map((r) => this.mapContext(r));
+  }
+
+  /**
+   * Store (or replace) the embedding vector for a context.
+   */
+  private storeEmbedding(contextId: string, model: string, vector: number[]): void {
+    this.db
+      .prepare(
+        `INSERT INTO context_embeddings (context_id, model, vector)
+         VALUES (?, ?, ?)
+         ON CONFLICT(context_id) DO UPDATE SET model = excluded.model, vector = excluded.vector`,
+      )
+      .run(contextId, model, JSON.stringify(vector));
+  }
+
+  /**
+   * Generate and persist an embedding for a context. No-op when no embedding
+   * provider is configured.
+   */
+  async indexContextEmbedding(contextId: string): Promise<boolean> {
+    if (!this.embeddings.isAvailable() || !this.embeddings.model) return false;
+    const ctx = this.getContext(contextId);
+    if (!ctx) return false;
+    const vector = await this.embeddings.embed(
+      contextSearchText({ name: ctx.name, description: ctx.description, messages: ctx.messages }),
+    );
+    this.storeEmbedding(contextId, this.embeddings.model, vector);
+    return true;
+  }
+
+  /**
+   * Backfill embeddings for every context that does not yet have one. Returns
+   * the number of contexts indexed. No-op when no provider is configured.
+   */
+  async backfillEmbeddings(): Promise<number> {
+    if (!this.embeddings.isAvailable() || !this.embeddings.model) return 0;
+    const rows = this.db
+      .prepare(
+        `SELECT c.* FROM contexts c
+         LEFT JOIN context_embeddings e ON e.context_id = c.id
+         WHERE e.context_id IS NULL`,
+      )
+      .all() as DbContextRow[];
+    if (rows.length === 0) return 0;
+    const contexts = rows.map((r) => this.mapContext(r));
+    const vectors = await this.embeddings.embedBatch(
+      contexts.map((c) =>
+        contextSearchText({ name: c.name, description: c.description, messages: c.messages }),
+      ),
+    );
+    const model = this.embeddings.model;
+    const tx = this.db.transaction(() => {
+      contexts.forEach((c, i) => this.storeEmbedding(c.id, model, vectors[i]));
+    });
+    tx();
+    return contexts.length;
+  }
+
+  /**
+   * Real semantic search over contexts using vector cosine similarity.
+   *
+   * When an embedding provider is configured, the query is embedded and ranked
+   * against stored context vectors (auto-backfilling any missing vectors). When
+   * no provider is available, the result degrades to text search and is labelled
+   * accordingly so the caller never advertises semantic search it did not run.
+   */
+  async semanticSearchContexts(query: string, limit: number): Promise<SemanticSearchResult> {
+    if (!this.embeddings.isAvailable() || !this.embeddings.model) {
+      const hits = this.searchContexts(query, limit).map((context) => ({ context, similarity: 0 }));
+      return { searchType: 'text', provider: this.embeddings.name, model: null, hits };
+    }
+
+    // Ensure every context has a stored vector before ranking.
+    await this.backfillEmbeddings();
+
+    const queryVector = await this.embeddings.embed(query);
+    const rows = this.db
+      .prepare(`SELECT context_id, model, vector FROM context_embeddings`)
+      .all() as DbEmbeddingRow[];
+
+    const scored = rows
+      .map((row) => {
+        const context = this.getContext(row.context_id);
+        if (!context) return null;
+        const vector = JSON.parse(row.vector) as number[];
+        return { context, similarity: cosineSimilarity(queryVector, vector) };
+      })
+      .filter((h): h is SemanticSearchHit => h !== null)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    return {
+      searchType: 'semantic',
+      provider: this.embeddings.name,
+      model: this.embeddings.model,
+      hits: scored,
+    };
   }
 
   createContext(input: {
