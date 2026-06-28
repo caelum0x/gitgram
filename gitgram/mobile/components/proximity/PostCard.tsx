@@ -9,6 +9,7 @@ import {
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { logger } from '../../utils/logger';
+import { timeAgo } from '../../utils/timeAgo';
 import { postService } from '../../services/postService';
 
 interface PostAuthor {
@@ -27,18 +28,6 @@ interface Post {
 
 interface PostCardProps {
   post: Post;
-}
-
-function formatTimestamp(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export default function PostCard({ post }: PostCardProps) {
@@ -111,7 +100,7 @@ export default function PostCard({ post }: PostCardProps) {
             {post.author.username}
           </Text>
           <Text style={styles.timestamp}>
-            {formatTimestamp(post.createdAt)}
+            {timeAgo(post.createdAt)}
           </Text>
         </View>
       </View>

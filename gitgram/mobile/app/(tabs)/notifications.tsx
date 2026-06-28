@@ -12,20 +12,16 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import GestureActionView from '../../components/common/GestureActionView';
-import { notificationService } from '../../services/notificationService';
+import {
+  notificationService,
+  groupNotifications,
+  type Notification,
+  type GroupedNotification,
+} from '../../services/notificationService';
 import { userService } from '../../services/userService';
 import { useToast } from '../../hooks/useToast';
 import { listenSoftReset } from '../../utils/events';
-
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  isRead: boolean;
-  createdAt: string;
-  data?: Record<string, unknown>;
-}
+import { timeAgo } from '../../utils/timeAgo';
 
 const getStringValue = (data: Record<string, unknown> | undefined, key: string): string | undefined => {
   const value = data?.[key];
@@ -40,7 +36,7 @@ export default function NotificationsScreen() {
   const [followingUsers, setFollowingUsers] = useState<Set<string>>(new Set());
   const [followLoading, setFollowLoading] = useState<Set<string>>(new Set());
   const { showToast, ToastComponent } = useToast();
-  const listRef = useRef<FlatList<Notification>>(null);
+  const listRef = useRef<FlatList<GroupedNotification>>(null);
 
   useEffect(() => {
     loadNotifications();
@@ -217,69 +213,118 @@ export default function NotificationsScreen() {
     }
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
+  // Avatar entries for a grouped row's actor stack (deduped, base actor first).
+  const getGroupActors = useCallback(
+    (group: GroupedNotification): { username: string; avatar?: string }[] => {
+      const all = [group.notification, ...group.additional];
+      const seen = new Set<string>();
+      const actors: { username: string; avatar?: string }[] = [];
+      for (const n of all) {
+        const username = getStringValue(n.data, 'username') || 'user';
+        const userId = getStringValue(n.data, 'userId') || username;
+        if (seen.has(userId)) continue;
+        seen.add(userId);
+        actors.push({ username, avatar: getStringValue(n.data, 'avatar') });
+      }
+      return actors;
+    },
+    [],
+  );
 
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString();
-  };
+  // Builds the aggregated headline, e.g. "@alice and 5 others liked your post".
+  const buildGroupText = useCallback(
+    (group: GroupedNotification): { actorLabel: string; body: string } => {
+      const actors = getGroupActors(group);
+      const primary = actors[0]?.username ?? 'user';
+      const extra = group.actorCount - 1;
+      const actorLabel =
+        extra <= 0
+          ? `@${primary}`
+          : extra === 1 && actors[1]
+          ? `@${primary} and @${actors[1].username}`
+          : `@${primary} and ${extra} ${extra === 1 ? 'other' : 'others'}`;
+      return { actorLabel, body: group.notification.body };
+    },
+    [getGroupActors],
+  );
 
-  const renderNotification = ({ item }: { item: Notification }) => {
-    const { icon, color } = getNotificationIcon(item.type);
-    const userId = getStringValue(item.data, 'userId');
-    const username = getStringValue(item.data, 'username') || 'user';
-    const thumbnail = getStringValue(item.data, 'thumbnail');
+  const renderNotification = ({ item }: { item: GroupedNotification }) => {
+    const base = item.notification;
+    const { icon, color } = getNotificationIcon(base.type);
+    const userId = getStringValue(base.data, 'userId');
+    const thumbnail = getStringValue(base.data, 'thumbnail');
     const isFollowing = userId ? followingUsers.has(userId) : false;
     const isLoading = userId ? followLoading.has(userId) : false;
+    const { actorLabel, body } = buildGroupText(item);
+    const actors = getGroupActors(item);
+    const isGroup = item.actorCount > 1;
+    const ids = [base.id, ...item.additional.map((n) => n.id)];
+    const allRead = base.isRead && item.additional.every((n) => n.isRead);
 
     return (
       <GestureActionView
         actions={{
-          left: item.isRead
+          left: allRead
             ? undefined
             : {
                 color: Colors.info,
                 icon: 'done',
                 label: 'Read',
-                action: () => handleMarkOneRead(item),
+                action: () => ids.forEach((id) => handleMarkOneRead({ ...base, id })),
               },
           right: {
             color: Colors.error,
             icon: 'delete',
             label: 'Delete',
-            action: () => handleDelete(item.id),
+            action: () => ids.forEach((id) => handleDelete(id)),
           },
         }}
       >
       <TouchableOpacity
-        style={[styles.notificationItem, !item.isRead && styles.unreadNotification]}
-        onPress={() => handleNotificationPress(item)}
+        style={[styles.notificationItem, !allRead && styles.unreadNotification]}
+        onPress={() => handleNotificationPress(base)}
         activeOpacity={0.7}
       >
         <View style={styles.avatarContainer}>
-          <View style={[styles.iconBadge, { backgroundColor: color }]}>
-            <Text style={styles.iconBadgeText}>{icon}</Text>
-          </View>
+          {isGroup ? (
+            <View style={styles.avatarStack}>
+              {actors.slice(0, 3).map((actor, idx) => (
+                <View
+                  key={`${actor.username}-${idx}`}
+                  style={[styles.stackedAvatar, { left: idx * 18, zIndex: 3 - idx }]}
+                >
+                  {actor.avatar ? (
+                    <Image source={{ uri: actor.avatar }} style={styles.stackedAvatarImg} />
+                  ) : (
+                    <View style={[styles.stackedAvatarImg, styles.stackedAvatarFallback]}>
+                      <Text style={styles.stackedAvatarInitial}>
+                        {actor.username.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+              <View style={[styles.miniBadge, { backgroundColor: color }]}>
+                <Text style={styles.miniBadgeText}>{icon}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.iconBadge, { backgroundColor: color }]}>
+              <Text style={styles.iconBadgeText}>{icon}</Text>
+            </View>
+          )}
         </View>
         <View style={styles.notificationContent}>
           <Text style={styles.notificationText}>
-            <Text style={styles.usernameText}>@{username}</Text>{' '}
-            {item.body}
+            <Text style={styles.usernameText}>{actorLabel}</Text>{' '}
+            {body}
           </Text>
-          <Text style={styles.notificationTime}>{formatTime(item.createdAt)}</Text>
+          <Text style={styles.notificationTime}>{timeAgo(base.createdAt, { format: 'long' })} ago</Text>
         </View>
         {thumbnail && (
           <Image source={{ uri: thumbnail }} style={styles.thumbnail} />
         )}
-        {item.type === 'follow' && userId && !isFollowing && (
+        {!isGroup && base.type === 'follow' && userId && !isFollowing && (
           <TouchableOpacity
             style={styles.followButton}
             onPress={(e) => {
@@ -295,7 +340,7 @@ export default function NotificationsScreen() {
             )}
           </TouchableOpacity>
         )}
-        {item.type === 'follow' && userId && isFollowing && (
+        {!isGroup && base.type === 'follow' && userId && isFollowing && (
           <View style={[styles.followButton, styles.followingButton]}>
             <Text style={styles.followButtonText}>Following</Text>
           </View>
@@ -312,6 +357,8 @@ export default function NotificationsScreen() {
   const filteredNotifications = activeTab === 'you'
     ? notifications.filter(n => n.type !== 'following')
     : notifications.filter(n => n.type === 'following');
+
+  const groupedNotifications = groupNotifications(filteredNotifications);
 
   return (
     <View style={styles.container}>
@@ -366,9 +413,9 @@ export default function NotificationsScreen() {
       {/* Notifications List */}
       <FlatList
         ref={listRef}
-        data={filteredNotifications}
+        data={groupedNotifications}
         renderItem={renderNotification}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.key}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -470,6 +517,46 @@ const styles = StyleSheet.create({
   },
   iconBadgeText: {
     fontSize: 20,
+  },
+  avatarStack: {
+    width: 84,
+    height: 48,
+    justifyContent: 'center',
+  },
+  stackedAvatar: {
+    position: 'absolute',
+  },
+  stackedAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  stackedAvatarFallback: {
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stackedAvatarInitial: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  miniBadge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 28,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  miniBadgeText: {
+    fontSize: 11,
   },
   notificationContent: {
     flex: 1,

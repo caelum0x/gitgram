@@ -138,6 +138,11 @@ router.get('/tagged/:userId', optionalAuth, postController.getTaggedPosts);
 import { getOptimalPostingTimes } from '../controllers/scheduledPostsController';
 router.get('/optimal-times', authenticate, getOptimalPostingTimes);
 
+// Feed-feedback signals (not-interested / show-more / seen) for personalisation.
+// Registered before the '/:id' routes so 'feedback' is not parsed as an id.
+import { recordFeedFeedback } from '../controllers/feedFeedbackController';
+router.post('/feedback', authenticate, interactionLimiter, recordFeedFeedback);
+
 /**
  * @swagger
  * /api/v1/posts/archived:

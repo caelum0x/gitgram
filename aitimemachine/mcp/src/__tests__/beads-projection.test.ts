@@ -12,6 +12,8 @@ import {
   projectBeadsPayload,
   unwrapBeadsData,
   toBrief,
+  toBriefDep,
+  collapseDepEdges,
   truncateDescription,
   filterFields,
   type CompactedBeadsResult,
@@ -71,6 +73,58 @@ describe('beads-projection helpers', () => {
       status: 'open',
     });
   });
+
+  it('toBriefDep collapses an edge to id/title/status/priority/dependencyType', () => {
+    expect(
+      toBriefDep({
+        id: 'bd-2',
+        title: 'Task bd-2',
+        status: 'open',
+        priority: 0,
+        description: 'x'.repeat(50),
+        dependency_type: 'blocks',
+      })
+    ).toEqual({
+      id: 'bd-2',
+      title: 'Task bd-2',
+      status: 'open',
+      priority: 0,
+      dependencyType: 'blocks',
+    });
+  });
+
+  it('toBriefDep reads either dependencyType or dependency_type', () => {
+    expect(toBriefDep({ id: 'bd-3', dependencyType: 'related' }).dependencyType).toBe(
+      'related'
+    );
+    expect(toBriefDep({ id: 'bd-4', dependency_type: 'parent-child' }).dependencyType).toBe(
+      'parent-child'
+    );
+  });
+
+  it('collapseDepEdges compacts edges while keeping the task body, immutably', () => {
+    const original = task('bd-1', {
+      dependencies: [task('bd-2', { dependency_type: 'blocks' })],
+      dependents: [task('bd-3', { dependency_type: 'discovered-from' })],
+    });
+    const collapsed = collapseDepEdges(original);
+    expect(collapsed.title).toBe('Task bd-1');
+    expect(collapsed.dependencies).toEqual([
+      { id: 'bd-2', title: 'Task bd-2', status: 'open', priority: 1, dependencyType: 'blocks' },
+    ]);
+    expect(collapsed.dependents).toEqual([
+      { id: 'bd-3', title: 'Task bd-3', status: 'open', priority: 1, dependencyType: 'discovered-from' },
+    ]);
+    // input untouched: still the full nested task
+    expect((original.dependencies as Array<Record<string, unknown>>)[0].description).toBe(
+      'x'.repeat(50)
+    );
+  });
+
+  it('collapseDepEdges leaves tasks without edge arrays untouched', () => {
+    const plain = task('bd-1');
+    expect(collapseDepEdges(plain)).toBe(plain);
+  });
 });
 
 describe('projectBeadsPayload', () => {
@@ -118,6 +172,42 @@ describe('projectBeadsPayload', () => {
     expect(result.hint).toContain('ready tasks');
   });
 
+  it('briefDeps keeps the full task but collapses its dependency edges', () => {
+    const payload = ENVELOPE(
+      task('bd-1', {
+        dependencies: [task('bd-2', { dependency_type: 'blocks' })],
+        dependents: [task('bd-3', { dependency_type: 'related' })],
+      })
+    );
+    const result = projectBeadsPayload(payload, { briefDeps: true }) as Record<
+      string,
+      unknown
+    >;
+    // full task body retained
+    expect(result.title).toBe('Task bd-1');
+    expect(result.description).toBe('x'.repeat(50));
+    // edges collapsed to the brief dep shape
+    expect(result.dependencies).toEqual([
+      { id: 'bd-2', title: 'Task bd-2', status: 'open', priority: 1, dependencyType: 'blocks' },
+    ]);
+    expect(result.dependents).toEqual([
+      { id: 'bd-3', title: 'Task bd-3', status: 'open', priority: 1, dependencyType: 'related' },
+    ]);
+  });
+
+  it('brief takes precedence over briefDeps (edges dropped entirely)', () => {
+    const result = projectBeadsPayload(
+      ENVELOPE(task('bd-1', { dependencies: [task('bd-2')] })),
+      { brief: true, briefDeps: true }
+    );
+    expect(result).toEqual({
+      id: 'bd-1',
+      title: 'Task bd-1',
+      status: 'open',
+      priority: 1,
+    });
+  });
+
   it('passes stats-style payloads (non-list, non-record) through', () => {
     expect(projectBeadsPayload(ENVELOPE(42), { brief: true })).toBe(42);
   });
@@ -160,6 +250,37 @@ describe('beads tools wiring (projection args)', () => {
     expect(result).toEqual([
       { id: 'bd-1', title: 'Task bd-1', status: 'open', priority: 1 },
     ]);
+  });
+
+  it('beads_claim issues a PUT to /beads/tasks/:id/claim', async () => {
+    const claimed = task('bd-7', { assignee: 'aitm', status: 'in_progress' });
+    fetchMock.mockResolvedValueOnce(jsonOk(ENVELOPE(claimed)));
+    const { call } = captureTools(registerBeadsTools, stubRuntime);
+    const result = parseJsonResponse<{ success: boolean; data: unknown }>(
+      await call('beads_claim', { id: 'bd-7' })
+    );
+    // round-trips the claimed task envelope back to the caller
+    expect(result).toEqual(ENVELOPE(claimed));
+    // verify the request shape: PUT to the claim endpoint
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/beads/tasks/bd-7/claim');
+    expect(init.method).toBe('PUT');
+  });
+
+  it('beads_claim with brief trims the claimed task', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonOk(ENVELOPE(task('bd-8', { assignee: 'aitm', status: 'in_progress' })))
+    );
+    const { call } = captureTools(registerBeadsTools, stubRuntime);
+    const result = parseJsonResponse<unknown>(
+      await call('beads_claim', { id: 'bd-8', brief: true })
+    );
+    expect(result).toEqual({
+      id: 'bd-8',
+      title: 'Task bd-8',
+      status: 'in_progress',
+      priority: 1,
+    });
   });
 
   it('beads_list_tasks without args preserves the full envelope', async () => {

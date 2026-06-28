@@ -18,6 +18,14 @@ interface PostOptionsModalProps {
   isOwner?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Hide this post / "Not interested" — client-side feed filter. */
+  onHidePost?: () => void;
+  /** Block the post's author. */
+  onBlockUser?: () => void;
+  /** Username shown in the block/hide labels for clarity. */
+  authorUsername?: string;
+  /** Whether the author is already blocked (toggles label to Unblock). */
+  isBlocked?: boolean;
 }
 
 interface OptionItem {
@@ -38,6 +46,10 @@ export default function PostOptionsModal({
   isOwner = false,
   onEdit,
   onDelete,
+  onHidePost,
+  onBlockUser,
+  authorUsername,
+  isBlocked = false,
 }: PostOptionsModalProps) {
   const handleOptionPress = (onPress: () => void) => {
     onClose();
@@ -69,6 +81,22 @@ export default function PostOptionsModal({
       icon: '✏️',
       onPress: () => onEdit?.(),
       hidden: !isOwner || !onEdit,
+    },
+    {
+      // Client-side "not interested" filter — hides the post from the feed.
+      label: 'Hide this post',
+      icon: '🙈',
+      onPress: () => onHidePost?.(),
+      hidden: isOwner || !onHidePost,
+    },
+    {
+      label: isBlocked
+        ? `Unblock${authorUsername ? ` @${authorUsername}` : ''}`
+        : `Block${authorUsername ? ` @${authorUsername}` : ''}`,
+      icon: '🚫',
+      onPress: () => onBlockUser && handleOptionPress(onBlockUser),
+      destructive: !isBlocked,
+      hidden: isOwner || !onBlockUser,
     },
     {
       label: 'Report',

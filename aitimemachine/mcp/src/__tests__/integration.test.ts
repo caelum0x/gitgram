@@ -365,6 +365,7 @@ describe('Beads tools registration', () => {
     'beads_list_tasks',
     'beads_create_task',
     'beads_mark_ready',
+    'beads_claim',
     'beads_mark_done',
     'beads_get_task',
   ] as const;
@@ -386,6 +387,10 @@ describe('Beads tools registration', () => {
 
   it('beads_mark_ready requires "id"', () => {
     expect(requiredFields(server, 'beads_mark_ready')).toContain('id');
+  });
+
+  it('beads_claim requires "id"', () => {
+    expect(requiredFields(server, 'beads_claim')).toContain('id');
   });
 
   it('beads_mark_done requires "id"', () => {

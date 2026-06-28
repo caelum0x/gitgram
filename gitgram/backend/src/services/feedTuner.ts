@@ -72,6 +72,19 @@ export interface TunableFeedItem {
    * a dangling reply with no visible context.
    */
   isOrphan?: boolean;
+  /**
+   * Detected spoken/natural-language code of this item's content (ISO 639-1 or
+   * 639-2, e.g. "en"). Undefined/null when the language is unknown. Consumed by
+   * the `preferredLangOnly` step, which keeps an item when this matches one of
+   * the viewer's preferred languages. Items whose language is unknown are always
+   * kept (never filtered out) so undetected posts are not silently hidden.
+   *
+   * Ported from Bluesky's `FeedTuner.preferredLangOnly` (which calls
+   * `isPostInLanguage`); Gitgram precomputes the per-item match flag in
+   * services/languagePreferenceService.ts before tuning, so the tuner stays
+   * content-agnostic and does no language detection itself.
+   */
+  isPreferredLanguage?: boolean;
   /** Pre-computed feed ranking score (higher = better). */
   score: number;
   /** Optional trending score override; computed on-the-fly when absent. */
@@ -183,6 +196,24 @@ export interface FeedTunerOptions {
    * @default true
    */
   removeOrphans?: boolean;
+
+  /**
+   * When true, keep only items whose detected content language matches one of
+   * the viewer's preferred languages (`isPreferredLanguage === true`). Items
+   * with an unknown language (`isPreferredLanguage === undefined`) are always
+   * kept so undetected posts are never hidden.
+   *
+   * Ported from Bluesky's `FeedTuner.preferredLangOnly`. Crucially it carries
+   * Bluesky's "never return an empty page" fallback: if the language filter
+   * would clear out the entire page, the original (unfiltered) set is returned
+   * so the feed never goes blank.
+   *
+   * Defaults to FALSE: filtering only happens when a caller opts in (typically
+   * because the viewer has configured natural-language preferences). For the
+   * largely-English, dev-centric default audience the step is a no-op.
+   * @default false
+   */
+  preferredLangOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +231,7 @@ const DEFAULT_DEDUPE_THREADS = true;
 const DEFAULT_REMOVE_MUTED_THREADS = true;
 const DEFAULT_REMOVE_MUTED_WORDS = true;
 const DEFAULT_REMOVE_ORPHANS = true;
+const DEFAULT_PREFERRED_LANG_ONLY = false;
 
 // ---------------------------------------------------------------------------
 // Internal helpers  (pure functions — no side-effects)
@@ -524,6 +556,35 @@ function dropMutedWords(items: ReadonlyArray<TunableFeedItem>): TunableFeedItem[
   return items.filter(item => item.isMutedWord !== true);
 }
 
+/**
+ * Keep only items whose detected content language matches the viewer's
+ * preferred languages. Ported from Bluesky's `FeedTuner.preferredLangOnly`.
+ *
+ * Semantics:
+ *  - An item with `isPreferredLanguage === true` is kept.
+ *  - An item with `isPreferredLanguage === undefined` (unknown language) is
+ *    kept, so undetected posts are never silently hidden.
+ *  - An item with `isPreferredLanguage === false` (known, non-preferred
+ *    language) is dropped.
+ *  - "Never return an empty page": if the filter clears out the ENTIRE input,
+ *    the original set is returned unchanged so the feed never goes blank.
+ *
+ * Returns a new array — input is not modified.
+ */
+function filterPreferredLanguage(
+  items: ReadonlyArray<TunableFeedItem>
+): TunableFeedItem[] {
+  const candidates = items.filter(item => item.isPreferredLanguage !== false);
+
+  // If the language filter cleared out the entire page, fall back to the
+  // original set so that something always shows (Bluesky parity).
+  if (candidates.length === 0) {
+    return [...items];
+  }
+
+  return candidates;
+}
+
 // ---------------------------------------------------------------------------
 // FeedTuner class
 // ---------------------------------------------------------------------------
@@ -554,6 +615,7 @@ export class FeedTuner {
       removeMutedThreads: options.removeMutedThreads ?? DEFAULT_REMOVE_MUTED_THREADS,
       removeMutedWords: options.removeMutedWords ?? DEFAULT_REMOVE_MUTED_WORDS,
       removeOrphans: options.removeOrphans ?? DEFAULT_REMOVE_ORPHANS,
+      preferredLangOnly: options.preferredLangOnly ?? DEFAULT_PREFERRED_LANG_ONLY,
     };
   }
 
@@ -565,13 +627,15 @@ export class FeedTuner {
    *  2. Drop orphaned replies (removeOrphans)
    *  3. Drop muted threads (removeMutedThreads)
    *  4. Drop muted words/tags (removeMutedWords)
-   *  5. Apply score adjustments (trending boost + diversity penalty)
-   *  6. Re-sort by adjusted score
-   *  7. Collapse threads by root (dedupThreads) — keeps the highest-scoring
+   *  5. Filter to preferred natural languages (preferredLangOnly), with a
+   *     never-empty-page fallback
+   *  6. Apply score adjustments (trending boost + diversity penalty)
+   *  7. Re-sort by adjusted score
+   *  8. Collapse threads by root (dedupThreads) — keeps the highest-scoring
    *     entry per thread, so it runs after the sort
-   *  8. Enforce author run limit
-   *  9. Interleave content types
-   * 10. Inject sponsored items
+   *  9. Enforce author run limit
+   * 10. Interleave content types
+   * 11. Inject sponsored items
    *
    * @param posts - Raw feed items (not mutated).
    * @returns New array of tuned feed items.
@@ -587,7 +651,10 @@ export class FeedTuner {
     const withoutMuted = this.options.removeMutedWords
       ? dropMutedWords(withoutMutedThreads)
       : withoutMutedThreads;
-    const adjusted = applyScoreAdjustments(withoutMuted, this.options);
+    const langFiltered = this.options.preferredLangOnly
+      ? filterPreferredLanguage(withoutMuted)
+      : withoutMuted;
+    const adjusted = applyScoreAdjustments(langFiltered, this.options);
     const sorted = sortByScore(adjusted);
     const threadDeduped = this.options.dedupeThreads
       ? deduplicateByThreadRoot(sorted)

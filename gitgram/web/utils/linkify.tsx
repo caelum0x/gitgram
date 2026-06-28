@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import Link from 'next/link';
+import { UserHoverCard } from '@/components/UserHoverCard';
 
 /**
  * Matches @mentions and #hashtags in free text.
@@ -61,9 +62,8 @@ export function linkifyText(text: string, options: LinkifyOptions = {}): ReactNo
       nodes.push(<Fragment key={`t-${keyCounter++}`}>{precedingText}</Fragment>);
     }
 
-    nodes.push(
+    const link = (
       <Link
-        key={`l-${keyCounter++}`}
         href={hrefForToken(char, word)}
         className={linkClassName}
         // Stop the click from bubbling to parent post/card click handlers.
@@ -71,7 +71,18 @@ export function linkifyText(text: string, options: LinkifyOptions = {}): ReactNo
       >
         {char}
         {word}
-      </Link>,
+      </Link>
+    );
+
+    // Mentions get a profile-preview hover card; hashtags stay as plain links.
+    nodes.push(
+      char === '@' ? (
+        <UserHoverCard key={`l-${keyCounter++}`} username={word}>
+          {link}
+        </UserHoverCard>
+      ) : (
+        <Fragment key={`l-${keyCounter++}`}>{link}</Fragment>
+      ),
     );
 
     lastIndex = tokenStart + char.length + word.length;

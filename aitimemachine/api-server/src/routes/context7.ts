@@ -197,9 +197,44 @@ router.get(
 );
 
 // ============================================================================
-// GET /context7/libraries/:id/docs?version=&tokens=&topic=
+// GET /context7/libraries/:id/docs?version=&tokens=&topic=&query=
 // Fetch documentation for a resolved library ID.
+//
+// The Context7 `/v2/context` endpoint reranks documentation against the text it
+// receives. A `query` / `question` param sends a full natural-language question
+// ("How do I set up JWT auth in Express?") for relevance-based retrieval; the
+// coarser `topic` (a single subject keyword) is used as a fallback. When both
+// are absent we send "overview" to fetch a broad context dump.
 // ============================================================================
+
+/**
+ * Resolve the retrieval text Context7 reranks against. Prefers an explicit
+ * natural-language `query`/`question`, then falls back to `topic`, then to a
+ * broad default. Returns the text plus which source it came from.
+ */
+function resolveRetrievalQuery(req: Request): {
+  query: string;
+  topic: string | null;
+  source: "query" | "topic" | "default";
+} {
+  const rawQuery =
+    typeof req.query.query === "string"
+      ? req.query.query
+      : typeof req.query.question === "string"
+        ? req.query.question
+        : "";
+  const trimmedQuery = rawQuery.trim();
+
+  const rawTopic = typeof req.query.topic === "string" ? req.query.topic.trim() : "";
+
+  if (trimmedQuery.length > 0) {
+    return { query: trimmedQuery, topic: rawTopic.length > 0 ? rawTopic : null, source: "query" };
+  }
+  if (rawTopic.length > 0) {
+    return { query: rawTopic, topic: rawTopic, source: "topic" };
+  }
+  return { query: "overview", topic: null, source: "default" };
+}
 
 router.get(
   "/libraries/:id/docs",
@@ -213,21 +248,31 @@ router.get(
     // tokens is preserved in the REST contract; the SDK does not expose a
     // per-request token cap, so it is recorded but does not change the call.
     const tokens = clampTokens(req.query.tokens, 5_000);
-    const topic = typeof req.query.topic === "string" ? req.query.topic : "overview";
+    const { query, topic, source } = resolveRetrievalQuery(req);
+    if (query.length > 2000) {
+      throw Errors.invalidParameter("query", "query must be 2000 characters or less");
+    }
     const version =
       typeof req.query.version === "string" && req.query.version.trim().length > 0
         ? req.query.version.trim()
         : undefined;
 
-    logger.info("context7: get library docs", { libraryId: id, version, topic, tokens });
+    logger.info("context7: get library docs", {
+      libraryId: id,
+      version,
+      query,
+      topic,
+      source,
+      tokens,
+    });
 
-    const docs: Documentation[] = await requireClient(req).getContext(topic, id, {
+    const docs: Documentation[] = await requireClient(req).getContext(query, id, {
       type: "json",
     });
 
     // Write-through to the unified memory layer (best-effort; never blocks).
     void ingestLibraryDoc(
-      { libraryId: id, topic, version: version ?? null, docs },
+      { libraryId: id, topic: topic ?? query, version: version ?? null, docs },
       { userId: req.user?.userId }
     ).catch((error: unknown) => {
       logger.warn("context7: memory write-through failed", {
@@ -240,6 +285,92 @@ router.get(
       success: true,
       libraryId: id,
       version: version ?? null,
+      query,
+      data: docs,
+    });
+  })
+);
+
+// ============================================================================
+// POST /context7/query
+// Natural-language query-docs flow: send a full question and a resolved library
+// id (or a search term to resolve first) and get back reranked documentation
+// for that specific question. Body: { query, libraryId? , library?, version? }.
+// ============================================================================
+
+const queryDocsBodySchema = z.object({
+  query: z
+    .string({ required_error: "query is required" })
+    .min(1, "query must not be empty")
+    .max(2000, "query must be 2000 characters or less"),
+  libraryId: z.string().min(1).max(512).optional(),
+  library: z.string().min(1).max(512).optional(),
+  version: z.string().min(1).max(128).optional(),
+});
+
+router.post(
+  "/query",
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const parsed = queryDocsBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+    if (!parsed.data.libraryId && !parsed.data.library) {
+      throw Errors.invalidParameter(
+        "libraryId",
+        "one of 'libraryId' or 'library' (a search term) is required"
+      );
+    }
+
+    const { query, version } = parsed.data;
+    const client = requireClient(req);
+
+    // Resolve a library search term to a concrete id when no id was supplied,
+    // using the query as the relevance signal for the resolve step.
+    let libraryId = parsed.data.libraryId?.trim();
+    if (!libraryId && parsed.data.library) {
+      const matches: Library[] = await client.searchLibrary(query, parsed.data.library, {
+        type: "json",
+      });
+      const top = matches[0];
+      if (!top || typeof top.id !== "string" || top.id.trim().length === 0) {
+        throw Errors.invalidParameter(
+          "library",
+          `no Context7 library matched '${parsed.data.library}'`
+        );
+      }
+      libraryId = top.id.trim();
+    }
+
+    if (!libraryId) {
+      throw Errors.invalidParameter("libraryId", "library id could not be resolved");
+    }
+
+    logger.info("context7: query docs", { libraryId, query });
+
+    const docs: Documentation[] = await client.getContext(query, libraryId, {
+      type: "json",
+    });
+
+    void ingestLibraryDoc(
+      { libraryId, topic: query, version: version ?? null, docs },
+      { userId: req.user?.userId }
+    ).catch((error: unknown) => {
+      logger.warn("context7: memory write-through failed", {
+        libraryId,
+        details: String(error),
+      });
+    });
+
+    return res.json({
+      success: true,
+      libraryId,
+      version: version ?? null,
+      query,
       data: docs,
     });
   })

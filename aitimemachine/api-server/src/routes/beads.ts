@@ -764,6 +764,94 @@ router.post("/tasks/:id/reopen", async (req: Request, res: Response) => {
   }
 });
 
+// GET /beads/stale — issues not updated recently (potentially stuck/abandoned).
+//
+// Surfaces the fleet-health signal you want for a swarm of agents opening PRs:
+// in-progress tasks with no recent activity, forgotten open tasks, and outdated
+// work. Optional filters:
+//   days   — staleness threshold in days (>=1, default 30, max 3650)
+//   status — open | in_progress | blocked | deferred
+//   limit  — max issues to return (1-1000, default 50)
+const STALE_STATUSES = ["open", "in_progress", "blocked", "deferred"] as const;
+
+router.get("/stale", async (req: Request, res: Response) => {
+  const args: string[] = ["stale", "--json"];
+
+  const days = boundedInt(req.query.days, 1, 3650);
+  if (days !== undefined) {
+    args.push("--days", String(days));
+  }
+
+  const status = singleQueryValue(req.query.status);
+  if (status !== undefined) {
+    if (!(STALE_STATUSES as readonly string[]).includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `status must be one of: ${STALE_STATUSES.join(", ")}`,
+      });
+    }
+    args.push("--status", status);
+  }
+
+  const limit = boundedInt(req.query.limit, 1, 1000);
+  if (limit !== undefined) {
+    args.push("--limit", String(limit));
+  }
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), args);
+    res.json({ success: true, data: parseBeadsJson(stdout) ?? [] });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to query stale tasks",
+    });
+  }
+});
+
+// GET /beads/prime — AI-optimized workflow context as markdown.
+//
+// Bootstraps an agent at session start with the current Beads workflow state
+// (ready work + conventions) instead of hand-assembling context. The CLI emits
+// markdown to stdout; we return it as text. Optional modifiers:
+//   mode=full   — force full CLI command reference (ignore MCP detection)
+//   mode=mcp    — force minimal MCP-mode reminders
+//   stealth=1   — stealth mode (no git operations in the close protocol)
+//   memoriesOnly=1 — output only persistent memories (for compact hooks)
+router.get("/prime", async (req: Request, res: Response) => {
+  const args: string[] = ["prime"];
+
+  const mode = singleQueryValue(req.query.mode);
+  if (mode === "full") {
+    args.push("--full");
+  } else if (mode === "mcp") {
+    args.push("--mcp");
+  }
+
+  if (singleQueryValue(req.query.stealth) === "1" || singleQueryValue(req.query.stealth) === "true") {
+    args.push("--stealth");
+  }
+  if (
+    singleQueryValue(req.query.memoriesOnly) === "1" ||
+    singleQueryValue(req.query.memoriesOnly) === "true"
+  ) {
+    args.push("--memories-only");
+  }
+
+  try {
+    const { stdout } = await execFileAsync(beadsBin(), args);
+    // `bd prime` emits markdown to stdout (not JSON); return it verbatim so the
+    // caller can inject it directly into an agent's session context.
+    res.json({ success: true, data: { format: "markdown", content: stdout } });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error:
+        err instanceof Error ? err.message : "Failed to prime agent context",
+    });
+  }
+});
+
 // GET /beads/tasks/:id — get a single task
 router.get("/tasks/:id", async (req: Request, res: Response) => {
   const { id } = req.params;

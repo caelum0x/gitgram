@@ -9,7 +9,7 @@
 
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { apiKeyAuth } from "../middleware/auth.js";
+import { apiKeyAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { asyncHandler, Errors } from "../middleware/errors.js";
 import { logger } from "../lib/monitoring.js";
 import {
@@ -24,6 +24,11 @@ import {
   traceSymbols,
   shapeCheck,
   explainTaint,
+  queryGraph,
+  getSymbolContext,
+  runCypher,
+  structuralCheck,
+  renameSymbol,
 } from "../services/gitNexusService.js";
 
 const router = Router();
@@ -122,6 +127,74 @@ const explainQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   repo: optionalRepo,
 });
+
+// query — natural-language, process-grouped graph-RAG retrieval.
+// Exposed as GET (query params) and POST (body) for caller convenience.
+const queryBodySchema = z.object({
+  search_query: z
+    .string({ required_error: "search_query is required" })
+    .min(1, "search_query must not be empty")
+    .max(2000, "search_query is too long"),
+  task_context: z.string().min(1).max(2000).optional(),
+  goal: z.string().min(1).max(2000).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  max_symbols: z.coerce.number().int().min(1).max(200).optional(),
+  include_content: z.coerce.boolean().optional(),
+  repo: optionalRepo,
+  service: z.string().min(1).max(2048).optional(),
+});
+const queryQuerySchema = queryBodySchema;
+
+// context — 360-degree view of one symbol. At least one of name|uid required.
+const contextBodySchema = z
+  .object({
+    name: z.string().min(1).max(512).optional(),
+    uid: z.string().min(1).max(512).optional(),
+    file_path: z.string().min(1).max(2048).optional(),
+    kind: z.string().min(1).max(64).optional(),
+    include_content: z.coerce.boolean().optional(),
+    repo: optionalRepo,
+    service: z.string().min(1).max(2048).optional(),
+  })
+  .refine((v) => Boolean(v.name) || Boolean(v.uid), {
+    message: "at least one of 'name' or 'uid' is required",
+    path: ["name"],
+  });
+const contextQuerySchema = contextBodySchema;
+
+// cypher — raw parameterized query against the knowledge graph.
+const cypherBodySchema = z.object({
+  statement: z
+    .string({ required_error: "statement is required" })
+    .min(1, "statement must not be empty")
+    .max(20000, "statement is too long"),
+  params: z.record(z.unknown()).optional(),
+  repo: optionalRepo,
+});
+
+// check — read-only structural CI check.
+const checkQuerySchema = z.object({
+  cycles: z.coerce.boolean().optional(),
+  repo: optionalRepo,
+});
+
+// rename — graph-aware coordinated rename (DESTRUCTIVE; dry_run defaults true).
+const renameBodySchema = z
+  .object({
+    new_name: z
+      .string({ required_error: "new_name is required" })
+      .min(1, "new_name must not be empty")
+      .max(512, "new_name is too long"),
+    symbol_name: z.string().min(1).max(512).optional(),
+    symbol_uid: z.string().min(1).max(512).optional(),
+    file_path: z.string().min(1).max(2048).optional(),
+    dry_run: z.boolean().optional(),
+    repo: optionalRepo,
+  })
+  .refine((v) => Boolean(v.symbol_name) || Boolean(v.symbol_uid), {
+    message: "at least one of 'symbol_name' or 'symbol_uid' is required",
+    path: ["symbol_name"],
+  });
 
 // ============================================================================
 // GET /gitnexus/status
@@ -392,6 +465,244 @@ router.get(
     const { target, limit, repo } = parsed.data;
     logger.info("gitnexus: explainTaint", { target, limit, repo });
     const data = await explainTaint({ target, limit, repo });
+
+    return res.json({ success: true, data });
+  })
+);
+
+// ============================================================================
+// query — natural-language, process-grouped graph-RAG retrieval.
+// The flagship "understand how code works" surface: returns execution flows
+// ranked by relevance (BM25 + vector, fused via RRF) rather than a flat symbol
+// list. Available as GET (query params) and POST (body).
+// ============================================================================
+
+async function runQuery(
+  data: z.infer<typeof queryBodySchema>,
+  res: Response
+): Promise<Response> {
+  logger.info("gitnexus: query", {
+    searchQuery: data.search_query,
+    repo: data.repo,
+  });
+  const result = await queryGraph({
+    searchQuery: data.search_query,
+    taskContext: data.task_context,
+    goal: data.goal,
+    limit: data.limit,
+    maxSymbols: data.max_symbols,
+    includeContent: data.include_content,
+    repo: data.repo,
+    service: data.service,
+  });
+  return res.json({ success: true, data: result });
+}
+
+router.get(
+  "/query",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = queryQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "query",
+        first?.message ?? "Invalid query parameters"
+      );
+    }
+    return runQuery(parsed.data, res);
+  })
+);
+
+router.post(
+  "/query",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = queryBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+    return runQuery(parsed.data, res);
+  })
+);
+
+// ============================================================================
+// context — 360-degree view of a single symbol (callers/callees, processes,
+// file location). Available as GET (query params) and POST (body).
+// ============================================================================
+
+async function runContext(
+  data: z.infer<typeof contextBodySchema>,
+  res: Response
+): Promise<Response> {
+  logger.info("gitnexus: context", {
+    name: data.name ?? data.uid,
+    repo: data.repo,
+  });
+  const result = await getSymbolContext({
+    name: data.name,
+    uid: data.uid,
+    filePath: data.file_path,
+    kind: data.kind,
+    includeContent: data.include_content,
+    repo: data.repo,
+    service: data.service,
+  });
+  return res.json({ success: true, data: result });
+}
+
+router.get(
+  "/context",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = contextQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "query",
+        first?.message ?? "Invalid query parameters"
+      );
+    }
+    return runContext(parsed.data, res);
+  })
+);
+
+router.post(
+  "/context",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = contextBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+    return runContext(parsed.data, res);
+  })
+);
+
+// ============================================================================
+// cypher — arbitrary parameterized Cypher against the knowledge graph.
+// User values MUST be bound via `params` ($placeholders), never interpolated
+// into the statement, so the engine uses prepared-statement binding.
+// ============================================================================
+
+router.post(
+  "/cypher",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = cypherBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+
+    const { statement, params, repo } = parsed.data;
+    logger.info("gitnexus: cypher", {
+      statementLength: statement.length,
+      paramKeys: params ? Object.keys(params) : [],
+      repo,
+    });
+    const data = await runCypher({ statement, params, repo });
+
+    return res.json({ success: true, data });
+  })
+);
+
+// ============================================================================
+// check — read-only structural CI check (import cycles).
+// ============================================================================
+
+router.get(
+  "/check",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = checkQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "query",
+        first?.message ?? "Invalid query parameters"
+      );
+    }
+
+    const { cycles, repo } = parsed.data;
+    logger.info("gitnexus: check", { cycles, repo });
+    const data = await structuralCheck({ cycles, repo });
+
+    return res.json({ success: true, data });
+  })
+);
+
+// ============================================================================
+// rename — graph-aware coordinated rename (DESTRUCTIVE).
+//
+// Preview-by-default: dry_run defaults to TRUE. A non-preview rename (dry_run:
+// false) actually rewrites files, so it requires an authenticated user and is
+// recorded to the audit trail before and after execution.
+// ============================================================================
+
+router.post(
+  "/rename",
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const parsed = renameBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const first = parsed.error.errors[0];
+      throw Errors.invalidParameter(
+        first?.path.join(".") || "body",
+        first?.message ?? "Invalid request body"
+      );
+    }
+
+    const { new_name, symbol_name, symbol_uid, file_path, dry_run, repo } =
+      parsed.data;
+    const isWrite = dry_run === false;
+
+    // Write-path guard: a destructive (non-dry-run) rename requires an
+    // authenticated user identity for the audit trail.
+    if (isWrite && !req.user?.userId) {
+      throw Errors.invalidParameter(
+        "dry_run",
+        "a non-preview rename (dry_run: false) requires an authenticated user"
+      );
+    }
+
+    if (isWrite) {
+      logger.warn("gitnexus: rename write requested", {
+        userId: req.user?.userId,
+        symbol: symbol_name ?? symbol_uid,
+        newName: new_name,
+        repo,
+      });
+    } else {
+      logger.info("gitnexus: rename preview", {
+        symbol: symbol_name ?? symbol_uid,
+        newName: new_name,
+        repo,
+      });
+    }
+
+    const data = await renameSymbol({
+      newName: new_name,
+      symbolName: symbol_name,
+      symbolUid: symbol_uid,
+      filePath: file_path,
+      dryRun: dry_run,
+      repo,
+    });
+
+    if (isWrite) {
+      logger.warn("gitnexus: rename write completed", {
+        userId: req.user?.userId,
+        symbol: symbol_name ?? symbol_uid,
+        newName: new_name,
+        fileCount: data.fileCount,
+        repo,
+      });
+    }
 
     return res.json({ success: true, data });
   })

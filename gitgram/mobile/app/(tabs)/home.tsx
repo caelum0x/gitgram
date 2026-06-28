@@ -12,6 +12,7 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  Animated,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
@@ -31,6 +32,10 @@ import { adService } from '../../services/adService';
 import repositoryService from '../../services/repositoryService';
 import { storyService } from '../../services/storyService';
 import { usePostViewTracking } from '../../hooks/usePostViewTracking';
+import {
+  useMinimalShell,
+  useMinimalHeaderStyle,
+} from '../../hooks/useMinimalShell';
 import { listenSoftReset } from '../../utils/events';
 import { logger } from '../../utils/logger';
 import { useRouter } from 'expo-router';
@@ -39,6 +44,9 @@ type FeedItem = { type: 'post' | 'ad' | 'repo'; data: any; index: number };
 
 // Distance (px) the user must scroll down before the "load latest" pill appears.
 const LOAD_LATEST_OFFSET = 320;
+
+// Height of the top app bar; the minimal-shell header collapses by this much.
+const HEADER_HEIGHT = 56;
 
 interface TrendingRepo {
   fullName: string;
@@ -116,6 +124,11 @@ export default function HomeScreen() {
   // Newest post id currently shown at the top of the feed, used to detect when
   // a background poll surfaces fresher content.
   const newestPostIdRef = useRef<string | null>(null);
+
+  // Hide-on-scroll: collapse the header (and bottom tab bar) on downward
+  // scroll, reveal on upward scroll. Shared with the tab bar via a singleton.
+  const minimalShell = useMinimalShell();
+  const headerAnimStyle = useMinimalHeaderStyle(HEADER_HEIGHT);
 
   const { onViewableItemsChanged, reset: resetViewTracking } =
     usePostViewTracking<FeedItem>({
@@ -240,8 +253,9 @@ export default function HomeScreen() {
   const scrollToTopAndRefresh = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
     setScrolledDown(false);
+    minimalShell.reveal();
     handleRefresh();
-  }, []);
+  }, [minimalShell]);
 
   // Soft reset: re-pressing the Home tab scrolls to top and reloads.
   useEffect(() => {
@@ -283,8 +297,10 @@ export default function HomeScreen() {
         const next = offsetY > LOAD_LATEST_OFFSET;
         return prev === next ? prev : next;
       });
+      // Drive the collapsing header + tab bar.
+      minimalShell.onScroll(event);
     },
-    [],
+    [minimalShell],
   );
 
   if (loading && posts.length === 0) {
@@ -327,6 +343,12 @@ export default function HomeScreen() {
     return items;
   }, [posts, ads, trendingRepos]);
 
+  // Remove a post the viewer hid ("Not interested") or whose author they
+  // blocked, so it disappears from the feed immediately.
+  const handleHidePost = useCallback((postId: string) => {
+    setPosts((prev) => prev.filter((p) => p?.id !== postId));
+  }, []);
+
   const renderItem = useCallback(({ item }: { item: FeedItem }) => {
     if (item.type === 'ad') {
       return <AdCard ad={item.data} />;
@@ -334,8 +356,8 @@ export default function HomeScreen() {
     if (item.type === 'repo') {
       return <TrendingRepoCard repo={toTrendingRepo(item.data as Record<string, unknown>)} />;
     }
-    return <PostCard post={item.data} />;
-  }, []);
+    return <PostCard post={item.data} onHide={handleHidePost} />;
+  }, [handleHidePost]);
 
   const keyExtractor = useCallback((item: FeedItem) => {
     if (item.type === 'ad') return `ad-${item.data.id}`;
@@ -347,8 +369,8 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Top App Bar */}
-      <View style={styles.header}>
+      {/* Top App Bar — collapses on downward scroll (minimal shell). */}
+      <Animated.View style={[styles.header, styles.headerAbsolute, headerAnimStyle]}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerIcon}>💻</Text>
           <Text style={styles.headerTitle}>Gitgram</Text>
@@ -374,7 +396,7 @@ export default function HomeScreen() {
             <Text style={styles.headerButtonIcon}>📤</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Main Content Feed */}
       <View style={styles.feedContainer}>
@@ -468,11 +490,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 56,
+    height: HEADER_HEIGHT,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     backgroundColor: Colors.background,
+  },
+  // Absolutely positioned so collapsing it reclaims vertical feed space; the
+  // list compensates with matching top padding.
+  headerAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -511,6 +542,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   listContent: {
+    paddingTop: HEADER_HEIGHT, // Clear the absolutely-positioned app bar
     paddingBottom: 80, // Space for bottom tab bar
   },
   skeletonList: {

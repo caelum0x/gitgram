@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { emitSoftReset } from '../../utils/events';
+import MinimalShellTabBar from '../../components/navigation/MinimalShellTabBar';
 
 /**
  * Fires a soft reset (scroll-to-top + refresh) when the user taps the tab that
@@ -23,6 +24,7 @@ const softResetListeners = ({
 export default function TabsLayout() {
   return (
     <Tabs
+      tabBar={(props) => <MinimalShellTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: Colors.primary,

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { linkifyText } from '@/utils/linkify'
 import ImageCarousel from './ImageCarousel'
+import RichEmbeds from './RichEmbeds'
 import ContentHider from './moderation/ContentHider'
 import { parseSelfLabel } from '@/utils/moderation'
 
@@ -322,6 +323,7 @@ export default function PostCard({ post, onLike }: PostCardProps) {
       <ContentHider label={selfLabel}>
         <div style={{ marginBottom: '12px' }}>
           <RenderedContent content={cleanContent} />
+          <RichEmbeds content={cleanContent} />
         </div>
 
         {post.images && post.images.length > 0 && (

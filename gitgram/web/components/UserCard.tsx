@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { UserHoverCard } from './UserHoverCard';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,20 +143,22 @@ export function UserCard({ user, variant = 'full', onFollowChange }: UserCardPro
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <Link
-          href={`/profile/${user.username}`}
-          className="flex items-center gap-3 group min-w-0"
-        >
-          <Avatar user={user} size="lg" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--foreground)] truncate group-hover:text-[var(--primary)] transition-colors">
-              {user.displayName ?? user.username}
-            </p>
-            <p className="text-xs text-[var(--foreground-secondary)] truncate">
-              @{user.username}
-            </p>
-          </div>
-        </Link>
+        <UserHoverCard username={user.username}>
+          <Link
+            href={`/profile/${user.username}`}
+            className="flex items-center gap-3 group min-w-0"
+          >
+            <Avatar user={user} size="lg" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--foreground)] truncate group-hover:text-[var(--primary)] transition-colors">
+                {user.displayName ?? user.username}
+              </p>
+              <p className="text-xs text-[var(--foreground-secondary)] truncate">
+                @{user.username}
+              </p>
+            </div>
+          </Link>
+        </UserHoverCard>
 
         <button
           type="button"

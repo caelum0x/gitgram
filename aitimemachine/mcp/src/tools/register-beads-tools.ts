@@ -37,6 +37,10 @@ const projectionSchema = {
     .boolean()
     .optional()
     .describe('When true, return only {id, title, status, priority} per task (smallest output).'),
+  briefDeps: z
+    .boolean()
+    .optional()
+    .describe('When true, return the FULL task but collapse each dependency/dependent edge to {id, title, status, priority, dependencyType}. Ideal for inspecting a DAG node with many edges without a context blow-out. Ignored when brief is set.'),
   fields: z
     .array(z.string())
     .optional()
@@ -70,6 +74,7 @@ const listProjectionSchema = {
 function pickProjection(
   args: Partial<{
     brief: boolean;
+    briefDeps: boolean;
     fields: string[];
     maxDescriptionLength: number;
     compactionThreshold: number;
@@ -79,6 +84,7 @@ function pickProjection(
 ): BeadsProjectionOptions {
   return {
     brief: args.brief,
+    briefDeps: args.briefDeps,
     fields: args.fields,
     maxDescriptionLength: args.maxDescriptionLength,
     compactionThreshold: args.compactionThreshold,
@@ -198,6 +204,23 @@ export const registerBeadsTools = createToolRegistrar([
     run: async (args) =>
       beadsPut(
         `/tasks/${encodeURIComponent(args.id)}/ready`,
+        undefined,
+        pickProjection(args)
+      ),
+  }),
+
+  defineTool({
+    name: 'beads_claim',
+    description:
+      'Atomically claim a Beads task for work: set the assignee to the configured actor AND move it to in_progress in one compare-and-swap step. This is the multi-agent-safe "grab the next piece of work" primitive — two agents racing on the same task cannot both win. The claim is idempotent when the task is already claimed by the same actor; when another actor already holds it the AITM API returns 409 (surfaced here as an error) so the agent should retry a different ready task. Pair with beads_ready to find candidates, then beads_claim to lock one in.',
+    schema: {
+      id: z.string().describe('The ID of the task to claim for work'),
+      ...projectionSchema,
+    },
+    annotations: idempotentMutationAnnotations(),
+    run: async (args) =>
+      beadsPut(
+        `/tasks/${encodeURIComponent(args.id)}/claim`,
         undefined,
         pickProjection(args)
       ),

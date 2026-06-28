@@ -4,14 +4,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Colors } from '../../constants/Colors';
 import { postService } from '../../services/postService';
+import { userService } from '../../services/userService';
 import { logger } from '../../utils/logger';
 import { useAuthStore } from '../../store/authStore';
 import { useHaptics } from '../../hooks/useHaptics';
+import { useToast } from '../../hooks/useToast';
+import { timeAgo } from '../../utils/timeAgo';
 import PostOptionsModal from '../common/PostOptionsModal';
 import ReportModal from '../common/ReportModal';
 import CodeBlock from '../common/CodeBlock';
@@ -47,22 +51,87 @@ interface PostCardProps {
   onLike?: () => void;
   onPress?: () => void;
   showFullContent?: boolean;
+  /**
+   * Called when the viewer hides this post ("Not interested") or blocks its
+   * author. The parent can drop the post from its feed list; if omitted the
+   * card hides itself locally.
+   */
+  onHide?: (postId: string) => void;
 }
 
-export default function PostCard({ post, onLike, showFullContent = false }: PostCardProps) {
+export default function PostCard({ post, onLike, showFullContent = false, onHide }: PostCardProps) {
   const router = useRouter();
   const { user } = useAuthStore();
   const haptics = useHaptics();
   const openLightbox = useLightbox();
+  const { showToast, ToastComponent } = useToast();
   const [isLiked, setIsLiked] = useState(post.isLiked);
   const [likesCount, setLikesCount] = useState(post.likesCount);
   const [loading, setLoading] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const likeBounceRef = useRef<LikeBounceAnimationHandle>(null);
   const lastTapRef = useRef(0);
 
   const isOwner = user?.id === post.user.id;
+
+  // Hide this post from the viewer's feed ("Not interested"). Purely
+  // client-side: the parent feed can prune it, otherwise we self-hide.
+  const handleHidePost = () => {
+    haptics('Light');
+    if (onHide) {
+      onHide(post.id);
+    } else {
+      setHidden(true);
+    }
+    showToast('Post hidden', 'success');
+  };
+
+  const handleBlockUser = () => {
+    if (blocking) return;
+    const action = isBlocked ? 'Unblock' : 'Block';
+    Alert.alert(
+      `${action} @${post.user.username}?`,
+      isBlocked
+        ? 'They will be able to see your content and interact with you again.'
+        : "You won't see their posts and they won't be able to interact with you.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: action,
+          style: isBlocked ? 'default' : 'destructive',
+          onPress: async () => {
+            setBlocking(true);
+            try {
+              if (isBlocked) {
+                await userService.unblockUser(post.user.id);
+                setIsBlocked(false);
+                showToast(`Unblocked @${post.user.username}`, 'success');
+              } else {
+                await userService.blockUser(post.user.id);
+                setIsBlocked(true);
+                showToast(`Blocked @${post.user.username}`, 'success');
+                // A blocked author's post should leave the feed immediately.
+                if (onHide) {
+                  onHide(post.id);
+                } else {
+                  setHidden(true);
+                }
+              }
+            } catch (error) {
+              logger.error('Block user error:', error);
+              showToast(`Failed to ${action.toLowerCase()} user`, 'error');
+            } finally {
+              setBlocking(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // mode: 'toggle' for the like button, 'like-only' for double-tap (which never
   // unlikes, matching Instagram/TikTok behaviour).
@@ -116,8 +185,13 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
     openLightbox([{ uri: post.mediaUrl, alt: post.content || undefined }], 0);
   };
 
+  if (hidden) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
+      {ToastComponent}
       {/* Card Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -131,7 +205,10 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
               <Text style={styles.avatarText}>{post.user.username[0].toUpperCase()}</Text>
             </View>
           )}
-          <Text style={styles.username}>{post.user.username}</Text>
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.username}>{post.user.username}</Text>
+            <Text style={styles.timestamp}>{timeAgo(post.createdAt)}</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity style={styles.moreButton} onPress={() => setShowOptionsModal(true)}>
           <Text style={styles.moreIcon}>⋯</Text>
@@ -232,6 +309,10 @@ export default function PostCard({ post, onLike, showFullContent = false }: Post
         onClose={() => setShowOptionsModal(false)}
         onReport={() => setShowReportModal(true)}
         onShare={() => router.push(`/post/${post.id}/share`)}
+        onHidePost={handleHidePost}
+        onBlockUser={handleBlockUser}
+        authorUsername={post.user.username}
+        isBlocked={isBlocked}
         isOwner={isOwner}
       />
 
@@ -284,10 +365,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
+  headerTextWrap: {
+    flexShrink: 1,
+  },
   username: {
     color: Colors.text,
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  timestamp: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 1,
   },
   moreButton: {
     width: 32,

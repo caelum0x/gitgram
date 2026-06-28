@@ -13,6 +13,9 @@ import ContentHider from './moderation/ContentHider';
 import { useModeration } from '@/hooks/useModeration';
 import { isPostMuted, parseSelfLabel } from '@/utils/moderation';
 import { realtimeService } from '@/services/realtimeService';
+import { useFeedFeedback } from '@/hooks/useFeedFeedback';
+import PostFeedbackMenu from './PostFeedbackMenu';
+import SeenTracker from './SeenTracker';
 import api from '@/services/api';
 
 interface Post {
@@ -87,6 +90,7 @@ export default function Feed() {
   const queryClient = useQueryClient();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const moderation = useModeration();
+  const feedback = useFeedFeedback();
 
   // ── Infinite feed query ────────────────────────────────────────────────────
   const {
@@ -106,9 +110,11 @@ export default function Feed() {
   const allPosts = data?.pages.flatMap((p) => p.posts) ?? [];
   const isDiscover = data?.pages[0]?.isDiscover;
 
-  // Apply client-side moderation (muted words / accounts / threads).
+  // Apply client-side moderation (muted words / accounts / threads) and hide
+  // posts the viewer marked "not interested".
   const posts = allPosts.filter(
     (post) =>
+      !feedback.isHidden(post.id) &&
       !isPostMuted(
         { id: post.id, content: post.content ?? '', username: post.account.username },
         moderation,
@@ -320,8 +326,8 @@ export default function Feed() {
         const { label: selfLabel, cleanContent: labelledContent } = parseSelfLabel(post.content || '');
         const { story, cleanContent } = parseAitmChangeStoryBlock(labelledContent);
         return (
+          <SeenTracker key={post.id} onSeen={() => feedback.markSeen(post.id)}>
           <article
-            key={post.id}
             className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition"
           >
             <div className="flex items-start gap-3 mb-4">
@@ -330,7 +336,7 @@ export default function Feed() {
                   {post.account.username[0].toUpperCase()}
                 </div>
               </Link>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <Link href={`/${post.account.username}`} className="font-medium hover:underline">
                     @{post.account.username}
@@ -343,6 +349,10 @@ export default function Feed() {
                   {new Date(post.createdAt).toLocaleString()}
                 </div>
               </div>
+              <PostFeedbackMenu
+                onNotInterested={() => feedback.requestLess(post.id)}
+                onShowMore={() => feedback.requestMore(post.id)}
+              />
             </div>
 
             <div className="text-gray-800 dark:text-gray-200 mb-4">
@@ -377,6 +387,7 @@ export default function Feed() {
               <BookmarkButton postId={post.id} initialSaved={false} className="ml-auto" />
             </div>
           </article>
+          </SeenTracker>
         );
       })}
 

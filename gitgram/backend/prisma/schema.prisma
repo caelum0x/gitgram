@@ -384,6 +384,13 @@ model Post {
   selfLabels     String[]  @default([]) // e.g. ["sexual", "graphic-media", "spoiler"]
   contentWarning String?   // optional free-text warning shown alongside the label
 
+  // Detected spoken/natural language of the post body, as an ISO 639-1/639-2
+  // code (e.g. "en", "es", "pt"). Distinct from programming-language fields on
+  // Repository/Project. Used by the feed pipeline's preferredLangOnly tuner step
+  // to filter content to a viewer's natural-language preferences. Null when the
+  // language could not be detected; such posts are never filtered out.
+  contentLanguage String?
+
   // Optional geotagging for map / nearby discovery
   location  String?
   latitude  Float?
@@ -415,6 +422,7 @@ model Post {
   @@index([aitmProjectId])
   @@index([createdAt])
   @@index([isArchived])
+  @@index([contentLanguage])
 }
 
 model Comment {

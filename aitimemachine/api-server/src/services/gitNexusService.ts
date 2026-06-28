@@ -982,6 +982,364 @@ export async function explainTaint(params: {
 }
 
 // ============================================================================
+// Graph-RAG natural-language query (query tool)
+// ============================================================================
+
+/** Options for {@link queryGraph}. */
+export interface QueryGraphOptions {
+  /** Natural-language or keyword search query (required). */
+  searchQuery: string;
+  /** What the caller is working on — improves ranking. */
+  taskContext?: string;
+  /** What the caller wants to find — improves ranking. */
+  goal?: string;
+  /** Max processes (execution flows) to return. */
+  limit?: number;
+  /** Max symbols per process. */
+  maxSymbols?: number;
+  /** Include full symbol source code in results. */
+  includeContent?: boolean;
+  /** Repository name/path, or "@group" mode. Omit when one repo is indexed. */
+  repo?: string;
+  /** Optional monorepo service-root path prefix (group mode). */
+  service?: string;
+}
+
+/**
+ * Natural-language, process-grouped retrieval over the code knowledge graph via
+ * the GitNexus `query` tool. Returns execution flows (processes) ranked by
+ * relevance (BM25 keyword + semantic vector, fused via RRF), each with its
+ * participating symbols and file locations, plus standalone definitions.
+ *
+ * The backend payload shape is rich and intentionally preserved verbatim under
+ * {@link GraphQueryResult.raw} for callers that need full detail; a small set of
+ * top-level arrays are surfaced when present.
+ */
+export interface GraphQueryResult {
+  processes: unknown[];
+  processSymbols: unknown[];
+  definitions: unknown[];
+  raw: unknown;
+}
+
+export async function queryGraph(
+  options: QueryGraphOptions
+): Promise<GraphQueryResult> {
+  const params: Record<string, unknown> = {
+    search_query: options.searchQuery,
+  };
+  if (options.taskContext) params["task_context"] = options.taskContext;
+  if (options.goal) params["goal"] = options.goal;
+  if (typeof options.limit === "number") params["limit"] = options.limit;
+  if (typeof options.maxSymbols === "number") {
+    params["max_symbols"] = options.maxSymbols;
+  }
+  if (typeof options.includeContent === "boolean") {
+    params["include_content"] = options.includeContent;
+  }
+  if (options.repo) params["repo"] = options.repo;
+  if (options.service) params["service"] = options.service;
+
+  const result = await callGitNexus("query", params);
+
+  if (!isRecord(result)) {
+    return { processes: [], processSymbols: [], definitions: [], raw: result };
+  }
+
+  const asArray = (value: unknown): unknown[] =>
+    Array.isArray(value) ? value : [];
+
+  return {
+    processes: asArray(result["processes"]),
+    processSymbols: asArray(
+      result["process_symbols"] ?? result["processSymbols"]
+    ),
+    definitions: asArray(result["definitions"]),
+    raw: result,
+  };
+}
+
+// ============================================================================
+// 360-degree symbol context (context tool)
+// ============================================================================
+
+/** Options for {@link getSymbolContext}. At least one of name/uid is required. */
+export interface SymbolContextOptions {
+  /** Symbol name (e.g. "validateUser"). */
+  name?: string;
+  /** Zero-ambiguity symbol UID from a prior tool result. */
+  uid?: string;
+  /** File path to disambiguate common names. */
+  filePath?: string;
+  /** Kind filter (Function | Class | Method | Interface | …). */
+  kind?: string;
+  /** Include full symbol source code. */
+  includeContent?: boolean;
+  /** Repository name/path, or "@group" mode. */
+  repo?: string;
+  /** Optional monorepo service-root path prefix (group mode). */
+  service?: string;
+}
+
+/**
+ * 360-degree view of a single symbol via the GitNexus `context` tool:
+ * categorized incoming/outgoing references, process participation, and file
+ * location. When several symbols share a name and no uid is given, the backend
+ * returns ranked disambiguation candidates — that payload is preserved under
+ * {@link SymbolContextResult.raw}.
+ */
+export interface SymbolContextResult {
+  raw: unknown;
+}
+
+export async function getSymbolContext(
+  options: SymbolContextOptions
+): Promise<SymbolContextResult> {
+  const params: Record<string, unknown> = {};
+  if (options.name) params["name"] = options.name;
+  if (options.uid) params["uid"] = options.uid;
+  if (options.filePath) params["file_path"] = options.filePath;
+  if (options.kind) params["kind"] = options.kind;
+  if (typeof options.includeContent === "boolean") {
+    params["include_content"] = options.includeContent;
+  }
+  if (options.repo) params["repo"] = options.repo;
+  if (options.service) params["service"] = options.service;
+
+  const result = await callGitNexus("context", params);
+  return { raw: result };
+}
+
+// ============================================================================
+// Raw Cypher query (cypher tool)
+// ============================================================================
+
+/** Options for {@link runCypher}. */
+export interface CypherOptions {
+  /** Cypher statement to execute. */
+  statement: string;
+  /** Bound parameters for $placeholders (prepared-statement binding). */
+  params?: Record<string, unknown>;
+  /** Repository name/path. Omit when one repo is indexed. */
+  repo?: string;
+}
+
+/**
+ * Result of a {@link runCypher} call. The `cypher` tool returns a Markdown table
+ * plus a row count; both are surfaced and the full payload kept under `raw`.
+ */
+export interface CypherResult {
+  markdown: string | null;
+  rowCount: number | null;
+  raw: unknown;
+}
+
+/**
+ * Executes an arbitrary Cypher statement against the code knowledge graph via
+ * the GitNexus `cypher` tool. Bound `params` are passed through to the engine's
+ * prepared-statement binding ($placeholders) — callers should always bind user
+ * values as params rather than interpolating them into the statement.
+ */
+export async function runCypher(options: CypherOptions): Promise<CypherResult> {
+  const params: Record<string, unknown> = { statement: options.statement };
+  if (options.params && Object.keys(options.params).length > 0) {
+    params["params"] = options.params;
+  }
+  if (options.repo) params["repo"] = options.repo;
+
+  const result = await callGitNexus("cypher", params);
+
+  if (typeof result === "string") {
+    return { markdown: result, rowCount: null, raw: result };
+  }
+  if (isRecord(result)) {
+    return {
+      markdown:
+        typeof result["markdown"] === "string" ? result["markdown"] : null,
+      rowCount:
+        typeof result["row_count"] === "number"
+          ? result["row_count"]
+          : typeof result["rowCount"] === "number"
+            ? result["rowCount"]
+            : null,
+      raw: result,
+    };
+  }
+  return { markdown: null, rowCount: null, raw: result };
+}
+
+// ============================================================================
+// Structural checks for CI (check tool)
+// ============================================================================
+
+/** Options for {@link structuralCheck}. */
+export interface StructuralCheckOptions {
+  /** Detect circular file imports (default true). */
+  cycles?: boolean;
+  /** Repository name/path. Omit when one repo is indexed. */
+  repo?: string;
+}
+
+/**
+ * Read-only structural check via the GitNexus `check` tool. Currently detects
+ * directed cycles between File nodes connected by IMPORTS edges, returning
+ * deterministic cycle paths and a count suitable for CI gating.
+ */
+export interface StructuralCheckResult {
+  /** Detected cycle paths (each an ordered list of file identifiers). */
+  cycles: unknown[];
+  /** Number of distinct cycles detected. */
+  cycleCount: number;
+  /** True when no cycles were found. */
+  ok: boolean;
+  /** The unnormalised backend payload. */
+  raw: unknown;
+}
+
+export async function structuralCheck(
+  options: StructuralCheckOptions = {}
+): Promise<StructuralCheckResult> {
+  const params: Record<string, unknown> = {
+    cycles: options.cycles ?? true,
+  };
+  if (options.repo) params["repo"] = options.repo;
+
+  const result = await callGitNexus("check", params);
+
+  const empty: StructuralCheckResult = {
+    cycles: [],
+    cycleCount: 0,
+    ok: true,
+    raw: result,
+  };
+
+  if (!isRecord(result)) {
+    if (typeof result === "string") {
+      // Some backends return a textual "no cycles" note; treat as clean.
+      return { ...empty, raw: result };
+    }
+    logger.error("gitNexus: unexpected shape from check", undefined, {
+      result: String(result),
+    });
+    return empty;
+  }
+
+  const cycles = Array.isArray(result["cycles"])
+    ? (result["cycles"] as unknown[])
+    : [];
+  const cycleCount =
+    typeof result["cycleCount"] === "number"
+      ? result["cycleCount"]
+      : typeof result["cycle_count"] === "number"
+        ? result["cycle_count"]
+        : cycles.length;
+  const ok =
+    typeof result["ok"] === "boolean" ? result["ok"] : cycleCount === 0;
+
+  return { cycles, cycleCount, ok, raw: result };
+}
+
+// ============================================================================
+// Graph-aware coordinated rename (rename tool — DESTRUCTIVE)
+// ============================================================================
+
+/** Options for {@link renameSymbol}. */
+export interface RenameOptions {
+  /** New name for the symbol (required). */
+  newName: string;
+  /** Current symbol name to rename. */
+  symbolName?: string;
+  /** Zero-ambiguity symbol UID from a prior tool result. */
+  symbolUid?: string;
+  /** File path to disambiguate common names. */
+  filePath?: string;
+  /**
+   * Preview edits without modifying files. Defaults to TRUE at the call site —
+   * the route layer enforces an explicit opt-in before a write is performed.
+   */
+  dryRun?: boolean;
+  /** Repository name/path. Omit when one repo is indexed. */
+  repo?: string;
+}
+
+/** A single planned/applied edit in a {@link RenameResult}. */
+export interface RenameEdit {
+  file: string;
+  /** "graph" (high confidence) or "text_search" (review carefully). */
+  confidence: string;
+  raw: unknown;
+}
+
+/**
+ * Result of a graph-aware coordinated rename via the GitNexus `rename` tool.
+ * Each edit is tagged with the source that found it ("graph" vs "text_search").
+ * The full backend payload (including any per-file diff detail) is preserved
+ * under `raw`.
+ */
+export interface RenameResult {
+  /** Whether this was a preview (no files written) or an applied rename. */
+  dryRun: boolean;
+  /** Planned/applied edits across files. */
+  edits: RenameEdit[];
+  /** Number of distinct files touched. */
+  fileCount: number;
+  /** The unnormalised backend payload. */
+  raw: unknown;
+}
+
+export async function renameSymbol(
+  options: RenameOptions
+): Promise<RenameResult> {
+  const dryRun = options.dryRun ?? true;
+  const params: Record<string, unknown> = {
+    new_name: options.newName,
+    dry_run: dryRun,
+  };
+  if (options.symbolName) params["symbol_name"] = options.symbolName;
+  if (options.symbolUid) params["symbol_uid"] = options.symbolUid;
+  if (options.filePath) params["file_path"] = options.filePath;
+  if (options.repo) params["repo"] = options.repo;
+
+  const result = await callGitNexus("rename", params);
+
+  const rows = Array.isArray(result)
+    ? result
+    : isRecord(result) && Array.isArray(result["edits"])
+      ? (result["edits"] as unknown[])
+      : [];
+
+  const edits: RenameEdit[] = rows.filter(isRecord).map((edit) => ({
+    file:
+      typeof edit["file"] === "string"
+        ? edit["file"]
+        : typeof edit["path"] === "string"
+          ? edit["path"]
+          : typeof edit["filePath"] === "string"
+            ? edit["filePath"]
+            : "",
+    confidence:
+      typeof edit["confidence"] === "string"
+        ? edit["confidence"]
+        : typeof edit["source"] === "string"
+          ? edit["source"]
+          : "",
+    raw: edit,
+  }));
+
+  const fileCount = new Set(edits.map((e) => e.file).filter((f) => f.length > 0))
+    .size;
+
+  const resolvedDryRun =
+    isRecord(result) && typeof result["dry_run"] === "boolean"
+      ? (result["dry_run"] as boolean)
+      : isRecord(result) && typeof result["dryRun"] === "boolean"
+        ? (result["dryRun"] as boolean)
+        : dryRun;
+
+  return { dryRun: resolvedDryRun, edits, fileCount, raw: result };
+}
+
+// ============================================================================
 // Availability probe
 // ============================================================================
 

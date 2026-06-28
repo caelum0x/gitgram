@@ -42,6 +42,23 @@ export function normalizeReplyPermission(value: unknown): ReplyPermission {
   return isReplyPermission(value) ? value : 'everyone'
 }
 
+/**
+ * Negative / personalisation feed-feedback signals, ported from Bluesky's
+ * feed-feedback interactions (requestLess/requestMore/seen). These let the feed
+ * ranker learn from explicit "not interested" / "show more" actions and from
+ * which posts the viewer actually saw.
+ */
+export type FeedSignal = 'requestLess' | 'requestMore' | 'seen'
+
+export const FEED_SIGNALS: readonly FeedSignal[] = ['requestLess', 'requestMore', 'seen'] as const
+
+export interface FeedSignalEvent {
+  postId: string
+  signal: FeedSignal
+  /** Opaque feed/ranking context echoed back from the feed response, if any. */
+  feedContext?: string
+}
+
 export const postService = {
   getFeed: async (page = 1, limit = 10) => {
     const { data } = await api.get('/posts/feed', { params: { page, limit } })
@@ -148,6 +165,16 @@ export const postService = {
   reportPost: async (id: string, reason: string) => {
     const { data } = await api.post(`/post-actions/report/${id}`, { reason })
     return data
+  },
+
+  /**
+   * Send one or more feed-feedback signals (not-interested / show-more / seen)
+   * to the personalisation endpoint. Batched by the caller; failures are
+   * swallowed by the hook since these are best-effort ranking hints.
+   */
+  sendFeedSignal: async (events: FeedSignalEvent[]) => {
+    if (events.length === 0) return
+    await api.post('/posts/feedback', { events })
   },
 
   retweetPost: async (id: string, comment?: string) => {

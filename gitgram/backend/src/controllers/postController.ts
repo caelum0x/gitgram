@@ -15,6 +15,10 @@ import { getCachedComments, setCachedComments, invalidateCommentCache } from '..
 import { tuneFeed, type TunableFeedItem } from '../services/feedTuner';
 import { normalizeSelfLabels, decideSelfLabel } from '../services/selfLabels';
 import { computeMutedFeedFlags } from '../services/mutedWordsService';
+import {
+  computePreferredLanguageFlags,
+  getPreferredLanguagesForUser,
+} from '../services/languagePreferenceService';
 
 export const createPost = asyncHandler(async (req: AuthRequest, res: Response) => {
   const {
@@ -250,6 +254,7 @@ function toTunableItem(post: Record<string, unknown>): TunableFeedItem {
     commentsCount: post.commentsCount as number | undefined,
     sharesCount: post.sharesCount as number | undefined,
     createdAt: post.createdAt as Date | string | undefined,
+    contentLanguage: (post.contentLanguage as string | null | undefined) ?? null,
   };
 }
 
@@ -298,6 +303,49 @@ async function applyMutedWords(
   );
 }
 
+/**
+ * Mark each feed item with `isPreferredLanguage` so `tuneFeed`'s
+ * `preferredLangOnly` step can keep only posts in the viewer's preferred
+ * natural languages (Bluesky `FeedTuner.preferredLangOnly` parity). The tuner's
+ * never-empty-page fallback ensures the feed never goes blank.
+ *
+ * Returns the (possibly unchanged) items plus a `preferredLangOnly` flag telling
+ * the caller whether the viewer has any natural-language preference at all; when
+ * false the tuner step is left disabled (a no-op for the largely-English
+ * audience) and no per-item flags are computed.
+ */
+async function applyPreferredLanguage(
+  items: TunableFeedItem[],
+  viewerId: string
+): Promise<{ items: TunableFeedItem[]; preferredLangOnly: boolean }> {
+  if (items.length === 0) {
+    return { items, preferredLangOnly: false };
+  }
+
+  const preferred = await getPreferredLanguagesForUser(viewerId);
+  if (preferred.size === 0) {
+    // Viewer expressed no natural-language preference: skip filtering entirely.
+    return { items, preferredLangOnly: false };
+  }
+
+  const flags = await computePreferredLanguageFlags(
+    viewerId,
+    items.map(item => ({
+      id: item.id,
+      contentLanguage:
+        typeof item.contentLanguage === 'string' ? item.contentLanguage : null,
+    }))
+  );
+
+  const marked = items.map(item =>
+    flags.get(item.id) === false
+      ? { ...item, isPreferredLanguage: false }
+      : { ...item, isPreferredLanguage: true }
+  );
+
+  return { items: marked, preferredLangOnly: true };
+}
+
 export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
   const { page = 1, limit = 20, cursor } = req.query;
@@ -316,11 +364,16 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
       cursor.trim(),
       Number(limit)
     );
-    const markedCursorItems = await applyMutedWords(
+    const mutedCursorItems = await applyMutedWords(
       (result.posts as Record<string, unknown>[]).map(toTunableItem),
       userId
     );
-    const tunedPosts = applySelfLabelBehavior(tuneFeed(markedCursorItems), labelOpts);
+    const { items: markedCursorItems, preferredLangOnly: cursorLangOnly } =
+      await applyPreferredLanguage(mutedCursorItems, userId);
+    const tunedPosts = applySelfLabelBehavior(
+      tuneFeed(markedCursorItems, { preferredLangOnly: cursorLangOnly }),
+      labelOpts
+    );
     res.json({ ...result, posts: tunedPosts });
     return;
   }
@@ -338,11 +391,16 @@ export const getFeed = asyncHandler(async (req: AuthRequest, res: Response) => {
     return;
   }
 
-  const markedItems = await applyMutedWords(
+  const mutedItems = await applyMutedWords(
     (posts as Record<string, unknown>[]).map(toTunableItem),
     userId
   );
-  const tunedPosts = applySelfLabelBehavior(tuneFeed(markedItems), labelOpts);
+  const { items: markedItems, preferredLangOnly } =
+    await applyPreferredLanguage(mutedItems, userId);
+  const tunedPosts = applySelfLabelBehavior(
+    tuneFeed(markedItems, { preferredLangOnly }),
+    labelOpts
+  );
 
   res.json({ posts: tunedPosts, isDiscover: false });
 });
