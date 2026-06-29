@@ -4,7 +4,10 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+# Use `npm install` (not `npm ci`) — gitgram/web is an npm-workspace member, so its
+# standalone lockfile can drift from package.json; install tolerates that and resolves
+# the full dependency tree for the isolated image build.
+RUN npm install --ignore-scripts --no-audit --no-fund
 
 # --- Builder ---
 FROM base AS builder

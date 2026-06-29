@@ -1,7 +1,10 @@
 // NEW SCHEMA - Repository-as-Account Architecture
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local dev; the debian/arm64 openssl-3 targets cover the
+  // node:20-bookworm-slim (glibc) Docker runtime on x64 and arm64 respectively.
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {
