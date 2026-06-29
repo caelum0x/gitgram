@@ -275,7 +275,7 @@ services:
       AITM_API_URL: http://aitm-api:3001
       GITNEXUS_URL: http://gitnexus:3010
       AITM_GITNEXUS_ENABLED: "0"
-      CONTEXT7_URL: http://context7:3100
+      CONTEXT7_URL: http://context7:8080
       AITM_CONTEXT7_ENABLED: "0"
     depends_on:
       aitm-api:
@@ -324,25 +324,25 @@ services:
   # ---------------------------------------------------------------------------
 
   context7:
-    image: node:20-alpine
+    build:
+      # Build from the context7 monorepo root so the package's pnpm workspace +
+      # tsconfig resolve (the upstream Dockerfile uses pnpm --frozen-lockfile).
+      context: ./aitimemachine/context7
+      dockerfile: packages/mcp/Dockerfile
     container_name: context7
-    working_dir: /app
     networks:
       - gitgram-net
-    volumes:
-      - ./aitimemachine/context7/packages/mcp:/app:ro
-    command: sh -c "npm install --if-present && node dist/index.js"
+    # The image serves StreamableHTTP transport on container port 8080.
     ports:
-      - "3100:3100"
+      - "3100:8080"
     environment:
-      NODE_ENV: development
-      PORT: "3100"
+      NODE_ENV: production
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100/health', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) }).on('error', () => process.exit(0))\""]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8080/health', (r) => { process.exit(r.statusCode < 500 ? 0 : 1) }).on('error', () => process.exit(0))\""]
       interval: 20s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     profiles:
       - tools
     restart: unless-stopped
