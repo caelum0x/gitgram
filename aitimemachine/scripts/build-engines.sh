@@ -27,7 +27,12 @@ step "TS engine libraries"
 build_ts() {
   local dir="$1" label="$2" cmd="${3:-npm run build}"
   if [ -d "$AITM_ROOT/$dir" ]; then
-    ( cd "$AITM_ROOT/$dir" && eval "$cmd" ) && ok "$label built" || warn "$label build failed (run npm install first?)"
+    # Install deps first when node_modules is absent (e.g. inside the Docker
+    # image where .dockerignore strips them) so the build's tsc/devDeps resolve.
+    ( cd "$AITM_ROOT/$dir" \
+        && { [ -d node_modules ] || npm install --no-audit --no-fund; } \
+        && eval "$cmd" ) \
+      && ok "$label built" || warn "$label build failed (run npm install first?)"
   else
     warn "$label: $dir missing — skipped"
   fi

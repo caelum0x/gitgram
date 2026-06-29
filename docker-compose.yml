@@ -179,8 +179,11 @@ services:
 
   aitm-api:
     build:
-      context: ./aitimemachine/api-server
-      dockerfile: Dockerfile
+      # Context is the aitimemachine root: the api-server Dockerfile builds the
+      # bundled engines (scripts/build-engines.sh) and resolves the file:../
+      # engine siblings from there.
+      context: ./aitimemachine
+      dockerfile: api-server/Dockerfile
     container_name: aitm-api
     networks:
       - gitgram-net
@@ -254,8 +257,10 @@ services:
 
   aitm-mcp:
     build:
-      context: ./aitimemachine/mcp
-      dockerfile: Dockerfile
+      # Context is the aitimemachine root so the file:../ siblings
+      # (@gitgram/timemachine root pkg, gitnexus, gitnexus-shared) resolve.
+      context: ./aitimemachine
+      dockerfile: mcp/Dockerfile
     container_name: aitm-mcp
     networks:
       - gitgram-net
@@ -289,13 +294,18 @@ services:
 
   gitnexus:
     build:
-      context: ./aitimemachine/gitnexus
-      dockerfile: Dockerfile
+      # Context is the aitimemachine root so the file:../gitnexus-shared
+      # sibling resolves during build.js.
+      context: ./aitimemachine
+      dockerfile: gitnexus/Dockerfile
     container_name: gitnexus
     networks:
       - gitgram-net
     ports:
-      - "3010:3010"
+      # Host 3010 is occupied by a stray host-side node process; publish on
+      # 13010 instead. Internal port stays 3010 so inter-service comms
+      # (e.g. aitm-mcp -> http://gitnexus:3010) are unaffected.
+      - "13010:3010"
     environment:
       NODE_ENV: development
       PORT: "3010"
