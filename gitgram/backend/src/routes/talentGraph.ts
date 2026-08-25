@@ -27,7 +27,9 @@ function requireMutationOrigin(req: Request, _res: Response, next: NextFunction)
 }
 
 router.get('/me', authenticate, talentGraphController.getMine);
+router.post('/me/explain', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.explainMine);
 router.get('/public/:username', talentGraphController.getPublic);
+router.post('/public/:username/explain', optionalAuth, requireMutationOrigin, interactionLimiter, talentGraphController.explainPublic);
 router.get('/opportunities', optionalAuth, talentGraphController.listOpportunities);
 router.post('/opportunities', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.createOpportunity);
 router.get('/opportunities/:id/matches', optionalAuth, talentGraphController.getOpportunityMatches);
