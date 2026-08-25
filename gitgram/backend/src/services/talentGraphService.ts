@@ -1,6 +1,9 @@
 import prisma from '../utils/prisma';
+import logger from '../utils/logger';
 import { normalizePublicHttpUrl } from '../utils/publicHttpUrl';
 import { canonicalizeSkill, canonicalizeSkills, expandSkillQueryTokens } from './skillTaxonomyService';
+import { deriveTalentEdges, type TalentGraphView } from './talentGraphEdges';
+import { validateEdges, type EdgeBatchResult } from './talentGraphOntology';
 import type { PrismaClient } from '@prisma/client';
 
 type EvidenceLevel = 'verified' | 'linked' | 'recorded';
@@ -54,6 +57,38 @@ type TalentMatchDb = Pick<PrismaClient, 'talentPublicProof' | 'user'>;
 
 function projectKey(owner: string | null, name: string, fullName: string | null) {
   return (fullName || (owner ? `${owner}/${name}` : name)).toLowerCase();
+}
+
+/**
+ * Non-breaking validation gate for the assembled talent graph.
+ *
+ * `getTalentGraph` assembles a read-only dossier; it does not persist edges. This
+ * gate realizes the ontology guardrail on that read path: it derives typed,
+ * provenanced candidate edges from the assembled view and vets them with
+ * `validateEdges` (domain/range, provenance, symmetric dedup). It is WARN-ONLY —
+ * it never mutates, drops, or reshapes the response. Ontology-invalid
+ * ("hallucinated") structure is surfaced as a single structured warning (reason
+ * codes + endpoint types) so violations are observable via logs/metrics without
+ * changing any success-path output existing consumers depend on. Returns the
+ * batch result so callers and tests can inspect what the gate saw.
+ */
+export function auditTalentGraphEdges(view: TalentGraphView): EdgeBatchResult {
+  const result = validateEdges(deriveTalentEdges(view));
+  if (result.rejected.length > 0) {
+    logger.warn('talent-graph edge validation rejected ontology-invalid edges', {
+      event: 'talent_graph.edge_validation.rejected',
+      developerId: view.profile.id,
+      acceptedCount: result.accepted.length,
+      rejectedCount: result.rejected.length,
+      rejections: result.rejected.map((entry) => ({
+        edgeType: entry.input.type,
+        fromType: entry.input.from?.type,
+        toType: entry.input.to?.type,
+        codes: entry.rejections.map((rejection) => rejection.code),
+      })),
+    });
+  }
+  return result;
 }
 
 export async function getTalentGraph(userId: string, options: { publicView?: boolean } = {}) {
@@ -356,7 +391,7 @@ export async function getTalentGraph(userId: string, options: { publicView?: boo
     (a, b) => b.sharedProjects.length - a.sharedProjects.length,
   );
 
-  return {
+  const graph = {
     profile: {
       id: user.id,
       username: user.username,
@@ -377,6 +412,21 @@ export async function getTalentGraph(userId: string, options: { publicView?: boo
     collaborators: talentCollaborators,
     generatedAt: new Date(),
   };
+
+  // Realize the ontology guardrail on the read path. Warn-only and defensive:
+  // the gate observes ontology-invalid structure but never changes `graph`, and a
+  // failure here must never break a dossier read.
+  try {
+    auditTalentGraphEdges(graph);
+  } catch (error) {
+    logger.error('talent-graph edge validation gate failed', {
+      event: 'talent_graph.edge_validation.error',
+      developerId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return graph;
 }
 
 export async function findTalentMatches(requiredSkills: string[], limit = 12, db: TalentMatchDb = prisma) {
