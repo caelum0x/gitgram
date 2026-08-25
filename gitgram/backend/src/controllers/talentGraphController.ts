@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/auth';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import { findTalentMatches, getTalentGraph } from '../services/talentGraphService';
+import { analyzeNeedCoverage } from '../services/talentGapAnalysisService';
 import prisma from '../utils/prisma';
 import { normalizePublicHttpUrl } from '../utils/publicHttpUrl';
 import { runTalentMutation, type TalentMutationResult } from '../services/talentMutationService';
@@ -180,6 +181,15 @@ export const talentGraphController = {
     const matches = await findTalentMatches(opportunity.requiredSkills, 12);
     setViewerAwareReadCache(res, req.userId);
     res.json({ data: { opportunity: publicOpportunity(opportunity, req.userId), matches } });
+  }),
+
+  getOpportunityCoverage: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const opportunity = await prisma.talentOpportunity.findUnique({ where: { id: req.params.id } });
+    if (!opportunity) throw Errors.notFound('Talent opportunity', req.params.id);
+    const matches = await findTalentMatches(opportunity.requiredSkills, 25);
+    const coverage = analyzeNeedCoverage(opportunity.requiredSkills, matches);
+    setViewerAwareReadCache(res, req.userId);
+    res.json({ data: { opportunity: publicOpportunity(opportunity, req.userId), coverage } });
   }),
 
   startPilot: asyncHandler(async (req: AuthRequest, res: Response) => {

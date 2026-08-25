@@ -31,6 +31,7 @@ router.get('/public/:username', talentGraphController.getPublic);
 router.get('/opportunities', optionalAuth, talentGraphController.listOpportunities);
 router.post('/opportunities', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.createOpportunity);
 router.get('/opportunities/:id/matches', optionalAuth, talentGraphController.getOpportunityMatches);
+router.get('/opportunities/:id/coverage', optionalAuth, talentGraphController.getOpportunityCoverage);
 router.post('/opportunities/:id/pilots', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.startPilot);
 router.post('/opportunities/:id/referrals', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.createReferral);
 router.get('/referrals/mine', authenticate, talentGraphController.listMyReferrals);
