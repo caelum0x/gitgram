@@ -1,5 +1,6 @@
 import prisma from '../utils/prisma';
 import { normalizePublicHttpUrl } from '../utils/publicHttpUrl';
+import { canonicalizeSkill, canonicalizeSkills, expandSkillQueryTokens } from './skillTaxonomyService';
 import type { PrismaClient } from '@prisma/client';
 
 type EvidenceLevel = 'verified' | 'linked' | 'recorded';
@@ -50,10 +51,6 @@ interface CompletedPilotEvidence {
 }
 
 type TalentMatchDb = Pick<PrismaClient, 'talentPublicProof' | 'user'>;
-
-function normalizeSkill(value: string) {
-  return value.trim().toLowerCase();
-}
 
 function projectKey(owner: string | null, name: string, fullName: string | null) {
   return (fullName || (owner ? `${owner}/${name}` : name)).toLowerCase();
@@ -383,13 +380,19 @@ export async function getTalentGraph(userId: string, options: { publicView?: boo
 }
 
 export async function findTalentMatches(requiredSkills: string[], limit = 12, db: TalentMatchDb = prisma) {
-  const skills = Array.from(new Set(requiredSkills.map(normalizeSkill).filter(Boolean))).slice(0, 12);
+  // Entity-link the Need: resolve required skills to canonical Skill tokens
+  // (ARCHITECTURE.md §3.5, step 1). Scoring compares canonical-to-canonical.
+  const skills = canonicalizeSkills(requiredSkills).slice(0, 12);
   if (skills.length === 0) return [];
+
+  // Widen the retrieval filters to every known alias so array-overlap queries
+  // catch rows stored under a surface form (e.g. "js") before re-canonicalizing.
+  const queryTokens = expandSkillQueryTokens(skills);
 
   const completedPilots = await db.talentPublicProof.findMany({
     where: {
       schemaVersion: 1,
-      evidenceSkills: { hasSome: skills },
+      evidenceSkills: { hasSome: queryTokens },
     },
     orderBy: { completedAt: 'desc' },
     take: 200,
@@ -409,7 +412,7 @@ export async function findTalentMatches(requiredSkills: string[], limit = 12, db
       isSuspended: false,
       username: { not: null },
       OR: [
-        { interests: { hasSome: skills } },
+        { interests: { hasSome: queryTokens } },
         ...(pilotParticipantIds.length > 0 ? [{ id: { in: pilotParticipantIds } }] : []),
         {
           managedRepos: {
@@ -417,8 +420,8 @@ export async function findTalentMatches(requiredSkills: string[], limit = 12, db
               repository: {
                 isPrivate: false,
                 OR: [
-                  { topics: { hasSome: skills } },
-                  { language: { in: skills, mode: 'insensitive' } },
+                  { topics: { hasSome: queryTokens } },
+                  { language: { in: queryTokens, mode: 'insensitive' } },
                 ],
               },
             },
@@ -459,9 +462,9 @@ export async function findTalentMatches(requiredSkills: string[], limit = 12, db
 
   return users
     .map((user) => {
-      const interestMatches = user.interests.map(normalizeSkill).filter((skill) => skills.includes(skill));
+      const interestMatches = user.interests.map(canonicalizeSkill).filter((skill) => skills.includes(skill));
       const repositoryProjects: TalentMatchProject[] = user.managedRepos.flatMap((manager) => {
-        const repositorySkills = [manager.repository.language || '', ...manager.repository.topics].map(normalizeSkill);
+        const repositorySkills = [manager.repository.language || '', ...manager.repository.topics].map(canonicalizeSkill);
         const matchedSkills = skills.filter((skill) => repositorySkills.includes(skill));
         if (matchedSkills.length === 0) return [];
         return [{
@@ -475,7 +478,7 @@ export async function findTalentMatches(requiredSkills: string[], limit = 12, db
       const pilotProjects: TalentMatchProject[] = (pilotsByParticipant.get(user.id) || []).flatMap((pilot) => {
         const deliverableUrl = normalizePublicHttpUrl(pilot.deliverableUrl);
         if (!deliverableUrl) return [];
-        const matchedSkills = skills.filter((skill) => pilot.evidenceSkills.map(normalizeSkill).includes(skill));
+        const matchedSkills = skills.filter((skill) => pilot.evidenceSkills.map(canonicalizeSkill).includes(skill));
         if (matchedSkills.length === 0) return [];
         return [{
           id: pilot.publicId,
