@@ -55,6 +55,13 @@ const envSchema = z.object({
     .string()
     .optional()
     .describe("Shared secret for website-to-API internal calls"),
+  ADOPTION_INGESTION_SECRET: z.string().min(32).optional()
+    .describe("Current dedicated secret for adoption evidence collectors"),
+  ADOPTION_INGESTION_SECRET_PREVIOUS: z.string().min(32).optional()
+    .describe("Previous collector secret accepted during a bounded rotation"),
+  OSS_COVERAGE_MAX_AGE_HOURS: z.string().default("168").transform(Number)
+    .pipe(z.number().int().min(1).max(8760))
+    .describe("Maximum age of the latest OSS coverage window before it is stale"),
   JWT_SECRET: z
     .string()
     .optional()

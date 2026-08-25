@@ -92,6 +92,7 @@ import storeRoutes from './routes/store';
 import momentsRoutes from './routes/moments';
 import feedbackRoutes from './routes/feedback';
 import locationRoutes from './routes/location';
+import talentGraphRoutes from './routes/talentGraph';
 import { trpcMiddleware } from './trpc/adapter';
 import { initializeJobs } from './jobs/scheduler';
 import logger from './utils/logger';
@@ -154,7 +155,7 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'X-Request-Id'],
 };
 app.use(cors(corsOptions));
 
@@ -362,6 +363,9 @@ app.use('/api/v1/feedback', feedbackRoutes);
 // Location / map discovery (nearby projects/posts/users, geocode, trending)
 app.use('/api/v1/location', locationRoutes);
 
+// Verifiable project and collaborator evidence for the Talent Graph dossier
+app.use('/api/v1/talent-graph', talentGraphRoutes);
+
 // tRPC API layer (additive — REST routes unchanged, ported from t3-base patterns)
 app.use('/trpc', trpcMiddleware);
 
@@ -457,4 +461,3 @@ if (require.main === module) {
 }
 
 export { io, app };
-

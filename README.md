@@ -1,11 +1,15 @@
 # gitgram-ai
 
-**Gitgram** is the new GitHub — every repository is a TikTok/Instagram-style social
-profile. **AITimeMachine (AITM)** is the new Git — AI-native, deterministic version
-control with a unified memory layer and built-in agent orchestration.
+**GitGram** is a social layer for GitHub. It turns repositories into
+Instagram-style accounts with posts, reels, stories, media, followers, feeds,
+and publishing workflows. It connects to repositories through authenticated
+APIs and webhooks; it does not replace GitHub's repository hosting or Git's
+storage and protocol.
 
-This monorepo ships both products together: a repository-first social network on top
-of an AI-native version-control substrate.
+**AITimeMachine (AITM)** captures and restores AI coding workflows, including
+checkpoints, messages, context, tool calls, and agent orchestration. It uses Git
+where useful but does not claim to replace Git. A separate Rust Git Forge
+product owns the Rust Git implementation and self-hostable forge boundary.
 
 ---
 
@@ -13,12 +17,12 @@ of an AI-native version-control substrate.
 
 ```
 gitgram-ai/
-├── gitgram/                  # The social network (the "new GitHub")
+├── gitgram/                  # The GitHub repository social layer
 │   ├── web/                  #   Next.js 14 + React 18 web app          (:3000)
 │   ├── backend/              #   Express 5 + Prisma + GraphQL/tRPC/WS   (:4000)
 │   └── mobile/               #   Expo 54 / React Native + expo-router
 │
-├── aitimemachine/            # The version-control substrate (the "new Git")
+├── aitimemachine/            # AI workflow capture and deterministic restore
 │   ├── api-server/           #   HTTP API over the engines (Drizzle ORM) (:3001)
 │   ├── mcp/                  #   Model Context Protocol server (stdio/HTTP :3003)
 │   ├── cli/  (src/cli*)      #   `aitm` command-line client

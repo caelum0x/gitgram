@@ -1034,6 +1034,155 @@ model Project {
   @@index([owner])
 }
 
+enum TalentOpportunityStatus {
+  OPEN
+  MATCHING
+  PILOT
+  CLOSED
+}
+
+enum TalentPilotStatus {
+  PLANNED
+  ACTIVE
+  REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum TalentReferralStatus {
+  CONTACTED
+  ACCEPTED
+  DECLINED
+}
+
+/// A structured institution problem that can be matched against public,
+/// repository-backed talent evidence. User ids stay scalar so this feature can
+/// be extracted into the Zemin360 open-source service without coupling its
+/// lifecycle to Gitgram accounts.
+model TalentOpportunity {
+  id               String                  @id @default(cuid())
+  organizationName String
+  title            String
+  problem          String                  @db.Text
+  requiredSkills   String[]
+  successMetric    String
+  durationWeeks    Int                     @default(4)
+  sourceChannel    String                  @default("direct")
+  communityReferralConsent Boolean         @default(false)
+  createdById      String
+  status           TalentOpportunityStatus @default(OPEN)
+  revision         Int                     @default(1)
+  pilots           TalentPilot[]
+  referrals        TalentReferral[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([createdById])
+  @@index([status, createdAt])
+}
+
+/// Consent-gated community introduction. The participant controls the outcome;
+/// public opportunity responses expose aggregate counts rather than identities.
+model TalentReferral {
+  id            String               @id @default(cuid())
+  opportunityId String
+  participantId String
+  referredById  String
+  status        TalentReferralStatus @default(CONTACTED)
+  revision      Int                  @default(1)
+  respondedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  opportunity TalentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  pilot       TalentPilot?
+
+  @@unique([opportunityId, participantId])
+  @@index([participantId, status])
+  @@index([opportunityId, status])
+}
+
+model TalentPilot {
+  id                    String            @id @default(cuid())
+  opportunityId         String
+  referralId            String?           @unique
+  participantId         String
+  status                TalentPilotStatus @default(PLANNED)
+  milestones            Json              @default("[]")
+  deliverableUrl        String?
+  feedback              String?           @db.Text
+  publicEvidenceConsent Boolean           @default(false)
+  revision              Int               @default(1)
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  opportunity      TalentOpportunity             @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  referral         TalentReferral?               @relation(fields: [referralId], references: [id], onDelete: Restrict)
+  statusTransitions TalentPilotStatusTransition[]
+  publicProof       TalentPublicProof?
+
+  @@unique([opportunityId, participantId])
+  @@index([participantId, status])
+}
+
+/// Append-only provenance for every persisted pilot status change. Actor ids
+/// remain scalar to preserve the Talent Graph service extraction boundary.
+model TalentPilotStatusTransition {
+  id             String            @id @default(cuid())
+  pilotId        String
+  actorId        String
+  previousStatus TalentPilotStatus
+  nextStatus     TalentPilotStatus
+  revision       Int
+  createdAt      DateTime          @default(now())
+
+  pilot TalentPilot @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+
+  @@index([pilotId, createdAt])
+  @@index([actorId, createdAt])
+  @@unique([pilotId, revision])
+}
+
+/// Privacy-safe projection consumed by public Talent Graph and matching reads.
+/// Institution-authored free text never enters this table.
+model TalentPublicProof {
+  pilotId        String   @id
+  publicId       String   @unique @default(cuid())
+  participantId  String
+  deliverableUrl String
+  evidenceSkills String[]
+  completedAt    DateTime
+  schemaVersion  Int      @default(1)
+  publishedAt    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  pilot TalentPilot @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+
+  @@index([participantId, completedAt])
+  @@index([evidenceSkills], type: Gin)
+}
+
+/// Durable idempotency receipt for every Talent Graph mutation. The unique
+/// fingerprint scopes a client key to actor + operation; requestHash rejects
+/// key reuse with a different body and response provides exact replay.
+model TalentMutationReceipt {
+  id                 String   @id @default(cuid())
+  requestFingerprint String   @unique
+  requestHash        String
+  actorId            String
+  operation          String
+  resourceType       String
+  resourceId         String
+  requestId          String
+  response           Json
+  createdAt          DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+}
+
 model Analytics {
   id        String   @id @default(cuid())
   accountId String?

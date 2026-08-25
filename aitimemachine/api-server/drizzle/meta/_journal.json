@@ -57,6 +57,13 @@
       "when": 1771180300000,
       "tag": "0008_add_checkpoint_test_status",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787529600000,
+      "tag": "0009_add_oss_adoption_evidence",
+      "breakpoints": true
     }
   ]
 }

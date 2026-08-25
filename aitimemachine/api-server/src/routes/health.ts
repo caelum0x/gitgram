@@ -15,6 +15,7 @@ import {
   getCachedHealth,
 } from "../services/providerHealthService.js";
 import { enginePaths, ENGINE_DIRS } from "../services/engineManager.js";
+import { getCoverageFreshness } from "../services/adoptionEvidenceHealth.js";
 
 const router = Router();
 
@@ -137,6 +138,30 @@ router.get("/ready", async (req: Request, res: Response) => {
     overallStatus = "unhealthy";
   }
 
+  try {
+    const freshness = await getCoverageFreshness();
+    if (freshness.status === "fresh") {
+      checks.adoptionEvidence = {
+        status: "pass",
+        message: `Latest OSS coverage is ${freshness.ageHours}h old`,
+      };
+    } else {
+      checks.adoptionEvidence = {
+        status: "warn",
+        message: freshness.status === "stale"
+          ? `Latest OSS coverage is ${freshness.ageHours}h old; limit is ${freshness.maxAgeHours}h`
+          : "No completed OSS coverage batch exists",
+      };
+      if (overallStatus === "healthy") overallStatus = "degraded";
+    }
+  } catch (error) {
+    checks.adoptionEvidence = {
+      status: "fail",
+      message: "Adoption evidence health query failed",
+    };
+    overallStatus = "unhealthy";
+  }
+
   // Check memory usage
   const memoryUsage = process.memoryUsage();
   const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
@@ -200,6 +225,39 @@ router.get("/db", async (req: Request, res: Response) => {
       replication,
     },
   });
+});
+
+router.get("/adoption", async (_req: Request, res: Response) => {
+  try {
+    const freshness = await getCoverageFreshness();
+    const status = freshness.status === "fresh" ? "healthy" : "degraded";
+    return res.status(200).json({
+      status,
+      timestamp: new Date().toISOString(),
+      checks: {
+        coverageFreshness: {
+          status: freshness.status === "fresh" ? "pass" : "warn",
+          message: freshness.status === "fresh"
+            ? `Latest OSS coverage is ${freshness.ageHours}h old`
+            : freshness.status === "stale"
+              ? `Latest OSS coverage is ${freshness.ageHours}h old; limit is ${freshness.maxAgeHours}h`
+              : "No completed OSS coverage batch exists",
+          freshness,
+        },
+      },
+    });
+  } catch (error) {
+    return res.status(503).json({
+      status: "unhealthy",
+      timestamp: new Date().toISOString(),
+      checks: {
+        coverageFreshness: {
+          status: "fail",
+          message: "Adoption evidence health query failed",
+        },
+      },
+    });
+  }
 });
 
 /**

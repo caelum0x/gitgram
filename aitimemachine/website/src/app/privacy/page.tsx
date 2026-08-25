@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
         <Badge className="mb-4">Legal</Badge>
         <h1 className="text-4xl font-bold mb-4">Privacy Policy</h1>
-        <p className="text-gray-400 mb-8">Last updated: February 17, 2026</p>
+        <p className="text-gray-400 mb-8">Last updated: August 23, 2026</p>
 
         <div className="prose prose-invert prose-gray max-w-none">
           <section className="mb-12">
@@ -56,6 +56,16 @@ export default function PrivacyPage() {
             <p className="text-gray-300 mt-4">
               <strong>Important:</strong> Free tier users' data stays entirely local on their machines.
               We only store checkpoint data for Pro and Team users who opt into cloud sync.
+            </p>
+
+            <h3 className="text-xl font-medium mb-3 mt-6">Open Source Evidence</h3>
+            <p className="text-gray-300 mb-4">
+              Maintainers can submit bounded coverage batches for external contributions and first response times.
+              The service stores repository, contributor, and contribution references as opaque, secret-keyed HMAC-SHA-256 keys.
+            </p>
+            <p className="text-gray-300">
+              Public adoption reports contain aggregate counts, measurement windows, and status labels. They do not
+              include account, repository, project, checkpoint, restore, contributor, or contribution identifiers.
             </p>
           </section>
 

@@ -36,4 +36,15 @@ if (isNeonUrl) {
 
 export const db: Database = dbInstance;
 
+// Adoption ingestion needs an interactive transaction. Neon HTTP is optimized
+// for single/non-interactive requests, so keep the read path on HTTP while
+// using one small node-postgres pool for atomic collector writes.
+const transactionPool = new Pool({
+  connectionString,
+  max: 4,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+});
+export const transactionDb = drizzlePg(transactionPool, { schema });
+
 export { schema };

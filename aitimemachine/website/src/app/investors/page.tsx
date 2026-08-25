@@ -1,386 +1,249 @@
 import Link from 'next/link';
-import {
-  ArrowRight,
-  Users,
-  Database,
-  Shield,
-  TrendingUp,
-  Mail,
-  ExternalLink,
-  Quote,
-} from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  parseAdoptionSummary,
+  type AdoptionSummary,
+  type EvidenceStatus,
+  type EvidenceWindow,
+} from '@/lib/adoption-evidence';
 
-interface FundingRound {
-  round: string
-  amount: string
-  date: string
-  description: string
-  accentColor: string
-  dotColor: string
+interface Metric {
+  label: string;
+  value: string;
+  detail: string;
 }
 
-interface KeyMetric {
-  icon: React.ComponentType<{ className?: string }>
-  value: string
-  label: string
-  sublabel: string
-  accentColor: string
-  bgColor: string
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://timemachine-api.gitgram.app';
+
+async function getAdoptionSummary(): Promise<AdoptionSummary | null> {
+  try {
+    const response = await fetch(`${API_BASE}/v1/adoption/summary`, {
+      next: { revalidate: 300 },
+    });
+    if (!response.ok) return null;
+    return parseAdoptionSummary(await response.json() as unknown);
+  } catch {
+    return null;
+  }
 }
 
-interface InvestorLogo {
-  name: string
-  tier: 'lead' | 'strategic'
+function countValue(number: number | null | undefined, status: EvidenceStatus | 'unavailable'): string {
+  if (status === 'unavailable') return 'Unavailable';
+  if (status === 'unmeasured') return 'Unmeasured';
+  return typeof number === 'number' ? new Intl.NumberFormat('en-US').format(number) : 'Not applicable';
 }
 
-interface PressQuote {
-  publication: string
-  quote: string
-  author: string
-  date: string
-  url: string
+function windowLabel(window: EvidenceWindow | undefined): string {
+  if (!window || window.status === 'unmeasured' || !window.startsAt || !window.endsAt) {
+    return 'No completed coverage window';
+  }
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  return `${formatter.format(new Date(window.startsAt))} to ${formatter.format(new Date(window.endsAt))} UTC`;
 }
 
-const fundingRounds: FundingRound[] = [
-  {
-    round: 'Pre-Seed',
-    amount: '$1.2M',
-    date: 'Q4 2025',
-    description: 'Initial funding to build the checkpoint engine and validate the core thesis with early developer users.',
-    accentColor: 'text-blue-400',
-    dotColor: 'bg-blue-500',
-  },
-  {
-    round: 'Seed',
-    amount: '$4.8M',
-    date: 'Q2 2026',
-    description: 'Scaling the team, launching the cloud sync product, and expanding integrations with Claude, Cursor, and Windsurf.',
-    accentColor: 'text-purple-400',
-    dotColor: 'bg-purple-500',
-  },
-];
+function freshnessLabel(summary: AdoptionSummary): string {
+  const freshness = summary.oss.freshness;
+  if (freshness.status === 'unmeasured' || freshness.ageHours === null) return 'Freshness unmeasured';
+  return `${freshness.status} / ${freshness.ageHours} h old`;
+}
 
-const keyMetrics: KeyMetric[] = [
-  {
-    icon: Users,
-    value: '12,400+',
-    label: 'Active Developers',
-    sublabel: 'Monthly active users across CLI and dashboard',
-    accentColor: 'text-blue-400',
-    bgColor: 'bg-blue-500/10',
-  },
-  {
-    icon: Database,
-    value: '3.2M',
-    label: 'Sessions Saved',
-    sublabel: 'Checkpoints created since launch',
-    accentColor: 'text-purple-400',
-    bgColor: 'bg-purple-500/10',
-  },
-  {
-    icon: Shield,
-    value: '847 TB',
-    label: 'Data Protected',
-    sublabel: 'Workspace state secured in cloud sync',
-    accentColor: 'text-green-400',
-    bgColor: 'bg-green-500/10',
-  },
-  {
-    icon: TrendingUp,
-    value: '38%',
-    label: 'MoM Growth',
-    sublabel: 'New user growth over the past 90 days',
-    accentColor: 'text-orange-400',
-    bgColor: 'bg-orange-500/10',
-  },
-];
-
-const investorLogos: InvestorLogo[] = [
-  { name: 'Accel', tier: 'lead' },
-  { name: 'Pioneer Fund', tier: 'lead' },
-  { name: 'Gradient Ventures', tier: 'strategic' },
-  { name: 'Dev Collective', tier: 'strategic' },
-  { name: 'Horizon VC', tier: 'strategic' },
-  { name: 'OSS Capital', tier: 'strategic' },
-];
-
-const pressQuotes: PressQuote[] = [
-  {
-    publication: 'The Verge',
-    quote: 'AITimeMachine is quietly becoming essential infrastructure for teams that take AI-assisted development seriously.',
-    author: 'Sarah Chen, Staff Writer',
-    date: 'May 2026',
-    url: 'https://theverge.com',
-  },
-  {
-    publication: 'Hacker News',
-    quote: 'Finally a tool that treats AI agents like the non-deterministic systems they are. AITM\'s restore is genuinely sub-second on a 2GB workspace.',
-    author: 'Thread top comment (1,240 points)',
-    date: 'April 2026',
-    url: 'https://news.ycombinator.com',
-  },
-  {
-    publication: 'Developer Weekly',
-    quote: 'If you\'re running Claude Code or Cursor in an agentic workflow, not using AITM is a liability, not a choice.',
-    author: 'Marcus Toll, Editor',
-    date: 'March 2026',
-    url: 'https://developerweekly.com',
-  },
-  {
-    publication: 'TechCrunch',
-    quote: 'The startup solving a problem every AI developer has — but most haven\'t yet found the words to describe.',
-    author: 'Priya Anand, Reporter',
-    date: 'February 2026',
-    url: 'https://techcrunch.com',
-  },
-];
-
-export default function InvestorsPage() {
+function EvidenceRail({ number, title, window, metrics }: {
+  number: string;
+  title: string;
+  window: string;
+  metrics: Metric[];
+}) {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <section className="border-t border-[#171713] py-10 sm:py-14">
+      <div className="mb-8 grid gap-3 sm:grid-cols-[6rem_1fr] sm:items-end">
+        <p className="font-serif text-7xl leading-none tracking-[-0.08em]" aria-hidden="true">{number}</p>
+        <div>
+          <h2 className="font-serif text-3xl tracking-[-0.035em] sm:text-4xl">{title}</h2>
+          <p className="mt-2 font-mono text-xs uppercase tracking-[0.16em]">{window}</p>
+        </div>
+      </div>
+      <div className="grid border-l border-t border-[#171713] sm:grid-cols-2 lg:grid-cols-4">
+        {metrics.map((metric) => (
+          <article key={metric.label} className="min-h-56 border-b border-r border-[#171713] p-6">
+            <p className="font-serif text-4xl tracking-[-0.05em] sm:text-5xl">{metric.value}</p>
+            <h3 className="mt-5 font-mono text-xs uppercase tracking-[0.16em]">{metric.label}</h3>
+            <p className="mt-4 text-sm leading-6 text-[#4d4c44]">{metric.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default async function InvestorsPage() {
+  const adoption = await getAdoptionSummary();
+  const endpointStatus = adoption ? 'measured' : 'unavailable';
+  const ossStatus = adoption?.oss.status ?? 'unavailable';
+  const caseStatus = adoption?.caseEvidence.status ?? 'unavailable';
+
+  const adoptionMetrics: Metric[] = [
+    {
+      label: 'Active developers',
+      value: countValue(adoption?.activeDevelopers, endpointStatus),
+      detail: 'Distinct cloud-sync accounts with a checkpoint in the adoption window.',
+    },
+    {
+      label: 'Projects protected',
+      value: countValue(adoption?.projects, endpointStatus),
+      detail: 'Projects registered with the cloud checkpoint service.',
+    },
+    {
+      label: 'Checkpoints created',
+      value: countValue(adoption?.checkpoints.lifetime, endpointStatus),
+      detail: adoption ? `${countValue(adoption.checkpoints.period, 'measured')} created in this window.` : 'The live query failed.',
+    },
+    {
+      label: 'Restores applied',
+      value: countValue(adoption?.appliedRestores.lifetime, endpointStatus),
+      detail: adoption ? `${countValue(adoption.appliedRestores.period, 'measured')} applied in this window.` : 'The live query failed.',
+    },
+  ];
+
+  const contributionMetrics: Metric[] = [
+    {
+      label: 'External contributors',
+      value: countValue(adoption?.oss.externalContributors, ossStatus),
+      detail: ossStatus === 'unmeasured' ? 'No completed OSS coverage batch.' : 'Distinct opaque contributor keys in the measured batch.',
+    },
+    {
+      label: 'Repeat contributors',
+      value: countValue(adoption?.oss.repeatContributors, ossStatus),
+      detail: ossStatus === 'unmeasured' ? 'No completed OSS coverage batch.' : 'Contributors with two or more recorded contributions.',
+    },
+    {
+      label: 'Repositories measured',
+      value: countValue(adoption?.oss.repositoriesMeasured, ossStatus),
+      detail: ossStatus === 'unmeasured' ? 'No completed OSS coverage batch.' : 'Repositories included in the batch coverage boundary.',
+    },
+    {
+      label: 'Applied restore cases',
+      value: countValue(adoption?.caseEvidence.cases, caseStatus),
+      detail: caseStatus === 'unmeasured'
+        ? 'No server-validated checkpoint-to-restore case has been recorded.'
+        : adoption
+          ? `${countValue(adoption.caseEvidence.repositoriesCovered, 'measured')} opaque repository keys covered.`
+          : 'The live query failed.',
+    },
+  ];
+
+  const responseMetrics: Metric[] = [
+    {
+      label: 'Contributions received',
+      value: countValue(adoption?.oss.maintainerResponseLoad.contributionsReceived, ossStatus),
+      detail: 'External contribution records opened in the OSS window.',
+    },
+    {
+      label: 'First responses sent',
+      value: countValue(adoption?.oss.maintainerResponseLoad.responsesSent, ossStatus),
+      detail: 'Contribution records with a first maintainer response timestamp.',
+    },
+    {
+      label: 'Awaiting first response',
+      value: countValue(adoption?.oss.maintainerResponseLoad.awaitingResponse, ossStatus),
+      detail: 'Measured contributions without a first response timestamp.',
+    },
+    {
+      label: 'Average first response',
+      value: adoption?.oss.maintainerResponseLoad.averageFirstResponseHours == null
+        ? countValue(null, ossStatus)
+        : `${adoption.oss.maintainerResponseLoad.averageFirstResponseHours} h`,
+      detail: 'Mean elapsed time from contribution open to first maintainer response.',
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#EDE4CF] text-[#171713]">
       <Navbar />
 
-      {/* Hero */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
-        <Badge className="mb-6 bg-blue-500/10 text-blue-400 border-blue-500/20">Investors & Press</Badge>
-        <h1 className="text-4xl sm:text-6xl font-bold mb-8 leading-tight">
-          Backed by developers,
-          <br />
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-            for developers
-          </span>
-        </h1>
-        <p className="text-xl text-gray-400 max-w-3xl leading-relaxed">
-          AITimeMachine is backed by investors who understand that the AI development tooling
-          layer is one of the most important infrastructure categories of the next decade.
-          Every dollar we've raised has gone toward making developers safer and faster.
-        </p>
-      </section>
-
-      {/* Funding Timeline */}
-      <section className="py-16 pb-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-14">
-            <Badge className="mb-4 bg-purple-500/10 text-purple-400 border-purple-500/20">Funding History</Badge>
-            <h2 className="text-3xl font-bold mb-4">Our funding journey</h2>
-            <p className="text-gray-400 text-lg max-w-xl">
-              From a weekend prototype to category-defining infrastructure — all in under a year.
-            </p>
+      <main>
+        <section className="border-b border-[#171713] px-5 py-20 sm:px-8 lg:px-14 lg:py-28">
+          <div className="mx-auto max-w-7xl">
+            <p className="mb-8 font-mono text-xs uppercase tracking-[0.2em]">Open source evidence record</p>
+            <h1 className="max-w-5xl font-serif text-5xl leading-[0.95] tracking-[-0.045em] sm:text-7xl lg:text-8xl">
+              Product use, contribution, and maintainer load.
+            </h1>
+            <div className="mt-12 grid gap-8 border-t border-[#171713] pt-8 lg:grid-cols-[1.5fr_1fr]">
+              <p className="max-w-3xl text-xl leading-relaxed sm:text-2xl">
+                AITimeMachine records reversible work. These counts come from cloud-sync records and completed maintainer coverage batches.
+              </p>
+              <div className="font-mono text-sm leading-6">
+                <p>Source: {adoption?.methodology.source ?? 'Live endpoint unavailable'}</p>
+                <p>Updated: {adoption ? `${new Date(adoption.generatedAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC` : 'Unavailable'}</p>
+                <a className="underline underline-offset-4" href={`${API_BASE}/v1/adoption/summary`}>Inspect JSON evidence</a>
+              </div>
+            </div>
           </div>
-          <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-blue-500 via-purple-500 to-transparent hidden sm:block" />
-            <div className="space-y-10">
-              {fundingRounds.map((round, index) => (
-                <div key={round.round} className="sm:pl-16 relative">
-                  {/* Timeline dot */}
-                  <div className={`absolute left-4 top-5 w-4 h-4 rounded-full ${round.dotColor} border-4 border-gray-950 hidden sm:block`} />
-                  <Card className="bg-gray-900 border-gray-800">
-                    <CardContent className="p-8">
-                      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-                        <div className="flex items-center gap-4">
-                          <div>
-                            <div className="flex items-center gap-3 mb-1">
-                              <h3 className="text-xl font-bold">{round.round}</h3>
-                              <Badge
-                                className={`${index === 0 ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border-purple-500/20'}`}
-                              >
-                                {round.date}
-                              </Badge>
-                            </div>
-                            <p className={`text-3xl font-bold ${round.accentColor}`}>{round.amount}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-gray-400 text-base leading-relaxed">{round.description}</p>
-                    </CardContent>
-                  </Card>
+        </section>
+
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-14">
+          <EvidenceRail
+            number="01"
+            title="Product adoption"
+            window={adoption ? windowLabel(adoption.windows.adoption) : 'Live query unavailable'}
+            metrics={adoptionMetrics}
+          />
+          <EvidenceRail
+            number="02"
+            title="External contribution return"
+            window={adoption ? `${windowLabel(adoption.windows.oss)} · ${freshnessLabel(adoption)}` : 'Live query unavailable'}
+            metrics={contributionMetrics}
+          />
+          <EvidenceRail
+            number="03"
+            title="Maintainer response load"
+            window={adoption ? `${windowLabel(adoption.windows.oss)} · ${freshnessLabel(adoption)}` : 'Live query unavailable'}
+            metrics={responseMetrics}
+          />
+        </div>
+
+        <section className="bg-[#171713] px-5 py-20 text-[#EDE4CF] sm:px-8 lg:px-14">
+          <div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-2">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.18em]">Measurement rules</p>
+              <h2 className="mt-7 font-serif text-5xl leading-none tracking-[-0.04em]">Definitions for each count.</h2>
+            </div>
+            <dl className="divide-y divide-[#817b6c] border-y border-[#817b6c] text-sm leading-6">
+              {[
+                ['Active developer', adoption?.methodology.activeDeveloper ?? 'Distinct account with a checkpoint in the adoption window.'],
+                ['External contributor', adoption?.methodology.externalContributor ?? 'Distinct opaque contributor key in a completed coverage batch.'],
+                ['Repeat contributor', adoption?.methodology.repeatContributor ?? 'Opaque contributor key with two or more records in the batch.'],
+                ['Maintainer response', adoption?.methodology.maintainerResponse ?? 'Elapsed time to the first maintainer response.'],
+                ['Case evidence', adoption?.methodology.caseEvidence ?? 'Applied restore linked to its project and checkpoint.'],
+                ['Privacy boundary', adoption?.methodology.privacy ?? 'The public record contains aggregate counts only.'],
+              ].map(([term, definition]) => (
+                <div className="py-5" key={term}>
+                  <dt className="font-mono uppercase tracking-wider">{term}</dt>
+                  <dd className="mt-2 text-[#cfc6b2]">{definition}</dd>
                 </div>
               ))}
-              {/* Future indicator */}
-              <div className="sm:pl-16 relative">
-                <div className="absolute left-4 top-5 w-4 h-4 rounded-full bg-gray-700 border-4 border-gray-950 hidden sm:block" />
-                <div className="bg-gray-900/50 border border-gray-800 border-dashed rounded-2xl p-8">
-                  <p className="text-gray-500 text-sm font-medium uppercase tracking-wider mb-1">Next round</p>
-                  <p className="text-gray-400 text-base">
-                    We're building sustainably and focused on growth metrics. Interested in participating
-                    in our next round?{' '}
-                    <a
-                      href="mailto:investors@aitimemachine.dev"
-                      className="text-blue-400 hover:text-blue-300 transition-colors underline"
-                    >
-                      Reach out.
-                    </a>
-                  </p>
-                </div>
-              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section className="px-5 py-20 sm:px-8 lg:px-14">
+          <div className="mx-auto flex max-w-7xl flex-col justify-between gap-8 border-t border-[#171713] pt-8 sm:flex-row sm:items-end">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.18em]">Review</p>
+              <p className="mt-4 max-w-2xl text-2xl leading-snug">Check the implementation, definitions, and privacy boundary.</p>
             </div>
+            <Link href="/contact" className="inline-flex items-center gap-3 border border-[#171713] px-6 py-4 font-mono text-sm uppercase tracking-wider transition-colors hover:bg-[#171713] hover:text-[#EDE4CF]">
+              Start a review <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-        </div>
-      </section>
-
-      {/* Key Metrics */}
-      <section className="bg-gray-900/50 py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <Badge className="mb-4 bg-green-500/10 text-green-400 border-green-500/20">Key Metrics</Badge>
-            <h2 className="text-3xl font-bold mb-4">Traction speaks for itself</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">
-              Numbers from June 2026. Growing every week.
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {keyMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="bg-gray-900 border border-gray-800 rounded-2xl p-7 hover:border-gray-700 transition-colors"
-              >
-                <div className={`w-12 h-12 ${metric.bgColor} rounded-xl flex items-center justify-center mb-5`}>
-                  <metric.icon className={`w-6 h-6 ${metric.accentColor}`} />
-                </div>
-                <p className={`text-3xl font-bold ${metric.accentColor} mb-1`}>{metric.value}</p>
-                <p className="font-semibold text-white mb-1">{metric.label}</p>
-                <p className="text-gray-500 text-sm leading-relaxed">{metric.sublabel}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Investor Logos */}
-      <section className="py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <Badge className="mb-4 bg-blue-500/10 text-blue-400 border-blue-500/20">Our Investors</Badge>
-            <h2 className="text-3xl font-bold mb-4">Supported by the best</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">
-              We're backed by funds that have a track record of building developer-first companies.
-            </p>
-          </div>
-          <div className="mb-8">
-            <p className="text-sm text-gray-500 uppercase tracking-wider font-medium text-center mb-6">Lead Investors</p>
-            <div className="flex flex-wrap justify-center gap-5 mb-10">
-              {investorLogos
-                .filter((inv) => inv.tier === 'lead')
-                .map((investor) => (
-                  <div
-                    key={investor.name}
-                    className="w-44 h-20 bg-gray-900 border border-gray-700 rounded-2xl flex items-center justify-center"
-                  >
-                    <span className="text-gray-300 font-semibold text-lg">{investor.name}</span>
-                  </div>
-                ))}
-            </div>
-            <p className="text-sm text-gray-500 uppercase tracking-wider font-medium text-center mb-6">Strategic Investors</p>
-            <div className="flex flex-wrap justify-center gap-4">
-              {investorLogos
-                .filter((inv) => inv.tier === 'strategic')
-                .map((investor) => (
-                  <div
-                    key={investor.name}
-                    className="w-36 h-16 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-center"
-                  >
-                    <span className="text-gray-400 font-medium text-sm">{investor.name}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Press Mentions */}
-      <section className="bg-gray-900/50 py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-14">
-            <Badge className="mb-4 bg-orange-500/10 text-orange-400 border-orange-500/20">Press</Badge>
-            <h2 className="text-3xl font-bold mb-4">What people are saying</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">
-              Coverage from developers, journalists, and the communities that shape how
-              engineers work with AI tools.
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-6">
-            {pressQuotes.map((item) => (
-              <Card
-                key={item.publication}
-                className="bg-gray-900 border-gray-800 hover:border-gray-700 transition-colors"
-              >
-                <CardContent className="p-8">
-                  <div className="flex items-start justify-between mb-5">
-                    <div>
-                      <p className="font-bold text-white text-lg">{item.publication}</p>
-                      <p className="text-gray-500 text-sm">{item.date}</p>
-                    </div>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center transition-colors flex-shrink-0"
-                      aria-label={`Read on ${item.publication}`}
-                    >
-                      <ExternalLink className="w-4 h-4 text-gray-400" />
-                    </a>
-                  </div>
-                  <div className="relative pl-5 border-l-2 border-blue-500/40 mb-5">
-                    <Quote className="w-4 h-4 text-blue-500/40 absolute -left-2.5 -top-1" />
-                    <p className="text-gray-300 text-base leading-relaxed italic">{item.quote}</p>
-                  </div>
-                  <p className="text-gray-500 text-sm">{item.author}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Press Contact */}
-      <section className="py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Card className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-gray-800">
-            <CardContent className="py-16 text-center">
-              <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <Mail className="w-7 h-7 text-blue-400" />
-              </div>
-              <h2 className="text-3xl font-bold mb-4">Press inquiries</h2>
-              <p className="text-gray-400 text-lg mb-3 max-w-xl mx-auto leading-relaxed">
-                Writing about AI development tooling, the future of human-AI workflows, or
-                the developer infrastructure layer? We'd love to talk.
-              </p>
-              <p className="text-gray-500 text-base mb-10">
-                We typically respond to press inquiries within one business day.
-              </p>
-              <div className="flex flex-wrap justify-center gap-4">
-                <Button size="lg" asChild>
-                  <a href="mailto:press@aitimemachine.dev">
-                    <Mail className="w-4 h-4 mr-2" />
-                    press@aitimemachine.dev
-                  </a>
-                </Button>
-                <Button size="lg" variant="outline" asChild className="border-gray-700 hover:border-gray-600">
-                  <Link href="/about">
-                    Read Our Story
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Link>
-                </Button>
-              </div>
-              <p className="text-gray-600 text-sm mt-8">
-                For investor inquiries:{' '}
-                <a
-                  href="mailto:investors@aitimemachine.dev"
-                  className="text-gray-500 hover:text-gray-400 transition-colors underline"
-                >
-                  investors@aitimemachine.dev
-                </a>
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+        </section>
+      </main>
 
       <Footer />
     </div>

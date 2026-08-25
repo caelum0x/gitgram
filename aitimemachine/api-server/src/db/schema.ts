@@ -10,6 +10,7 @@ import {
   numeric,
   primaryKey,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // ============================================
@@ -1420,5 +1421,101 @@ export const a2aMessages = pgTable(
       table.toAgentId,
       table.createdAt
     ),
+  })
+);
+
+// ============================================
+// OSS ADOPTION EVIDENCE
+// ============================================
+
+export const ossCoverageBatches = pgTable(
+  "oss_coverage_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    idempotencyKeyHash: text("idempotency_key_hash").notNull(),
+    requestHash: text("request_hash").notNull(),
+    requestId: text("request_id").notNull(),
+    collectorVersion: text("collector_version").notNull(),
+    collectorKeySlot: text("collector_key_slot").notNull(),
+    windowStartedAt: timestamp("window_started_at").notNull(),
+    windowEndedAt: timestamp("window_ended_at").notNull(),
+    status: text("status").notNull().default("collecting"), // collecting | completed | failed
+    repositoriesMeasured: integer("repositories_measured").notNull(),
+    contributionCount: integer("contribution_count").notNull(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idempotencyUnique: uniqueIndex("idx_oss_coverage_idempotency").on(
+      table.idempotencyKeyHash
+    ),
+    windowVersionUnique: uniqueIndex("idx_oss_coverage_window_version").on(
+      table.windowStartedAt,
+      table.windowEndedAt,
+      table.collectorVersion
+    ),
+    statusWindowIdx: index("idx_oss_coverage_status_window").on(
+      table.status,
+      table.windowEndedAt
+    ),
+  })
+);
+
+export const ossContributionRecords = pgTable(
+  "oss_contribution_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    batchId: uuid("batch_id")
+      .references(() => ossCoverageBatches.id, { onDelete: "cascade" })
+      .notNull(),
+    repositoryKey: text("repository_key").notNull(),
+    contributorKey: text("contributor_key").notNull(),
+    contributorType: text("contributor_type").notNull().default("external"),
+    contributionKey: text("contribution_key").notNull(),
+    openedAt: timestamp("opened_at").notNull(),
+    firstMaintainerResponseAt: timestamp("first_maintainer_response_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    batchIdx: index("idx_oss_contributions_batch").on(table.batchId),
+    batchContributorIdx: index("idx_oss_contributions_batch_contributor").on(
+      table.batchId,
+      table.contributorKey
+    ),
+    batchContributionUnique: uniqueIndex("idx_oss_contributions_batch_contribution").on(
+      table.batchId,
+      table.contributionKey
+    ),
+  })
+);
+
+export const ossCaseEvidence = pgTable(
+  "oss_case_evidence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    idempotencyKeyHash: text("idempotency_key_hash").notNull(),
+    requestHash: text("request_hash").notNull(),
+    requestId: text("request_id").notNull(),
+    collectorVersion: text("collector_version").notNull(),
+    collectorKeySlot: text("collector_key_slot").notNull(),
+    repositoryKey: text("repository_key").notNull(),
+    projectId: text("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    checkpointId: text("checkpoint_id")
+      .references(() => checkpoints.id, { onDelete: "cascade" })
+      .notNull(),
+    restoreEventId: uuid("restore_event_id")
+      .references(() => restoreEvents.id, { onDelete: "cascade" })
+      .notNull(),
+    recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    idempotencyUnique: uniqueIndex("idx_oss_case_evidence_idempotency").on(
+      table.idempotencyKeyHash
+    ),
+    repositoryIdx: index("idx_oss_case_evidence_repository").on(table.repositoryKey),
+    projectIdx: index("idx_oss_case_evidence_project").on(table.projectId),
+    restoreUnique: uniqueIndex("idx_oss_case_evidence_restore").on(table.restoreEventId),
   })
 );

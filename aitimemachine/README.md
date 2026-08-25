@@ -113,6 +113,14 @@ curl -H "X-API-Key: YOUR_API_KEY" \
   https://timemachine-api.gitgram.app/api/checkpoints
 ```
 
+## Public adoption evidence
+
+`GET /v1/adoption/summary` reports aggregate cloud adoption and maintainer evidence from first-party persisted records. Schema version 2 gives separate windows for product adoption and OSS coverage plus explicit `fresh`, `stale`, or `unmeasured` coverage health. A completed coverage batch can report zero; absent coverage returns `null` with `unmeasured`; query failures return HTTP 503 with `unavailable`.
+
+Maintainers ingest external contribution coverage and linked restore cases through transactional, idempotent routes protected by a dedicated rotating collector secret. Public responses exclude account, repository, project, checkpoint, restore, contributor, and contribution identifiers. See [the methodology](api-server/docs/adoption-evidence.md) and [collector runbook](api-server/docs/maintainer-collector-runbook.md).
+
+The public [`/maintainers`](https://timemachine.gitgram.app/maintainers) workflow reads the same aggregate through a same-origin, no-store proxy. It runtime-validates the response, separates loading and service failure from measured zero, preserves `unmeasured` nulls, labels stale coverage, and offers a manual refresh. It never sends `ADOPTION_INGESTION_SECRET` to the browser; collection remains a server-side operator task documented in the runbook.
+
 ## Quick Start
 
 ```bash

@@ -8,12 +8,16 @@ Git is 20 years old. GitHub is a web UI bolted on top.
 Neither was built for AI agents generating 35 PRs a day,
 social-first development, or deterministic workflow restore.
 
-**Gitgram = new GitHub.** Every repository is a social profile:
-posts, reels, stories, team photos, product videos, screenshots —
-code and community in one place, like Instagram/TikTok for devs.
+**GitGram is the social layer for GitHub repositories.** Every repository can
+become a social account with posts, reels, stories, team photos, product videos,
+screenshots, followers, and publishing workflows. GitGram uses GitHub APIs and
+webhooks; it does not replace Git hosting, repository permissions, object
+storage, refs, packfiles, or the Git wire protocol.
 
-**AITM = new Git.** AI-native, time-travel version control
-that handles agents at scale and makes open source great again.
+**AITM is deterministic workflow time travel for AI coding.** It captures and
+restores agent actions, context, messages, tool calls, and checkpoints. It does
+not claim to implement or replace Git. The separate Rust Git Forge product owns
+the future Rust Git implementation and self-hostable forge boundary.
 
 See `INTEGRATION_PLAN.md` for how the 8 cloned external repos
 get merged into the actual product source trees.

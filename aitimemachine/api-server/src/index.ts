@@ -48,6 +48,7 @@ import gitNexusRoutes from "./routes/gitnexus.js";
 import context7Routes from "./routes/context7.js";
 import sharingRoutes from "./routes/sharing.js";
 import teamsRoutes from "./routes/teams.js";
+import adoptionRoutes from "./routes/adoption.js";
 import { errorHandler, notFoundHandler, wrapErrorMessage } from "./middleware/errors.js";
 import { combinedRateLimit, rateLimits } from "./middleware/rate-limit.js";
 import { requestLogger, logger, logError } from "./lib/monitoring.js";
@@ -161,6 +162,7 @@ app.get("/v1", (req, res) => {
       context7: "/v1/context7",
       sharing: "/v1/shared",
       teams: "/v1/teams",
+      adoption: "/v1/adoption/summary",
     },
     documentation: "/docs",
   });
@@ -227,6 +229,7 @@ app.use("/v1/gitnexus", gitNexusRoutes);
 app.use("/v1/context7", context7Routes);
 app.use("/v1", sharingRoutes);
 app.use("/v1/teams", teamsRoutes);
+app.use("/v1/adoption", adoptionRoutes);
 // Versioned internal namespace. The internal endpoints (website-internal admin/
 // pipeline/knowledge ops) are guarded by internalAuth. Exposed under /v1 as well
 // as the legacy /api/internal so clients fully migrated to /v1 can reach them.

@@ -29,6 +29,9 @@ services:
       CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
       INTERNAL_SECRET: ${INTERNAL_SECRET:-}
+      ADOPTION_INGESTION_SECRET: ${ADOPTION_INGESTION_SECRET:?set a dedicated 32+ character collector secret}
+      ADOPTION_INGESTION_SECRET_PREVIOUS: ${ADOPTION_INGESTION_SECRET_PREVIOUS:-}
+      OSS_COVERAGE_MAX_AGE_HOURS: ${OSS_COVERAGE_MAX_AGE_HOURS:-168}
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,7 +42,7 @@ services:
         - CMD
         - node
         - -e
-        - "require('http').get('http://127.0.0.1:3001/health/providers',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+        - "require('http').get('http://127.0.0.1:3001/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3

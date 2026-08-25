@@ -11,6 +11,7 @@ const footerLinks = {
   ],
   resources: [
     { name: 'Documentation', href: '/docs' },
+    { name: 'Maintainer Evidence', href: '/maintainers' },
     { name: 'Knowledge Base', href: '/knowledge' },
     { name: 'API Reference', href: '/docs#api' },
     { name: 'CLI Guide', href: '/docs#cli' },

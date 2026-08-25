@@ -18,6 +18,7 @@ const productLinks = [
 
 const navigation = [
   { name: 'Docs', href: '/docs' },
+  { name: 'Evidence', href: '/maintainers' },
   { name: 'Pricing', href: '/pricing' },
   { name: 'Blog', href: '/blog' },
 ];

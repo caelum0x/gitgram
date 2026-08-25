@@ -22,7 +22,8 @@
     "test:integration:safe": "node scripts/run-integration-safe.mjs",
     "eval:universal-search": "tsx scripts/universal-search-eval.ts",
     "worker:delete-requests": "tsx scripts/process-delete-requests.ts",
-    "worker:retention": "tsx scripts/process-retention.ts"
+    "worker:retention": "tsx scripts/process-retention.ts",
+    "collector:ingest": "node scripts/ingest-adoption-evidence.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.13",

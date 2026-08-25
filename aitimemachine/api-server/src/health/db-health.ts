@@ -819,6 +819,70 @@ export const EXPECTED_TABLES: Record<
     ],
     indexes: ["trend_scores_pkey", "idx_trend_scores_repo_window"],
   },
+  oss_coverage_batches: {
+    columns: [
+      "id",
+      "idempotency_key_hash",
+      "request_hash",
+      "request_id",
+      "collector_version",
+      "collector_key_slot",
+      "window_started_at",
+      "window_ended_at",
+      "status",
+      "repositories_measured",
+      "contribution_count",
+      "completed_at",
+      "created_at",
+    ],
+    indexes: [
+      "oss_coverage_batches_pkey",
+      "idx_oss_coverage_idempotency",
+      "idx_oss_coverage_window_version",
+      "idx_oss_coverage_status_window",
+    ],
+  },
+  oss_contribution_records: {
+    columns: [
+      "id",
+      "batch_id",
+      "repository_key",
+      "contributor_key",
+      "contributor_type",
+      "contribution_key",
+      "opened_at",
+      "first_maintainer_response_at",
+      "created_at",
+    ],
+    indexes: [
+      "oss_contribution_records_pkey",
+      "idx_oss_contributions_batch",
+      "idx_oss_contributions_batch_contributor",
+      "idx_oss_contributions_batch_contribution",
+    ],
+  },
+  oss_case_evidence: {
+    columns: [
+      "id",
+      "idempotency_key_hash",
+      "request_hash",
+      "request_id",
+      "collector_version",
+      "collector_key_slot",
+      "repository_key",
+      "project_id",
+      "checkpoint_id",
+      "restore_event_id",
+      "recorded_at",
+    ],
+    indexes: [
+      "oss_case_evidence_pkey",
+      "idx_oss_case_evidence_idempotency",
+      "idx_oss_case_evidence_repository",
+      "idx_oss_case_evidence_project",
+      "idx_oss_case_evidence_restore",
+    ],
+  },
 };
 
 /** Drizzle migration tags that should be present in the database */
@@ -827,6 +891,11 @@ export const EXPECTED_MIGRATIONS = [
   "0002_add_knowledge_base_tables",
   "0003_add_canonical_time_context_governance",
   "0004_add_gitgram_social_layer",
+  "0005_add_saved_context_source",
+  "0006_add_user_settings",
+  "0007_add_a2a_tables",
+  "0008_add_checkpoint_test_status",
+  "0009_add_oss_adoption_evidence",
 ];
 
 // ============================================================================
