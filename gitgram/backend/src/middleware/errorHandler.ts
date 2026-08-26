@@ -12,6 +12,7 @@ export type ApiErrorType =
   | 'rate_limit_exceeded'
   | 'server_error'
   | 'conflict'
+  | 'payment_required'
   | 'validation_error';
 
 export interface ApiErrorResponse {
@@ -181,6 +182,15 @@ export const Errors = {
 
   invalidField: (field: string, message: string) =>
     new ApiError('validation_error', 'invalid_field', message, 400, field),
+
+  // Payment required errors (402)
+  paymentRequired: (message?: string) =>
+    new ApiError(
+      'payment_required',
+      'payment_required',
+      message || 'Payment is required to access this resource',
+      402
+    ),
 
   // Conflict errors (409)
   conflict: (message: string) =>

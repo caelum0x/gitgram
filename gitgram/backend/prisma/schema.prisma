@@ -1074,11 +1074,44 @@ model TalentOpportunity {
   revision         Int                     @default(1)
   pilots           TalentPilot[]
   referrals        TalentReferral[]
+  placements       TalentPlacement[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 
   @@index([createdById])
   @@index([status, createdAt])
+}
+
+/// Recruiter placement/unlock entitlement + receipt. The recruiter (opportunity
+/// owner) pays a placement/access fee to unlock a matched candidate's contact
+/// and full evidence. The fee is charged through the Creem adapter (Creem is a
+/// merchant-of-record that supports Turkey-based sellers) and settled by the
+/// signed `checkout.completed` webhook, which flips status to `paid` and stamps
+/// the receipt (paidAt + providerOrderId). The compound unique key makes the
+/// unlock idempotent: one entitlement per (opportunity, candidate, recruiter),
+/// so a repeated unlock request never opens a second charge.
+model TalentPlacement {
+  id              String    @id @default(cuid())
+  opportunityId   String
+  candidateId     String
+  recruiterId     String
+  feeCents        Int
+  currency        String    @default("usd")
+  feeModel        String    @default("unlock") // unlock | placement
+  status          String    @default("pending") // pending | paid | failed | refunded
+  provider        String    @default("creem")
+  checkoutId      String?
+  providerOrderId String?   @unique
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  opportunity TalentOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, candidateId, recruiterId])
+  @@index([recruiterId, status])
+  @@index([candidateId])
+  @@index([status])
 }
 
 /// Consent-gated community introduction. The participant controls the outcome;

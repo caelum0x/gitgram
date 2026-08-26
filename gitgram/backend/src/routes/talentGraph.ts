@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import { talentGraphController } from '../controllers/talentGraphController';
+import { talentBillingController } from '../controllers/talentBillingController';
 import { interactionLimiter } from '../middleware/rateLimiter';
 import { Errors } from '../middleware/errorHandler';
 
@@ -32,6 +33,10 @@ router.get('/opportunities', optionalAuth, talentGraphController.listOpportuniti
 router.post('/opportunities', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.createOpportunity);
 router.get('/opportunities/:id/matches', optionalAuth, talentGraphController.getOpportunityMatches);
 router.get('/opportunities/:id/coverage', optionalAuth, talentGraphController.getOpportunityCoverage);
+// Recruiter placement / candidate-unlock revenue gate.
+router.get('/opportunities/:id/unlocks', authenticate, talentBillingController.listUnlocks);
+router.post('/opportunities/:id/unlocks', authenticate, requireMutationOrigin, interactionLimiter, talentBillingController.requestUnlock);
+router.get('/opportunities/:id/candidates/:candidateId/contact', authenticate, talentBillingController.getCandidateContact);
 router.post('/opportunities/:id/pilots', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.startPilot);
 router.post('/opportunities/:id/referrals', authenticate, requireMutationOrigin, interactionLimiter, talentGraphController.createReferral);
 router.get('/referrals/mine', authenticate, talentGraphController.listMyReferrals);

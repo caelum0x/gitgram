@@ -437,6 +437,8 @@ const mockPrisma: any = {
   repositoryReferrer: createMockPrismaModel(),
   storeItem: createMockPrismaModel(),
   storePurchase: createMockPrismaModel(),
+  talentOpportunity: createMockPrismaModel(),
+  talentPlacement: createMockPrismaModel(),
   $connect: jest.fn().mockResolvedValue(undefined),
   $disconnect: jest.fn().mockResolvedValue(undefined),
   $transaction: jest.fn().mockImplementation(async (fn: any) => {

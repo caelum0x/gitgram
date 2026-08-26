@@ -85,6 +85,7 @@ import contributionRoutes from './routes/contributions';
 import auditLogRoutes from './routes/auditLog';
 import postAnalyticsRoutes from './routes/postAnalytics';
 import polarWebhookRoutes from './routes/polarWebhooks';
+import creemWebhookRoutes from './routes/creemWebhooks';
 import repositoryInsightsRoutes from './routes/repositoryInsights';
 import recommendationRoutes from './routes/recommendations';
 import activityRoutes from './routes/activity';
@@ -166,9 +167,11 @@ app.use(requestId);
 // Compression middleware
 app.use(compression());
 
-// Polar webhook must receive the raw body for HMAC signature verification —
+// Payment webhooks must receive the raw body for HMAC signature verification —
 // mount BEFORE the global JSON parser so express.raw captures the unparsed buffer.
 app.use('/api/v1/webhooks/polar', express.raw({ type: 'application/json' }), polarWebhookRoutes);
+// Creem settles the talent-graph recruiter placement / candidate-unlock fees.
+app.use('/api/v1/webhooks/creem', express.raw({ type: 'application/json' }), creemWebhookRoutes);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
