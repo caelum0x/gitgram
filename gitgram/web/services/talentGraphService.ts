@@ -170,6 +170,25 @@ export interface TalentMatch {
   }>
 }
 
+export type CoverageStrength = 'verified' | 'evidenced' | 'interest' | 'unmet'
+
+export interface SkillCoverage {
+  skill: string
+  strength: CoverageStrength
+  candidateCount: number
+  evidencedCount: number
+  verifiedCount: number
+}
+
+export interface NeedCoverageAnalysis {
+  requiredSkills: string[]
+  coverage: SkillCoverage[]
+  unmetSkills: string[]
+  coverageRatio: number
+  status: 'fully-covered' | 'partially-covered' | 'unmet'
+  candidatePool: number
+}
+
 export interface CreateTalentOpportunityInput {
   organizationName: string
   title: string
@@ -204,6 +223,11 @@ export const talentGraphService = {
 
   getOpportunityMatches: async (id: string): Promise<{ opportunity: TalentOpportunity; matches: TalentMatch[] }> => {
     const { data } = await api.get<{ data: { opportunity: TalentOpportunity; matches: TalentMatch[] } }>(`/talent-graph/opportunities/${encodeURIComponent(id)}/matches`)
+    return data.data
+  },
+
+  getOpportunityCoverage: async (id: string): Promise<{ opportunity: TalentOpportunity; coverage: NeedCoverageAnalysis }> => {
+    const { data } = await api.get<{ data: { opportunity: TalentOpportunity; coverage: NeedCoverageAnalysis } }>(`/talent-graph/opportunities/${encodeURIComponent(id)}/coverage`)
     return data.data
   },
 

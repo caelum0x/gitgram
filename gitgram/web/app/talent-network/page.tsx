@@ -3,7 +3,9 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
+  CoverageStrength,
   CreateTalentOpportunityInput,
+  NeedCoverageAnalysis,
   TalentMatch,
   TalentOpportunity,
   TalentPilot,
@@ -49,6 +51,19 @@ const GUIDE_STEPS = [
     detail: 'COMPLETED durum, katılımcı izni ve açık HTTP(S) teslimi birlikte gerekir.',
   },
 ] as const
+
+const COVERAGE_STRENGTH_LABELS: Record<CoverageStrength, string> = {
+  verified: 'Doğrulanmış',
+  evidenced: 'Kanıtlı',
+  interest: 'İlgi',
+  unmet: 'Boşluk',
+}
+
+const COVERAGE_STATUS_LABELS: Record<NeedCoverageAnalysis['status'], string> = {
+  'fully-covered': 'Tam kapsanıyor',
+  'partially-covered': 'Kısmen kapsanıyor',
+  unmet: 'Kapsanmıyor',
+}
 
 const EMPTY_FORM: CreateTalentOpportunityInput = {
   organizationName: '',
@@ -133,6 +148,9 @@ export default function TalentNetworkPage() {
   const [matchesLoading, setMatchesLoading] = useState(false)
   const [matchesError, setMatchesError] = useState<string | null>(null)
   const [matchesRequest, setMatchesRequest] = useState(0)
+  const [coverage, setCoverage] = useState<NeedCoverageAnalysis | null>(null)
+  const [coverageLoading, setCoverageLoading] = useState(false)
+  const [coverageError, setCoverageError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [myPilots, setMyPilots] = useState<TalentPilot[]>([])
   const [pilotsLoading, setPilotsLoading] = useState(true)
@@ -255,6 +273,24 @@ export default function TalentNetworkPage() {
       .then((result) => active && setMatches(result.matches))
       .catch(() => active && setMatchesError('Eşleşme servisi yanıt vermedi. Fırsatı yeniden seçin veya tekrar deneyin.'))
       .finally(() => active && setMatchesLoading(false))
+    return () => { active = false }
+  }, [matchesRequest, selectedId])
+
+  useEffect(() => {
+    if (!selectedId) {
+      setCoverage(null)
+      setCoverageError(null)
+      setCoverageLoading(false)
+      return
+    }
+    let active = true
+    setCoverage(null)
+    setCoverageError(null)
+    setCoverageLoading(true)
+    talentGraphService.getOpportunityCoverage(selectedId)
+      .then((result) => active && setCoverage(result.coverage))
+      .catch(() => active && setCoverageError('Beceri kapsama servisi yanıt vermedi.'))
+      .finally(() => active && setCoverageLoading(false))
     return () => { active = false }
   }, [matchesRequest, selectedId])
 
@@ -527,6 +563,42 @@ export default function TalentNetworkPage() {
               )}
               {selected.viewerRole === 'institution' && (
                 <p className={styles.apiCountNote}>Bu değerler seçili fırsat için API toplamıdır.</p>
+              )}
+            </article>
+          )}
+          {!opportunitiesLoading && !opportunitiesError && selected && (coverageLoading || coverageError || coverage) && (
+            <article className={styles.coverage} aria-live="polite" aria-busy={coverageLoading}>
+              <div className={styles.coverageHead}>
+                <span>Beceri kapsama</span>
+                {coverage && (
+                  <strong data-status={coverage.status}>
+                    {COVERAGE_STATUS_LABELS[coverage.status]} · %{Math.round(coverage.coverageRatio * 100)}
+                  </strong>
+                )}
+              </div>
+              {coverageLoading && <p className={styles.empty}>GitGram aday havuzunun beceri kapsamasını hesaplıyor.</p>}
+              {!coverageLoading && coverageError && (
+                <div className={styles.resourceError} role="alert">
+                  <p>{coverageError}</p>
+                  <button type="button" onClick={() => setMatchesRequest((request) => request + 1)}>Kapsamayı yeniden hesapla</button>
+                </div>
+              )}
+              {!coverageLoading && !coverageError && coverage && (
+                <>
+                  <ul className={styles.coverageSkills}>
+                    {coverage.coverage.map((entry) => (
+                      <li key={entry.skill} data-strength={entry.strength}>
+                        <span className={styles.coverageSkill}>{entry.skill}</span>
+                        <span className={styles.coverageStrength}>{COVERAGE_STRENGTH_LABELS[entry.strength]}</span>
+                        <span className={styles.coverageCount}>{entry.candidateCount} aday</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {coverage.unmetSkills.length > 0 && (
+                    <p className={styles.coverageGap}>Kapsanmayan beceriler: {coverage.unmetSkills.join(', ')}</p>
+                  )}
+                  <p className={styles.coverageNote}>{coverage.candidatePool} aday havuzu üzerinden hesaplandı.</p>
+                </>
               )}
             </article>
           )}
