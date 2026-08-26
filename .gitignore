@@ -79,3 +79,5 @@ Thumbs.db
 *.key
 *.p8
 *.p12
+*.env.production
+.env.gitgram.production
