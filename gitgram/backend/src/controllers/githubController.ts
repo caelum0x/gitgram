@@ -11,6 +11,7 @@ import { getCachedProfile, setCachedProfile, setCachedRepo } from '../utils/gith
 import { fetchGitHubTrending } from '../services/ghSocialBridge'
 import { GitHubService } from '../services/githubService'
 import { createNotification } from '../services/notificationService'
+import { harvestContributionEvidence } from '../services/githubContributionsService'
 
 /**
  * Resolve the authenticated user's stored GitHub OAuth token, or throw a
@@ -95,7 +96,17 @@ export const githubController = {
       })
     }
 
-    res.json({ message: 'Projects synced', count: repos.length })
+    // Backfill real talent-graph contribution evidence for the user's claimed
+    // repositories from the GitHub GraphQL contributionsCollection. Non-fatal:
+    // a failure here must never break the primary project sync.
+    let contributionEvidence = { scannedRepositories: 0, mapped: 0, created: 0 }
+    try {
+      contributionEvidence = await harvestContributionEvidence(userId)
+    } catch (error) {
+      logger.warn('syncProjects: contribution evidence backfill failed', error)
+    }
+
+    res.json({ message: 'Projects synced', count: repos.length, contributionEvidence })
   }),
 
   getProjects: asyncHandler(async (req: AuthRequest, res: Response) => {
