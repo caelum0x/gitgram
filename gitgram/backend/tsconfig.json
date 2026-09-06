@@ -12,6 +12,10 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
+    // TS7.0 turns the legacy "node" (node10) resolver into a hard error. We keep
+    // node10 semantics intentionally (CommonJS output) and silence the pre-7.0
+    // deprecation so `tsc --noEmit` stays green until a deliberate resolver bump.
+    "ignoreDeprecations": "6.0",
     "typeRoots": ["./node_modules/@types"],
     "declaration": true,
     "declarationMap": true,
