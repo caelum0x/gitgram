@@ -200,6 +200,51 @@ export interface CreateTalentOpportunityInput {
   communityReferralConsent: boolean
 }
 
+// ---------------------------------------------------------------------------
+// Recruiter placement / candidate-unlock revenue (Creem)
+// ---------------------------------------------------------------------------
+
+export type TalentPlacementStatus = 'pending' | 'paid' | 'failed' | 'refunded'
+export type TalentFeeModel = 'unlock' | 'placement'
+
+/** A recruiter's placement entitlement (receipt) for a matched candidate. */
+export interface TalentPlacement {
+  id: string
+  opportunityId: string
+  candidateId: string
+  recruiterId: string
+  feeCents: number
+  currency: string
+  feeModel: TalentFeeModel
+  status: TalentPlacementStatus
+  provider: string
+  checkoutId: string | null
+  providerOrderId: string | null
+  paidAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Result of opening (or replaying) a candidate-unlock charge. */
+export interface RequestUnlockResult {
+  placement: TalentPlacement
+  /** Hosted Creem checkout URL, or null when the entitlement is already paid. */
+  checkoutUrl: string | null
+  alreadyUnlocked: boolean
+}
+
+/** The gated resource revealed only once a paid unlock entitlement exists. */
+export interface TalentCandidateContact {
+  contact: {
+    id: string
+    username: string | null
+    displayName: string | null
+    email: string | null
+    githubUsername: string | null
+  }
+  evidence: TalentGraph
+}
+
 export const talentGraphService = {
   getMine: async (): Promise<TalentGraph> => {
     const { data } = await api.get<{ data: TalentGraph }>('/talent-graph/me')
@@ -258,6 +303,50 @@ export const talentGraphService = {
 
   updatePilot: async (pilotId: string, input: UpdateTalentPilotInput, idempotencyKey: string): Promise<TalentPilot> => {
     const { data } = await api.patch<{ data: TalentPilot }>(`/talent-graph/pilots/${encodeURIComponent(pilotId)}`, input, mutationConfig(idempotencyKey))
+    return data.data
+  },
+
+  // ── Recruiter placement / candidate-unlock revenue ──────────────────────
+  // The opportunity owner pays a Creem placement fee to reveal a matched
+  // candidate's contact details + full evidence. All three endpoints are
+  // owner-gated on the backend (talentBillingController).
+
+  /** Lists the recruiter's placement entitlements (receipts) for an opportunity. */
+  listUnlocks: async (opportunityId: string): Promise<TalentPlacement[]> => {
+    const { data } = await api.get<{ data: TalentPlacement[] }>(`/talent-graph/opportunities/${encodeURIComponent(opportunityId)}/unlocks`)
+    return data.data
+  },
+
+  /**
+   * Opens (or replays) a paid unlock for a matched candidate. Returns a Creem
+   * checkout URL to complete payment, or `alreadyUnlocked` when the entitlement
+   * is already settled. `placementAmountCents` switches the flat access fee to a
+   * success-fee model when an agreed placement amount is known.
+   */
+  requestUnlock: async (
+    opportunityId: string,
+    candidateId: string,
+    idempotencyKey: string,
+    placementAmountCents?: number,
+  ): Promise<RequestUnlockResult> => {
+    const body: { candidateId: string; placementAmountCents?: number } = { candidateId }
+    if (placementAmountCents !== undefined) body.placementAmountCents = placementAmountCents
+    const { data } = await api.post<{ data: RequestUnlockResult }>(
+      `/talent-graph/opportunities/${encodeURIComponent(opportunityId)}/unlocks`,
+      body,
+      mutationConfig(idempotencyKey),
+    )
+    return data.data
+  },
+
+  /**
+   * Reads the gated contact details + full evidence for an unlocked candidate.
+   * The backend returns 402 Payment Required until the entitlement is paid.
+   */
+  getCandidateContact: async (opportunityId: string, candidateId: string): Promise<TalentCandidateContact> => {
+    const { data } = await api.get<{ data: TalentCandidateContact }>(
+      `/talent-graph/opportunities/${encodeURIComponent(opportunityId)}/candidates/${encodeURIComponent(candidateId)}/contact`,
+    )
     return data.data
   },
 }

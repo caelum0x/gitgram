@@ -6,12 +6,15 @@ import {
   CoverageStrength,
   CreateTalentOpportunityInput,
   NeedCoverageAnalysis,
+  TalentCandidateContact,
   TalentMatch,
   TalentOpportunity,
   TalentPilot,
+  TalentPlacement,
   TalentReferral,
   talentGraphService,
 } from '@/services/talentGraphService'
+import { deriveUnlockState, findPlacement, formatFee, interpretUnlockResult } from '@/utils/talentUnlock'
 import styles from './talent-network.module.css'
 
 type Notice = {
@@ -164,6 +167,10 @@ export default function TalentNetworkPage() {
   const [referralsError, setReferralsError] = useState<string | null>(null)
   const [referralsRequest, setReferralsRequest] = useState(0)
   const [referringId, setReferringId] = useState<string | null>(null)
+  const [unlocks, setUnlocks] = useState<TalentPlacement[]>([])
+  const [unlocksRequest, setUnlocksRequest] = useState(0)
+  const [unlockedContacts, setUnlockedContacts] = useState<Record<string, TalentCandidateContact>>({})
+  const [unlockBusyId, setUnlockBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const mutationKeys = useRef(new Map<string, { body: string; key: string }>())
 
@@ -293,6 +300,93 @@ export default function TalentNetworkPage() {
       .finally(() => active && setCoverageLoading(false))
     return () => { active = false }
   }, [matchesRequest, selectedId])
+
+  const isOpportunityOwner = selected?.viewerRole === 'institution'
+
+  // Owner-only: load the recruiter's placement entitlements (receipts) so match
+  // cards know which candidates are already unlocked or have a checkout pending.
+  useEffect(() => {
+    if (!selectedId || !isOpportunityOwner) {
+      setUnlocks([])
+      return
+    }
+    let active = true
+    talentGraphService.listUnlocks(selectedId)
+      .then((items) => active && setUnlocks(items))
+      .catch(() => active && setUnlocks([]))
+    return () => { active = false }
+  }, [selectedId, isOpportunityOwner, unlocksRequest])
+
+  // On-return from the Creem checkout the backend redirects to
+  // /talent-network?opportunity=<id>&unlocked=<candidateId>. Select that
+  // opportunity and reveal the candidate once the entitlement has settled.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const opportunityId = params.get('opportunity')
+    const candidateId = params.get('unlocked')
+    if (!opportunityId) return
+    setSelectedId(opportunityId)
+    if (!candidateId) return
+    talentGraphService.getCandidateContact(opportunityId, candidateId)
+      .then((contact) => {
+        setUnlockedContacts((current) => ({ ...current, [candidateId]: contact }))
+        setUnlocksRequest((request) => request + 1)
+      })
+      .catch(() => { /* still pending — the owner can retry from the match card */ })
+  }, [])
+
+  async function revealContact(opportunityId: string, candidateId: string) {
+    const contact = await talentGraphService.getCandidateContact(opportunityId, candidateId)
+    setUnlockedContacts((current) => ({ ...current, [candidateId]: contact }))
+    setUnlocksRequest((request) => request + 1)
+  }
+
+  async function unlockCandidate(match: TalentMatch) {
+    if (!selected || !isOpportunityOwner) return
+    setUnlockBusyId(match.profile.id)
+    setNotice(null)
+    const action = `unlock:${selected.id}:${match.profile.id}`
+    const payload = { candidateId: match.profile.id }
+    try {
+      const result = await talentGraphService.requestUnlock(selected.id, match.profile.id, mutationKey(action, payload))
+      settleMutation(action)
+      setUnlocks((current) => [result.placement, ...current.filter((placement) => placement.id !== result.placement.id)])
+      const interpreted = interpretUnlockResult(result)
+      if (interpreted.action === 'reveal') {
+        await revealContact(selected.id, match.profile.id)
+        setNotice({ tone: 'status', text: `${match.profile.displayName || match.profile.username} için kişi bilgisi ve tam kanıt açıldı.` })
+      } else if (interpreted.checkoutUrl) {
+        window.open(interpreted.checkoutUrl, '_blank', 'noopener,noreferrer')
+        setNotice({ tone: 'status', text: 'Creem ödeme sekmesi açıldı. Ödeme tamamlanınca "Ödemeyi kontrol et" ile adayı açın.' })
+      }
+    } catch (error) {
+      settleMutation(action, error)
+      setNotice({
+        tone: 'error',
+        text: getErrorMessage(error, 'Aday açılamadı. Fırsat sahibi oturumunu kontrol edip tekrar deneyin.'),
+      })
+    } finally {
+      setUnlockBusyId(null)
+    }
+  }
+
+  async function checkUnlockPayment(match: TalentMatch) {
+    if (!selected) return
+    setUnlockBusyId(match.profile.id)
+    setNotice(null)
+    try {
+      await revealContact(selected.id, match.profile.id)
+      setNotice({ tone: 'status', text: `${match.profile.displayName || match.profile.username} için kişi bilgisi ve tam kanıt açıldı.` })
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: getErrorMessage(error, 'Ödeme henüz doğrulanmadı. Ödemeyi tamamladıysanız birkaç saniye sonra tekrar deneyin.'),
+      })
+    } finally {
+      setUnlockBusyId(null)
+    }
+  }
 
   async function createOpportunity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -616,9 +710,12 @@ export default function TalentNetworkPage() {
             const referral = myReferrals.find((item) => item.opportunityId === selected?.id && item.participantId === match.profile.id)
             const existingPilot = myPilots.find((item) => item.opportunityId === selected?.id && item.participantId === match.profile.id)
             const isZenPath = selected?.sourceChannel === 'zen-talent'
-            const isOpportunityOwner = selected?.viewerRole === 'institution'
             const actionRecordsLoading = isOpportunityOwner && (pilotsLoading || (isZenPath && referralsLoading))
             const actionRecordsUnavailable = isOpportunityOwner && Boolean(pilotsError || (isZenPath && referralsError))
+            const placement = findPlacement(unlocks, match.profile.id)
+            const unlockState = deriveUnlockState({ isOwner: isOpportunityOwner, placement })
+            const revealedContact = unlockedContacts[match.profile.id]
+            const unlockBusy = unlockBusyId === match.profile.id
             return (
             <article className={styles.match} key={match.profile.id}>
               <div className={styles.rank}>{String(index + 1).padStart(2, '0')}</div>
@@ -667,6 +764,52 @@ export default function TalentNetworkPage() {
                   <button type="button" disabled={referringId === match.profile.id} onClick={() => referMatch(match)}>
                     {referringId === match.profile.id ? 'Yönlendiriliyor' : 'Zen’e yönlendir'}
                   </button>
+                )}
+                {unlockState !== 'not-owner' && (
+                  <div className={styles.unlock}>
+                    {unlockState === 'unlockable' && (
+                      <>
+                        <span className={styles.unlockHint}>Kişi bilgisi ve tam kanıt için ödemeli erişim</span>
+                        <button type="button" disabled={unlockBusy} onClick={() => unlockCandidate(match)}>
+                          {unlockBusy ? 'Ödeme açılıyor' : 'Adayı aç'}
+                        </button>
+                      </>
+                    )}
+                    {unlockState === 'pending' && (
+                      <>
+                        <span className={styles.unlockHint}>
+                          Ödeme bekleniyor{placement ? ` · ${formatFee(placement.feeCents, placement.currency)}` : ''}
+                        </span>
+                        <button type="button" disabled={unlockBusy} onClick={() => checkUnlockPayment(match)}>
+                          {unlockBusy ? 'Kontrol ediliyor' : 'Ödemeyi kontrol et'}
+                        </button>
+                      </>
+                    )}
+                    {unlockState === 'unlocked' && !revealedContact && (
+                      <button type="button" disabled={unlockBusy} onClick={() => checkUnlockPayment(match)}>
+                        {unlockBusy ? 'Yükleniyor' : 'Kişi bilgisini göster'}
+                      </button>
+                    )}
+                    {revealedContact && (
+                      <div className={styles.contactCard}>
+                        <h4>Aday iletişim bilgisi</h4>
+                        <dl>
+                          {revealedContact.contact.displayName && (
+                            <><dt>Ad</dt><dd>{revealedContact.contact.displayName}</dd></>
+                          )}
+                          {revealedContact.contact.username && (
+                            <><dt>Kullanıcı</dt><dd>@{revealedContact.contact.username}</dd></>
+                          )}
+                          {revealedContact.contact.email && (
+                            <><dt>E-posta</dt><dd><a href={`mailto:${revealedContact.contact.email}`}>{revealedContact.contact.email}</a></dd></>
+                          )}
+                          {revealedContact.contact.githubUsername && (
+                            <><dt>GitHub</dt><dd><a href={`https://github.com/${revealedContact.contact.githubUsername}`} target="_blank" rel="noreferrer">{revealedContact.contact.githubUsername}</a></dd></>
+                          )}
+                        </dl>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </article>

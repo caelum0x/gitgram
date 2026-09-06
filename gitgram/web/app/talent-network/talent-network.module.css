@@ -251,3 +251,15 @@
 .coverageCount { font-size: 10px; color: var(--ink); opacity: 0.7; font-variant-numeric: tabular-nums; }
 .coverageGap { margin: 16px 0 0; font-size: 12px; font-weight: 700; color: var(--red); }
 .coverageNote { margin: 8px 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Recruiter candidate-unlock revenue (owner-only) */
+.unlock { margin-top: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; text-align: right; }
+.unlock button { margin-top: 0; }
+.unlockHint { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.75; }
+.unlockFee { font-variant-numeric: tabular-nums; font-weight: 700; }
+.contactCard { margin-top: 16px; padding: 14px 16px; border: 1px solid var(--ink); border-left: 4px solid var(--red); background: var(--paper); text-align: left; }
+.contactCard h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.contactCard dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.contactCard dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; }
+.contactCard dd { margin: 0; font-size: 12px; word-break: break-word; }
+.contactCard a { color: var(--ink); font-size: 12px; text-underline-offset: 3px; }

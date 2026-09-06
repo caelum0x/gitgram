@@ -54,9 +54,11 @@ export const talentBillingController = {
     });
     if (!recruiter?.email) throw Errors.userNotFound(req.userId);
 
-    const successUrl = `${process.env.FRONTEND_URL ?? ''}/talent/opportunities/${encodeURIComponent(
+    // Land back on the talent-network page, which reads these params to select
+    // the opportunity and reveal the unlocked candidate once payment settles.
+    const successUrl = `${process.env.FRONTEND_URL ?? ''}/talent-network?opportunity=${encodeURIComponent(
       opportunityId,
-    )}?unlocked=${encodeURIComponent(candidateId)}`;
+    )}&unlocked=${encodeURIComponent(candidateId)}`;
 
     const result = await requestCandidateUnlock({
       recruiterId: req.userId!,
