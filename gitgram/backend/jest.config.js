@@ -3,6 +3,12 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
+  // The end-to-end suite (tests/e2e/*.e2e.test.ts) runs the REAL Express app
+  // against a REAL Postgres + Redis and has its own config (jest.e2e.config.js,
+  // run via `npm run test:e2e`). Excluding it here keeps the default unit /
+  // integration run deterministic — it must not require Docker datastores and
+  // must not collide on ports when run in parallel.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/e2e/'],
   transform: {
     '^.+\\.ts$': ['ts-jest', { diagnostics: false }],
   },
