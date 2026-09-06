@@ -178,7 +178,7 @@ export default function CollaboratePage() {
   }
 
   const handleCopyShareLink = async () => {
-    if (!graph.profile.username) return
+    if (!graph?.profile.username) return
 
     try {
       const url = new URL('/collaborate', window.location.origin)
