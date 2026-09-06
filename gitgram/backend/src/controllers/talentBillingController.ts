@@ -41,7 +41,7 @@ export const talentBillingController = {
   /**
    * POST /opportunities/:id/unlocks
    * Recruiter opens (or replays) a paid unlock for a matched candidate. Returns a
-   * Polar checkout URL, or `alreadyUnlocked` when the entitlement is already paid.
+   * Creem checkout URL, or `alreadyUnlocked` when the entitlement is already paid.
    */
   requestUnlock: asyncHandler(async (req: AuthRequest, res: Response) => {
     const opportunityId = req.params.id;

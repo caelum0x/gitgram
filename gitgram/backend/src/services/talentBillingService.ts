@@ -4,8 +4,8 @@
  * This is the recruiter monetization the talent graph was designed for but never
  * wired: a recruiter (the opportunity owner) pays a placement/access fee to
  * unlock a matched candidate's contact details and full evidence. The fee is
- * charged through the shared Polar adapter (the same provider used for
- * subscriptions and the store) and settled by the Polar `order.created` webhook.
+ * charged through the Creem adapter (a merchant-of-record supporting Turkey-based
+ * sellers) and settled by the signed Creem `checkout.completed` webhook.
  *
  * Design notes:
  *  - Fee math is pure and configuration-driven (see the `*FeeCents` helpers).
@@ -15,7 +15,7 @@
  *    (opportunity, candidate, recruiter); a repeated unlock never opens a second
  *    charge, and settlement is a no-op once the entitlement is already paid.
  *  - Every function accepts injectable dependencies so the flow can be unit
- *    tested without a live Postgres, Polar, or the matcher (same pattern as
+ *    tested without a live Postgres, Creem, or the matcher (same pattern as
  *    `findTalentMatches`).
  */
 import prisma from '../utils/prisma';
@@ -249,7 +249,7 @@ export async function requestCandidateUnlock(
 }
 
 // ---------------------------------------------------------------------------
-// Settlement (Polar order webhook) + entitlement check
+// Settlement (Creem checkout.completed webhook) + entitlement check
 // ---------------------------------------------------------------------------
 
 export interface SettlePlacementParams {
