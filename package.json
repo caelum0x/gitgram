@@ -2,7 +2,7 @@
   "name": "gitgram-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "Gitgram AI monorepo — social platform for developers + AITimeMachine",
+  "description": "Gitgram AI monorepo \u2014 social platform for developers + AITimeMachine",
   "workspaces": [
     "gitgram/web",
     "gitgram/backend",
@@ -37,7 +37,7 @@
     "dev:aitm-mcp": "cd aitimemachine/mcp && npm run dev",
     "dev:gitnexus": "cd aitimemachine/gitnexus && npm run dev",
     "dev:gitnexus-web": "cd aitimemachine/gitnexus-web && npm run dev",
-    "dev:a2a": "cd aitimemachine/a2a && npm run dev 2>/dev/null || echo 'a2a has no dev script — build with: cd aitimemachine/a2a && npm run build'",
+    "dev:a2a": "cd aitimemachine/a2a && npm run dev 2>/dev/null || echo 'a2a has no dev script \u2014 build with: cd aitimemachine/a2a && npm run build'",
     "dev:context7": "cd aitimemachine/context7/packages/mcp && npm run dev 2>/dev/null || node aitimemachine/context7/packages/mcp/dist/index.js",
     "dev:pal-mcp": "cd aitimemachine/pal-mcp-server && ./run-server.sh",
     "dev:repo2txt": "cd aitimemachine/tools/repo2txt && npm run dev",
@@ -76,5 +76,6 @@
   },
   "dependencies": {
     "@types/uuid": "^9.0.8"
-  }
+  },
+  "license": "MIT"
 }

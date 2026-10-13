@@ -261,3 +261,7 @@ Deploy pipeline and secrets contracts: [docs/deploy-pipeline.md](docs/deploy-pip
 - Manual launch runbook — [docs/runbook.md](docs/runbook.md)
 - Environment matrix — [docs/environment-matrix.md](docs/environment-matrix.md)
 - Agents guide — [docs/AGENTS.md](docs/AGENTS.md)
+
+## License
+
+MIT for original GitGram and AITimeMachine code. Vendored third-party directories keep their own licenses, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
