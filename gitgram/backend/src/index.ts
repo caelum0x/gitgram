@@ -286,6 +286,12 @@ app.use('/api/v1/notifications', notificationRoutes);
 // Notification preferences routes
 app.use('/api/v1/notifications/preferences', notificationPreferencesRoutes);
 
+// Alias: the mobile app's settingsService calls GET/PUT /settings/notifications,
+// which never had a matching route — every load/save silently 404'd and no
+// preference was ever persisted or read back. Mount the same, already-working
+// preferences router here too so that client actually reaches real logic.
+app.use('/api/v1/settings/notifications', notificationPreferencesRoutes);
+
 // Muted words / tags routes (per-user keyword muting)
 app.use('/api/v1/muted-words', mutedWordsRoutes);
 
