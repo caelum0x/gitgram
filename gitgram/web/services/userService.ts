@@ -158,14 +158,22 @@ export const userService = {
     return data
   },
 
-  // Data export
-  requestDataExport: async () => {
+  // Data export (GDPR). Backend flow is async: request -> poll status -> download
+  // once ready. See backend/src/routes/dataExport.ts.
+  requestDataExport: async (): Promise<{ success: boolean; data: { exportId: string; estimatedTime: string; createdAt: string } }> => {
     const { data } = await api.post('/v1/data-export/request')
     return data
   },
 
-  getExportStatus: async () => {
-    const { data } = await api.get('/v1/data-export/status')
+  getExportStatus: async (
+    exportId: string
+  ): Promise<{ success: boolean; data: { exportId: string; status: 'processing' | 'ready' | 'expired' | 'failed'; progress: number } }> => {
+    const { data } = await api.get(`/v1/data-export/${exportId}/status`)
+    return data
+  },
+
+  downloadDataExport: async (exportId: string): Promise<Blob> => {
+    const { data } = await api.get(`/v1/data-export/${exportId}/download`, { responseType: 'blob' })
     return data
   },
 

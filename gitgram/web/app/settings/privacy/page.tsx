@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'next/navigation'
 import { settingsService } from '@/services/settingsService'
+import { requestAndDownloadDataExport, DataExportTimeoutError } from '@/utils/dataExportFlow'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -325,13 +326,19 @@ export default function PrivacySettingsPage() {
     setExportLoading(true)
     setExportMessage(null)
     try {
-      const response = await settingsService.getDataSettings()
-      setExportMessage(
-        (response as Record<string, unknown>).message as string
-          ?? 'Your data export has been queued. You will receive an email with the download link within 24 hours.',
-      )
+      await requestAndDownloadDataExport((phase) => {
+        if (phase === 'processing') setExportMessage('Preparing your export… this can take a couple of minutes.')
+        if (phase === 'downloading') setExportMessage('Export ready — starting download…')
+      })
+      setExportMessage('Your data export downloaded successfully.')
     } catch (err: unknown) {
-      setExportMessage('Failed to request data export. Please try again.')
+      setExportMessage(
+        err instanceof DataExportTimeoutError
+          ? 'Still preparing your export. Please check back in a few minutes.'
+          : err instanceof Error
+            ? `Failed: ${err.message}`
+            : 'Failed to request data export. Please try again.',
+      )
     } finally {
       setExportLoading(false)
     }
@@ -713,7 +720,7 @@ export default function PrivacySettingsPage() {
                 <div style={{ flex: 1, minWidth: '200px' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280', lineHeight: 1.6 }}>
                     Includes your posts, followers, messages, repositories, and account metadata.
-                    You will receive a download link via email within 24 hours.
+                    Preparation takes a couple of minutes; the file downloads automatically when ready.
                   </p>
                   {exportMessage && (
                     <p

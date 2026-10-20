@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import api from '@/services/api'
+import { requestAndDownloadDataExport, DataExportTimeoutError } from '@/utils/dataExportFlow'
 
 export default function DataSettingsPage() {
   const router = useRouter()
@@ -14,6 +15,7 @@ export default function DataSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
 
   useEffect(() => {
     loadSettings()
@@ -46,17 +48,22 @@ export default function DataSettingsPage() {
 
   const handleExport = async () => {
     setExporting(true)
+    setExportMessage(null)
     try {
-      const response = await api.get('/v1/compliance/export-data')
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `gitgram-data-export-${new Date().toISOString()}.json`
-      a.click()
-      URL.revokeObjectURL(url)
+      await requestAndDownloadDataExport((phase) => {
+        if (phase === 'processing') setExportMessage('Preparing your export… this can take a couple of minutes.')
+        if (phase === 'downloading') setExportMessage('Export ready — starting download…')
+      })
+      setExportMessage('Your data export downloaded successfully.')
     } catch (error) {
       console.error('Export data error:', error)
+      setExportMessage(
+        error instanceof DataExportTimeoutError
+          ? 'Still preparing your export. Please check back in a few minutes.'
+          : error instanceof Error
+            ? error.message
+            : 'Failed to export data. Please try again.',
+      )
     } finally {
       setExporting(false)
     }
@@ -88,6 +95,9 @@ export default function DataSettingsPage() {
             >
               {exporting ? 'Exporting...' : 'Export Data'}
             </button>
+            {exportMessage && (
+              <p className="mt-3 text-sm text-foreground/70">{exportMessage}</p>
+            )}
           </div>
 
           <div className="bg-surface rounded-lg p-6">

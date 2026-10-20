@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import api from '@/services/api'
 import { useToast } from '@/components/ui/toast'
+import { requestAndDownloadDataExport, DataExportTimeoutError } from '@/utils/dataExportFlow'
 
 export default function ExportDataPage() {
   const { showToast } = useToast()
@@ -11,17 +11,18 @@ export default function ExportDataPage() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      const response = await api.get('/v1/compliance/export-data')
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `gitgram-data-export-${new Date().toISOString()}.json`
-      a.click()
-      URL.revokeObjectURL(url)
+      await requestAndDownloadDataExport((phase) => {
+        if (phase === 'processing') showToast('Preparing your export… this can take a couple of minutes.', 'info')
+      })
+      showToast('Your data export downloaded successfully.', 'success')
     } catch (error) {
       console.error('Export data error:', error)
-      showToast('Failed to export data', 'error')
+      showToast(
+        error instanceof DataExportTimeoutError
+          ? 'Still preparing your export. Please check back in a few minutes.'
+          : 'Failed to export data',
+        'error',
+      )
     } finally {
       setExporting(false)
     }
