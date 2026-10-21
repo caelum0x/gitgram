@@ -38,6 +38,24 @@ jest.mock('expo-constants', () => ({
   },
 }));
 
+// Mock expo-sharing (used to let the user save/share a downloaded file)
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: jest.fn(() => Promise.resolve(true)),
+  shareAsync: jest.fn(() => Promise.resolve()),
+}));
+
+// Mock expo-file-system legacy API (used for downloading the GDPR export to
+// local app storage before handing it to expo-sharing)
+jest.mock('expo-file-system/legacy', () => ({
+  cacheDirectory: 'file:///mock-cache/',
+  downloadAsync: jest.fn(() =>
+    Promise.resolve({ uri: 'file:///mock-cache/mock-export.json', status: 200 })
+  ),
+  getInfoAsync: jest.fn(() => Promise.resolve({ exists: false, isDirectory: false })),
+  readDirectoryAsync: jest.fn(() => Promise.resolve([])),
+  deleteAsync: jest.fn(() => Promise.resolve()),
+}));
+
 // Mock expo-notifications
 jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn(),
