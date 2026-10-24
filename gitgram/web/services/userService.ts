@@ -78,8 +78,12 @@ export const userService = {
   },
 
   // Account management
-  deleteAccount: async (password: string) => {
-    const { data } = await api.delete('/v1/auth/account', { data: { password } })
+  // Real route is DELETE /v1/auth/delete-account (there is no /v1/auth/account).
+  // Password accounts must pass a password; OAuth-only accounts omit it.
+  deleteAccount: async (password?: string) => {
+    const { data } = await api.delete('/v1/auth/delete-account', {
+      data: password ? { password } : {},
+    })
     return data
   },
 

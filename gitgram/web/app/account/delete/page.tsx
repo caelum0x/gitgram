@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
+import userService from '@/services/userService'
 import api from '@/services/api'
 import { useToast } from '@/components/ui/toast'
 
@@ -11,7 +12,26 @@ export default function DeleteAccountPage() {
   const { showToast } = useToast()
   const { logout } = useAuthStore()
   const [confirmText, setConfirmText] = useState('')
+  const [password, setPassword] = useState('')
+  // null until known — OAuth-only accounts have no password to re-enter.
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api
+      .get('/v1/auth/me')
+      .then(({ data }) => {
+        if (active) setHasPassword(Boolean(data?.user?.password))
+      })
+      .catch(() => {
+        // Fall back to showing the field; the backend says if it is required.
+        if (active) setHasPassword(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const handleDelete = async () => {
     if (confirmText !== 'DELETE') {
@@ -19,14 +39,21 @@ export default function DeleteAccountPage() {
       return
     }
 
+    if (hasPassword && !password) {
+      showToast('Please enter your password to confirm', 'warning')
+      return
+    }
+
     setDeleting(true)
     try {
-      await api.delete('/v1/compliance/account')
+      await userService.deleteAccount(hasPassword ? password : undefined)
       await logout()
       router.push('/login')
     } catch (error) {
       console.error('Delete account error:', error)
-      showToast('Failed to delete account', 'error')
+      const message = (error as { response?: { data?: { message?: string; error?: string } } })
+        ?.response?.data?.message
+      showToast(message || 'Failed to delete account', 'error')
     } finally {
       setDeleting(false)
     }
@@ -46,6 +73,22 @@ export default function DeleteAccountPage() {
         </div>
 
         <div className="space-y-4">
+          {hasPassword && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Confirm with your password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="Password"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Type <strong>DELETE</strong> to confirm
@@ -79,4 +122,3 @@ export default function DeleteAccountPage() {
     </div>
   )
 }
-

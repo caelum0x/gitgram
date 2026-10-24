@@ -14,17 +14,44 @@ import Header from '../../components/navigation/Header';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { useAuthStore } from '../../store/authStore';
 import { logger } from '../../utils/logger';
+import { authService } from '../../services/authService';
 import { complianceService } from '../../services/complianceService';
 
 export default function DeleteAccountScreen() {
   const router = useRouter();
-  const { user, logout } = useAuthStore();
+  const { logout } = useAuthStore();
   const [confirmText, setConfirmText] = useState('');
+  const [password, setPassword] = useState('');
+  // null until we know — OAuth-only accounts have no password to re-enter.
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    authService
+      .getMe()
+      .then((data) => {
+        if (active) setHasPassword(Boolean(data?.user?.password));
+      })
+      .catch((error) => {
+        logger.error('Load account type error:', error);
+        // Fall back to showing the password field; the backend tells us if it
+        // actually is required.
+        if (active) setHasPassword(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleDelete = () => {
     if (confirmText !== 'DELETE') {
       Alert.alert('Error', 'Please type DELETE to confirm');
+      return;
+    }
+
+    if (hasPassword && !password) {
+      Alert.alert('Error', 'Please enter your password to confirm');
       return;
     }
 
@@ -39,13 +66,17 @@ export default function DeleteAccountScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              await complianceService.deleteAccount();
+              await complianceService.deleteAccount(hasPassword ? password : undefined);
               await logout();
               Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
               router.replace('/(auth)/login');
             } catch (error) {
               logger.error('Delete account error:', error);
-              Alert.alert('Error', 'Failed to delete account. Please try again.');
+              const message =
+                (error as { response?: { data?: { error?: string; message?: string } } })
+                  ?.response?.data?.message ||
+                (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+              Alert.alert('Error', message || 'Failed to delete account. Please try again.');
             } finally {
               setLoading(false);
             }
@@ -72,6 +103,22 @@ export default function DeleteAccountScreen() {
           <Text style={styles.listItem}>• Your profile and account information</Text>
           <Text style={styles.listItem}>• All your saved content</Text>
         </View>
+
+        {hasPassword && (
+          <>
+            <Text style={styles.confirmLabel}>Confirm with your password:</Text>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              placeholderTextColor={Colors.textSecondary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </>
+        )}
 
         <Text style={styles.confirmLabel}>
           Type <Text style={styles.confirmWord}>DELETE</Text> to confirm:
@@ -169,4 +216,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

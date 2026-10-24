@@ -6,8 +6,15 @@ export const complianceService = {
     return response.data;
   },
 
-  deleteAccount: async () => {
-    const response = await api.delete('/compliance/account');
+  /**
+   * Deletes the account. The backend lives at `DELETE /auth/delete-account`
+   * (not `/compliance/account`, which never existed and always 404'd).
+   * Password accounts must pass `password`; OAuth-only accounts omit it.
+   */
+  deleteAccount: async (password?: string) => {
+    const response = await api.delete('/auth/delete-account', {
+      data: password ? { password } : {},
+    });
     return response.data;
   },
 

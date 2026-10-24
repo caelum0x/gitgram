@@ -599,14 +599,21 @@ export const authController = {
     const { password } = req.body;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.password) {
+    if (!user) {
       throw Errors.notFound('User');
     }
 
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      throw Errors.unauthorized('Invalid password');
+    // Password accounts must re-enter their password; OAuth-only accounts have
+    // no password to check, so the authenticated session is the proof.
+    if (user.password) {
+      if (!password) {
+        throw Errors.badRequest('Password is required to delete account');
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        throw Errors.unauthorized('Invalid password');
+      }
     }
 
     // Delete user and all associated data (cascades handle most relations)

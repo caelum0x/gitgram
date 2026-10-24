@@ -871,8 +871,10 @@ describe('DELETE /api/v1/auth/delete-account', () => {
     expect(res.status).toBe(401);
   });
 
-  it('should reject when password body field is missing', async () => {
+  it('should reject when password body field is missing for a password account', async () => {
     const token = generateTestAccessToken(TEST_USER_ID);
+    const user = prismaUserWithPassword(PASSWORD, { id: TEST_USER_ID });
+    mockPrisma.user.findUnique.mockResolvedValue(user);
 
     const res = await request(app)
       .delete('/api/v1/auth/delete-account')
@@ -880,6 +882,40 @@ describe('DELETE /api/v1/auth/delete-account', () => {
       .send({});
 
     expect(res.status).toBe(400);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('should delete an OAuth (passwordless) account without a password', async () => {
+    const token = generateTestAccessToken(TEST_USER_ID);
+    mockPrisma.user.findUnique.mockResolvedValue(
+      testFixtures.createPrismaUser({ id: TEST_USER_ID, password: null }),
+    );
+    mockPrisma.$transaction.mockResolvedValue([{}, {}, {}]);
+
+    const res = await request(app)
+      .delete('/api/v1/auth/delete-account')
+      .set('Authorization', authHeader(token))
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/deleted/i);
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('should cascade-delete sessions, linked accounts and the user', async () => {
+    const token = generateTestAccessToken(TEST_USER_ID);
+    const user = prismaUserWithPassword(PASSWORD, { id: TEST_USER_ID });
+    mockPrisma.user.findUnique.mockResolvedValue(user);
+    mockPrisma.$transaction.mockResolvedValue([{}, {}, {}]);
+
+    await request(app)
+      .delete('/api/v1/auth/delete-account')
+      .set('Authorization', authHeader(token))
+      .send({ password: PASSWORD });
+
+    expect(mockPrisma.session.deleteMany).toHaveBeenCalledWith({ where: { userId: TEST_USER_ID } });
+    expect(mockPrisma.account.deleteMany).toHaveBeenCalledWith({ where: { userId: TEST_USER_ID } });
+    expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: TEST_USER_ID } });
   });
 });
 

@@ -313,14 +313,15 @@ router.post('/recover-account',
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - password
  *             properties:
  *               password:
  *                 type: string
+ *                 description: Required for password accounts; omitted by OAuth-only accounts
  *     responses:
  *       200:
  *         description: Account deletion initiated
+ *       400:
+ *         description: Password missing on a password account
  *       401:
  *         description: Invalid password
  */
@@ -328,7 +329,18 @@ router.delete('/delete-account',
   authenticate,
   accountDeletionLimiter,
   validate([
-    body('password').notEmpty().withMessage('Password is required to delete account'),
+    body('password').optional({ nullable: true }).isString().withMessage('Password must be a string'),
+  ]),
+  authController.deleteAccount
+);
+
+// Alias clients used to call (web `userService`, mobile `complianceService`).
+// Kept so old app builds that shipped the `/auth/account` path keep working.
+router.delete('/account',
+  authenticate,
+  accountDeletionLimiter,
+  validate([
+    body('password').optional({ nullable: true }).isString().withMessage('Password must be a string'),
   ]),
   authController.deleteAccount
 );
