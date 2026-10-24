@@ -15,7 +15,11 @@
     // TS7.0 turns the legacy "node" (node10) resolver into a hard error. We keep
     // node10 semantics intentionally (CommonJS output) and silence the pre-7.0
     // deprecation so `tsc --noEmit` stays green until a deliberate resolver bump.
-    "ignoreDeprecations": "6.0",
+    // "6.0" is not a value the pinned typescript@^5.9.3 (see package.json)
+    // recognizes -- it hard-errors with TS5103 and the project fails to build
+    // or even boot via ts-node at all. "5.0" is the value this TS major
+    // actually accepts for this flag.
+    "ignoreDeprecations": "5.0",
     "typeRoots": ["./node_modules/@types"],
     "declaration": true,
     "declarationMap": true,

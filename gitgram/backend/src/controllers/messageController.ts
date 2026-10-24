@@ -6,6 +6,34 @@ import { blockService } from '../services/blockService';
 import logger from '../utils/logger';
 import { asyncHandler, Errors, ApiError } from '../middleware/errorHandler';
 
+/**
+ * Message.senderId / Message.receiverId / MessageReaction.userId are foreign
+ * keys into Account, not User, even though every other identifier in this
+ * file (req.userId, ChatMember.userId, UserBlock, socket room names,
+ * isUserOnline) is a User id. Passing a raw User id into those columns
+ * violates the FK constraint -- sending a message or reacting to one failed
+ * outright for every caller until these helpers were introduced. Resolve the
+ * caller's (or another participant's) Account id once per request instead.
+ */
+async function getOwnAccountId(userId: string): Promise<string> {
+  const account = await prisma.account.findFirst({ where: { userId }, select: { id: true } });
+  if (!account) {
+    throw Errors.notFound('Account');
+  }
+  return account.id;
+}
+
+async function getAccountIdForUser(userId: string): Promise<string | null> {
+  const account = await prisma.account.findFirst({ where: { userId }, select: { id: true } });
+  return account?.id ?? null;
+}
+
+async function getUserIdForAccount(accountId: string | null | undefined): Promise<string | null> {
+  if (!accountId) return null;
+  const account = await prisma.account.findUnique({ where: { id: accountId }, select: { userId: true } });
+  return account?.userId ?? null;
+}
+
 export const sendMessage = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
   const { receiverId, content, mediaUrl, chatId } = req.body;
@@ -18,14 +46,38 @@ export const sendMessage = asyncHandler(async (req: AuthRequest, res: Response) 
     }
   }
 
+  // Cross-tenant guard: a group-chat message must come from an actual member
+  // of that chat, otherwise any authenticated user could inject messages into
+  // any chat by guessing/supplying its chatId.
+  if (chatId) {
+    const membership = await prisma.chatMember.findFirst({
+      where: { chatId, userId },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw Errors.forbidden('Not authorized to send messages in this chat');
+    }
+  }
+
+  const senderAccountId = await getOwnAccountId(userId);
+  let receiverAccountId: string | null = null;
+  if (receiverId) {
+    receiverAccountId = await getAccountIdForUser(receiverId);
+    if (!receiverAccountId) {
+      throw Errors.notFound('Recipient');
+    }
+  } else if (!chatId) {
+    throw Errors.badRequest('Either receiverId or chatId is required');
+  }
+
   // Check if recipient is online to set deliveredAt
   const recipientOnline = isUserOnline(receiverId);
   const now = new Date();
 
   const message = await prisma.message.create({
     data: {
-      senderId: userId,
-      receiverId,
+      senderId: senderAccountId,
+      receiverId: receiverAccountId,
       chatId,
       content,
       mediaUrl,
@@ -70,11 +122,17 @@ export const getMessages = asyncHandler(async (req: AuthRequest, res: Response) 
     throw Errors.forbidden('Cannot access messages with this user');
   }
 
+  const ownAccountId = await getOwnAccountId(userId);
+  const otherAccountId = await getAccountIdForUser(otherUserId);
+  if (!otherAccountId) {
+    throw Errors.notFound('User');
+  }
+
   const messages = await prisma.message.findMany({
     where: {
       OR: [
-        { senderId: userId, receiverId: otherUserId },
-        { senderId: otherUserId, receiverId: userId }
+        { senderId: ownAccountId, receiverId: otherAccountId },
+        { senderId: otherAccountId, receiverId: ownAccountId }
       ]
     },
     include: {
@@ -93,7 +151,7 @@ export const getMessages = asyncHandler(async (req: AuthRequest, res: Response) 
   // Format messages with read receipt status and aggregated reactions
   const formattedMessages = messages.map(msg => ({
     ...msg,
-    reactions: aggregateReactions(msg.reactions, userId),
+    reactions: aggregateReactions(msg.reactions, ownAccountId),
     readAt: msg.readAt?.toISOString() || null,
     deliveredAt: msg.deliveredAt?.toISOString() || null,
     status: msg.read ? 'read' : (msg.deliveredAt ? 'delivered' : 'sent')
@@ -104,15 +162,21 @@ export const getMessages = asyncHandler(async (req: AuthRequest, res: Response) 
 
 export const getConversations = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
+  const ownAccountId = await getOwnAccountId(userId);
 
-  // Get blocked user IDs to filter out from conversations
-  const blockedIds = await blockService.getAllBlockedIds(userId);
+  // Get blocked user IDs to filter out from conversations, translated to the
+  // Account ids that Message.senderId/receiverId actually store.
+  const blockedUserIds = await blockService.getAllBlockedIds(userId);
+  const blockedAccounts = blockedUserIds.length
+    ? await prisma.account.findMany({ where: { userId: { in: blockedUserIds } }, select: { id: true } })
+    : [];
+  const blockedAccountIds = new Set(blockedAccounts.map(a => a.id));
 
   const messages = await prisma.message.findMany({
     where: {
       OR: [
-        { senderId: userId },
-        { receiverId: userId }
+        { senderId: ownAccountId },
+        { receiverId: ownAccountId }
       ]
     },
     distinct: ['senderId', 'receiverId'],
@@ -132,15 +196,16 @@ export const getConversations = asyncHandler(async (req: AuthRequest, res: Respo
   const conversationPartnerIds: string[] = [];
 
   messages.forEach(msg => {
-    const otherId = msg.senderId === userId ? msg.receiverId : msg.senderId;
+    const otherId = msg.senderId === ownAccountId ? msg.receiverId : msg.senderId;
+    if (!otherId) return; // group-chat message with no single receiver
     // Skip blocked users
-    if (blockedIds.includes(otherId)) {
+    if (blockedAccountIds.has(otherId)) {
       return;
     }
     if (!conversations.has(otherId)) {
       conversationPartnerIds.push(otherId);
       conversations.set(otherId, {
-        user: msg.senderId === userId ? msg.receiver : msg.sender,
+        user: msg.senderId === ownAccountId ? msg.receiver : msg.sender,
         lastMessage: {
           ...msg,
           readAt: msg.readAt?.toISOString() || null,
@@ -157,7 +222,7 @@ export const getConversations = asyncHandler(async (req: AuthRequest, res: Respo
       by: ['senderId'],
       where: {
         senderId: { in: conversationPartnerIds },
-        receiverId: userId,
+        receiverId: ownAccountId,
         read: false,
         deletedForSender: false
       },
@@ -180,10 +245,16 @@ export const markAsRead = asyncHandler(async (req: AuthRequest, res: Response) =
   const { otherUserId } = req.params;
   const now = new Date();
 
+  const ownAccountId = await getOwnAccountId(userId);
+  const otherAccountId = await getAccountIdForUser(otherUserId);
+  if (!otherAccountId) {
+    throw Errors.notFound('User');
+  }
+
   const result = await prisma.message.updateMany({
     where: {
-      senderId: otherUserId,
-      receiverId: userId,
+      senderId: otherAccountId,
+      receiverId: ownAccountId,
       read: false
     },
     data: {
@@ -197,8 +268,8 @@ export const markAsRead = asyncHandler(async (req: AuthRequest, res: Response) =
     // Get the message IDs that were marked as read
     const readMessages = await prisma.message.findMany({
       where: {
-        senderId: otherUserId,
-        receiverId: userId,
+        senderId: otherAccountId,
+        receiverId: ownAccountId,
         readAt: now
       },
       select: { id: true }
@@ -244,9 +315,22 @@ export const createGroupChat = asyncHandler(async (req: AuthRequest, res: Respon
 });
 
 export const getChatMessages = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.userId!;
   const { chatId } = req.params;
   const { page = 1, limit = 50 } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
+
+  // Cross-tenant guard: only members of this chat may read its messages.
+  // Without this check any authenticated user could read any group chat's
+  // messages by chatId alone.
+  const membership = await prisma.chatMember.findFirst({
+    where: { chatId, userId },
+    select: { id: true },
+  });
+
+  if (!membership) {
+    throw Errors.forbidden('Not authorized to view this chat');
+  }
 
   const messages = await prisma.message.findMany({
     where: { chatId },
@@ -309,7 +393,8 @@ export const editMessage = asyncHandler(async (req: AuthRequest, res: Response) 
     throw Errors.notFound('Message');
   }
 
-  if (message.senderId !== userId) {
+  const ownAccountId = await getOwnAccountId(userId);
+  if (message.senderId !== ownAccountId) {
     throw Errors.forbidden('Not authorized to edit this message');
   }
 
@@ -335,9 +420,13 @@ export const editMessage = asyncHandler(async (req: AuthRequest, res: Response) 
     }
   });
 
-  // Emit socket event for real-time update
+  // Emit socket event for real-time update. Socket rooms are keyed by User
+  // id, so the Account id on the message has to be translated back.
   if (global.io && message.receiverId) {
-    global.io.to(`user:${message.receiverId}`).emit('message:edited', updatedMessage);
+    const receiverUserId = await getUserIdForAccount(message.receiverId);
+    if (receiverUserId) {
+      global.io.to(`user:${receiverUserId}`).emit('message:edited', updatedMessage);
+    }
   }
   if (global.io && message.chatId) {
     global.io.to(`chat:${message.chatId}`).emit('message:edited', updatedMessage);
@@ -363,7 +452,8 @@ export const deleteMessage = asyncHandler(async (req: AuthRequest, res: Response
     throw Errors.notFound('Message');
   }
 
-  if (message.senderId !== userId) {
+  const ownAccountId = await getOwnAccountId(userId);
+  if (message.senderId !== ownAccountId) {
     throw Errors.forbidden('Not authorized to delete this message');
   }
 
@@ -378,7 +468,10 @@ export const deleteMessage = asyncHandler(async (req: AuthRequest, res: Response
 
     // Emit socket event for real-time update
     if (global.io && message.receiverId) {
-      global.io.to(`user:${message.receiverId}`).emit('message:deleted', { messageId, forEveryone: true });
+      const receiverUserId = await getUserIdForAccount(message.receiverId);
+      if (receiverUserId) {
+        global.io.to(`user:${receiverUserId}`).emit('message:deleted', { messageId, forEveryone: true });
+      }
     }
     if (global.io && message.chatId) {
       global.io.to(`chat:${message.chatId}`).emit('message:deleted', { messageId, forEveryone: true });
@@ -421,7 +514,8 @@ export const getMessage = asyncHandler(async (req: AuthRequest, res: Response) =
   }
 
   // Ensure user is participant
-  if (message.senderId !== userId && message.receiverId !== userId) {
+  const ownAccountId = await getOwnAccountId(userId);
+  if (message.senderId !== ownAccountId && message.receiverId !== ownAccountId) {
     // Check if user is in the chat
     if (message.chatId) {
       const membership = await prisma.chatMember.findFirst({
@@ -465,7 +559,8 @@ export const reportMessage = asyncHandler(async (req: AuthRequest, res: Response
   }
 
   // Verify user has access to this message
-  if (message.senderId !== userId && message.receiverId !== userId) {
+  const ownAccountId = await getOwnAccountId(userId);
+  if (message.senderId !== ownAccountId && message.receiverId !== ownAccountId) {
     if (message.chatId) {
       const membership = await prisma.chatMember.findFirst({
         where: { chatId: message.chatId, userId }
@@ -502,11 +597,17 @@ export const markConversationAsRead = asyncHandler(async (req: AuthRequest, res:
 
   const now = new Date();
 
+  const ownAccountId = await getOwnAccountId(userId);
+  const partnerAccountId = await getAccountIdForUser(conversationPartnerId);
+  if (!partnerAccountId) {
+    throw Errors.notFound('User');
+  }
+
   // Mark all unread messages from the other user as read
   const result = await prisma.message.updateMany({
     where: {
-      senderId: conversationPartnerId,
-      receiverId: userId,
+      senderId: partnerAccountId,
+      receiverId: ownAccountId,
       read: false
     },
     data: {
@@ -518,8 +619,8 @@ export const markConversationAsRead = asyncHandler(async (req: AuthRequest, res:
   // Get the IDs of messages that were marked as read for WebSocket notification
   const readMessages = await prisma.message.findMany({
     where: {
-      senderId: conversationPartnerId,
-      receiverId: userId,
+      senderId: partnerAccountId,
+      receiverId: ownAccountId,
       readAt: now
     },
     select: { id: true }
@@ -561,7 +662,8 @@ export const markMessageAsRead = asyncHandler(async (req: AuthRequest, res: Resp
   }
 
   // Only the receiver can mark a message as read
-  if (message.receiverId !== userId) {
+  const ownAccountId = await getOwnAccountId(userId);
+  if (message.receiverId !== ownAccountId) {
     throw Errors.forbidden('Not authorized to mark this message as read');
   }
 
@@ -593,11 +695,14 @@ export const markMessageAsRead = asyncHandler(async (req: AuthRequest, res: Resp
 
   // Emit WebSocket event to notify sender that their message was read
   if (global.io) {
-    global.io.to(`user:${message.senderId}`).emit('message:read', {
-      readBy: userId,
-      messageIds: [messageId],
-      readAt: now.toISOString()
-    });
+    const senderUserId = await getUserIdForAccount(message.senderId);
+    if (senderUserId) {
+      global.io.to(`user:${senderUserId}`).emit('message:read', {
+        readBy: userId,
+        messageIds: [messageId],
+        readAt: now.toISOString()
+      });
+    }
 
     // Also emit to chat room if it's a group chat
     if (message.chatId) {
@@ -622,10 +727,11 @@ export const markMessageAsRead = asyncHandler(async (req: AuthRequest, res: Resp
  */
 export const getUnreadCount = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
+  const ownAccountId = await getOwnAccountId(userId);
 
   const count = await prisma.message.count({
     where: {
-      receiverId: userId,
+      receiverId: ownAccountId,
       read: false,
       deletedForSender: false
     }
@@ -646,10 +752,11 @@ const MAX_REACTIONS_PER_USER = 5;
  * to (DM sender/receiver or a member of the group chat). Throws otherwise.
  */
 async function assertMessageAccess(
-  message: { senderId: string; receiverId: string; chatId: string | null },
+  message: { senderId: string; receiverId: string | null; chatId: string | null },
   userId: string,
+  ownAccountId: string,
 ): Promise<void> {
-  if (message.senderId === userId || message.receiverId === userId) {
+  if (message.senderId === ownAccountId || message.receiverId === ownAccountId) {
     return;
   }
   if (message.chatId) {
@@ -706,17 +813,19 @@ export const addReaction = asyncHandler(async (req: AuthRequest, res: Response) 
     throw Errors.notFound('Message');
   }
 
-  await assertMessageAccess(message, userId);
+  const ownAccountId = await getOwnAccountId(userId);
+  await assertMessageAccess(message, userId, ownAccountId);
 
   // Enforce the per-user reaction cap, but allow re-adding an emoji the user
   // already has (idempotent) so the cap can't lock a user out of a no-op.
+  // MessageReaction.userId is an Account id FK, like Message.senderId/receiverId.
   const existing = await prisma.messageReaction.findUnique({
-    where: { messageId_userId_emoji: { messageId, userId, emoji } },
+    where: { messageId_userId_emoji: { messageId, userId: ownAccountId, emoji } },
   });
 
   if (!existing) {
     const distinctCount = await prisma.messageReaction.count({
-      where: { messageId, userId },
+      where: { messageId, userId: ownAccountId },
     });
     if (distinctCount >= MAX_REACTIONS_PER_USER) {
       throw Errors.badRequest(
@@ -724,7 +833,7 @@ export const addReaction = asyncHandler(async (req: AuthRequest, res: Response) 
       );
     }
     await prisma.messageReaction.create({
-      data: { messageId, userId, emoji },
+      data: { messageId, userId: ownAccountId, emoji },
     });
   }
 
@@ -732,15 +841,22 @@ export const addReaction = asyncHandler(async (req: AuthRequest, res: Response) 
     where: { messageId },
     select: { emoji: true, userId: true },
   });
-  const aggregated = aggregateReactions(reactions, userId);
+  const aggregated = aggregateReactions(reactions, ownAccountId);
 
-  // Notify the other participant(s) so reactions appear in real time.
+  // Notify the other participant(s) so reactions appear in real time. Socket
+  // rooms are keyed by User id, so translate the Account ids back.
   if (global.io) {
     const payload = { messageId, userId, emoji, reactions: aggregated };
-    if (message.receiverId) {
-      global.io.to(`user:${message.receiverId}`).emit('message:reaction', payload);
+    const [receiverUserId, senderUserId] = await Promise.all([
+      getUserIdForAccount(message.receiverId),
+      getUserIdForAccount(message.senderId),
+    ]);
+    if (receiverUserId) {
+      global.io.to(`user:${receiverUserId}`).emit('message:reaction', payload);
     }
-    global.io.to(`user:${message.senderId}`).emit('message:reaction', payload);
+    if (senderUserId) {
+      global.io.to(`user:${senderUserId}`).emit('message:reaction', payload);
+    }
     if (message.chatId) {
       global.io.to(`chat:${message.chatId}`).emit('message:reaction', payload);
     }
@@ -768,24 +884,31 @@ export const removeReaction = asyncHandler(async (req: AuthRequest, res: Respons
     throw Errors.notFound('Message');
   }
 
-  await assertMessageAccess(message, userId);
+  const ownAccountId = await getOwnAccountId(userId);
+  await assertMessageAccess(message, userId, ownAccountId);
 
   await prisma.messageReaction.deleteMany({
-    where: { messageId, userId, emoji },
+    where: { messageId, userId: ownAccountId, emoji },
   });
 
   const reactions = await prisma.messageReaction.findMany({
     where: { messageId },
     select: { emoji: true, userId: true },
   });
-  const aggregated = aggregateReactions(reactions, userId);
+  const aggregated = aggregateReactions(reactions, ownAccountId);
 
   if (global.io) {
     const payload = { messageId, userId, emoji, removed: true, reactions: aggregated };
-    if (message.receiverId) {
-      global.io.to(`user:${message.receiverId}`).emit('message:reaction', payload);
+    const [receiverUserId, senderUserId] = await Promise.all([
+      getUserIdForAccount(message.receiverId),
+      getUserIdForAccount(message.senderId),
+    ]);
+    if (receiverUserId) {
+      global.io.to(`user:${receiverUserId}`).emit('message:reaction', payload);
     }
-    global.io.to(`user:${message.senderId}`).emit('message:reaction', payload);
+    if (senderUserId) {
+      global.io.to(`user:${senderUserId}`).emit('message:reaction', payload);
+    }
     if (message.chatId) {
       global.io.to(`chat:${message.chatId}`).emit('message:reaction', payload);
     }
@@ -812,14 +935,15 @@ export const searchMessages = asyncHandler(async (req: AuthRequest, res: Respons
   }
 
   const searchTerm = query.trim();
+  const ownAccountId = await getOwnAccountId(userId);
 
   // Fetch matching messages where the current user is a participant
   const messages = await prisma.message.findMany({
     where: {
       content: { contains: searchTerm, mode: 'insensitive' },
       OR: [
-        { senderId: userId },
-        { receiverId: userId },
+        { senderId: ownAccountId },
+        { receiverId: ownAccountId },
         {
           chatId: {
             in: (

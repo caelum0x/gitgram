@@ -571,7 +571,9 @@ model Follow {
 model Message {
   id               String    @id @default(cuid())
   senderId         String
-  receiverId       String
+  // Nullable: group-chat messages (chatId set) have no single receiver. Only
+  // 1:1 direct messages populate this.
+  receiverId       String?
   chatId           String?
   content          String    @db.Text
   mediaUrl         String?
@@ -582,9 +584,9 @@ model Message {
   deletedForSender Boolean   @default(false)
   createdAt        DateTime  @default(now())
 
-  sender   Account @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver Account @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
-  chat     Chat?   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender   Account  @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver Account? @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  chat     Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   reactions MessageReaction[]
 
