@@ -6,6 +6,30 @@ import { analyzeNeedCoverage } from '../services/talentGapAnalysisService';
 import prisma from '../utils/prisma';
 import { normalizePublicHttpUrl } from '../utils/publicHttpUrl';
 import { runTalentMutation, type TalentMutationResult } from '../services/talentMutationService';
+import { explainTalentMatch, defaultRagAsk } from '../services/talentGraphRag';
+import type { TalentGraphView } from '../services/talentGraphEdges';
+
+/**
+ * Run a grounded GraphRAG explanation and translate the module's plain errors
+ * into the API's typed errors. The LLM seam (`ask`) is injected here so the
+ * controller stays a thin adapter over the testable service; until a real client
+ * is wired, `defaultRagAsk` surfaces a clear 503 rather than a fake answer.
+ */
+async function runGroundedExplain(
+  developerId: string,
+  query: unknown,
+  loadView?: (id: string) => Promise<TalentGraphView | null>,
+) {
+  const cleanedQuery = boundedText(query, 'query', 2000);
+  try {
+    return await explainTalentMatch(developerId, cleanedQuery, { ask: defaultRagAsk, loadView });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('No LLM client')) throw Errors.serviceUnavailable('Talent GraphRAG');
+    if (message.includes('No talent graph view')) throw Errors.userNotFound(developerId);
+    throw Errors.badRequest(message);
+  }
+}
 
 const PILOT_STATUSES = ['PLANNED', 'ACTIVE', 'REVIEW', 'COMPLETED', 'CANCELLED'] as const;
 type PilotStatus = (typeof PILOT_STATUSES)[number];
@@ -91,6 +115,33 @@ export const talentGraphController = {
     res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.setHeader('X-Talent-Proof-Schema', '1');
     res.json({ data: graph, meta: { proofSchemaVersion: 1 } });
+  }),
+
+  // GraphRAG serving: grounded "why/how does this developer match?" over the
+  // authenticated user's own assembled talent graph. Non-breaking — a new route
+  // that reuses getTalentGraph via the RAG service's default view loader.
+  explainMine: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const result = await runGroundedExplain(req.userId!, req.body?.query);
+    res.setHeader('Cache-Control', 'no-store, private');
+    res.json({ data: result });
+  }),
+
+  // Grounded explanation over a public developer's privacy-safe dossier. Reuses
+  // getTalentGraph in publicView mode as the injected view loader.
+  explainPublic: asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = await prisma.user.findUnique({
+      where: { username: req.params.username },
+      select: { id: true, isPrivate: true },
+    });
+    if (!user || user.isPrivate) throw Errors.userNotFound(req.params.username);
+
+    const result = await runGroundedExplain(
+      user.id,
+      req.body?.query,
+      async (id) => (await getTalentGraph(id, { publicView: true })) as TalentGraphView | null,
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ data: result });
   }),
 
   listOpportunities: asyncHandler(async (req: AuthRequest, res: Response) => {
