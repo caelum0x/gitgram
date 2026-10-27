@@ -26,6 +26,24 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "exclude": ["node_modules", "dist", "tests"],
+  // `npm run dev` (nodemon --exec ts-node) refused to boot at all: this is an
+  // npm workspaces monorepo, and express-rate-limit is only hoisted to the
+  // *root* node_modules, not nested under backend/node_modules. Its own type
+  // declarations resolve `express` by walking up from where the package
+  // actually lives, so they land on the root's hoisted express@4 (and its
+  // @types/express-serve-static-core@4.19.8) instead of this package's own
+  // pinned express@5.1.0 / @types/express@5.0.5 -- producing a real-looking
+  // but spurious "RateLimitRequestHandler not assignable to Application"
+  // type error on every `app.use(limiter)` call. `npx tsc`/`tsc --noEmit`
+  // (the actual build + CI gate) do NOT hit this: they resolve cleanly and
+  // stay the source of truth for real type errors. `transpileOnly` makes the
+  // dev-loop ts-node process behave the same way most Node teams run
+  // ts-node in watch mode -- strip types fast, don't re-typecheck on every
+  // save -- so `npm run dev` boots instead of crashing on a cross-package
+  // typings collision that isn't a real bug in this project's own code.
+  "ts-node": {
+    "transpileOnly": true
+  }
 }
 
