@@ -6,14 +6,17 @@ import { analyzeNeedCoverage } from '../services/talentGapAnalysisService';
 import prisma from '../utils/prisma';
 import { normalizePublicHttpUrl } from '../utils/publicHttpUrl';
 import { runTalentMutation, type TalentMutationResult } from '../services/talentMutationService';
-import { explainTalentMatch, defaultRagAsk } from '../services/talentGraphRag';
+import { explainTalentMatch } from '../services/talentGraphRag';
+import { liveRagAsk } from '../services/talentGraphLlmClient';
 import type { TalentGraphView } from '../services/talentGraphEdges';
 
 /**
  * Run a grounded GraphRAG explanation and translate the module's plain errors
  * into the API's typed errors. The LLM seam (`ask`) is injected here so the
- * controller stays a thin adapter over the testable service; until a real client
- * is wired, `defaultRagAsk` surfaces a clear 503 rather than a fake answer.
+ * controller stays a thin adapter over the testable service. `liveRagAsk`
+ * tries Railyard Relay first, falls back to a direct OpenRouter call, and
+ * throws the same "No LLM client" message (surfaced as a 503) when neither
+ * is configured.
  */
 async function runGroundedExplain(
   developerId: string,
@@ -22,7 +25,7 @@ async function runGroundedExplain(
 ) {
   const cleanedQuery = boundedText(query, 'query', 2000);
   try {
-    return await explainTalentMatch(developerId, cleanedQuery, { ask: defaultRagAsk, loadView });
+    return await explainTalentMatch(developerId, cleanedQuery, { ask: liveRagAsk, loadView });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes('No LLM client')) throw Errors.serviceUnavailable('Talent GraphRAG');
