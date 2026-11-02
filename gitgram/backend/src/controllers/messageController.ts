@@ -295,6 +295,19 @@ export const createGroupChat = asyncHandler(async (req: AuthRequest, res: Respon
   const userId = req.userId!;
   const { name, memberIds } = req.body;
 
+  // Block enforcement gap: sendMessage only checks hasBlockRelationship on the
+  // receiverId (DM) branch, never on the chatId (group chat) branch. Without a
+  // check here, a blocked user could route around a block entirely by creating
+  // a "group chat" whose only other member is the user who blocked them, then
+  // messaging through that chatId instead of receiverId. Reject chat creation
+  // up front so that vector doesn't exist.
+  const blockChecks = await Promise.all(
+    memberIds.map((memberId: string) => blockService.hasBlockRelationship(userId, memberId))
+  );
+  if (blockChecks.some(Boolean)) {
+    throw Errors.forbidden('Cannot create a chat with a blocked user');
+  }
+
   const chat = await prisma.chat.create({
     data: {
       name,
